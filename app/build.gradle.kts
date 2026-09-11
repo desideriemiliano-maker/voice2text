@@ -1,9 +1,73 @@
+import java.io.ByteArrayOutputStream
 import java.util.Properties
 
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
+}
+
+/** Esegue git nella root del progetto; stringa vuota se git non è disponibile o non è un repository. */
+fun runGit(vararg args: String): String = try {
+    val out = ByteArrayOutputStream()
+    project.exec {
+        workingDir = rootProject.projectDir
+        commandLine(listOf("git") + args.toList())
+        standardOutput = out
+        isIgnoreExitValue = true
+    }
+    out.toString(Charsets.UTF_8.name()).trim()
+} catch (e: Exception) {
+    ""
+}
+
+val gitCommitCount: Int = runGit("rev-list", "--count", "HEAD").toIntOrNull()?.coerceAtLeast(1) ?: 1
+
+fun escapeKotlin(testo: String): String = testo.replace("\\", "\\\\").replace("\"", "\\\"").replace("$", "\\$")
+
+/**
+ * Genera il sorgente Kotlin `Changelog.kt` con una voce per ogni commit git (versionCode = posizione
+ * nella storia, coerente con `gitCommitCount`/`versionCode` dell'app), da mostrare nella voce
+ * "Versioni" del menu. Se non c'è storia git, la lista risulta vuota: la UI lo gestisce senza errori.
+ * Stesso approccio usato in WorkoutAnalyzer e Calendario++.
+ */
+fun generaSorgenteChangelog(): String {
+    val log = runGit("log", "--reverse", "--date=short", "--pretty=format:%ad@@@%s")
+    val voci = StringBuilder()
+    if (log.isNotBlank()) {
+        log.lines().forEachIndexed { indice, riga ->
+            val parti = riga.split("@@@", limit = 2)
+            if (parti.size == 2) {
+                voci.append("    VoceChangelog(versionCode = ${indice + 1}, data = \"${parti[0]}\", messaggio = \"${escapeKotlin(parti[1])}\"),\n")
+            }
+        }
+    }
+    return """
+        |package com.desideri.voice2text.changelog
+        |
+        |data class VoceChangelog(val versionCode: Int, val data: String, val messaggio: String)
+        |
+        |val CHANGELOG: List<VoceChangelog> = listOf(
+        |$voci)
+        |
+    """.trimMargin()
+}
+
+val changelogGeneratoDir = layout.buildDirectory.dir("generated/changelog")
+val gitHeadCommit: String = runGit("rev-parse", "HEAD")
+
+val generaChangelog = tasks.register("generaChangelog") {
+    // Senza un input dichiarato, Gradle non avrebbe modo di accorgersi che la storia git è
+    // cambiata da una build all'altra e considererebbe il task sempre up-to-date dopo la prima
+    // esecuzione: l'HEAD commit forza la rigenerazione a ogni nuovo commit.
+    inputs.property("gitHeadCommit", gitHeadCommit)
+    val outputDir = changelogGeneratoDir
+    outputs.dir(outputDir)
+    doLast {
+        val pacchettoDir = File(outputDir.get().asFile, "com/desideri/voice2text/changelog")
+        pacchettoDir.mkdirs()
+        File(pacchettoDir, "Changelog.kt").writeText(generaSorgenteChangelog())
+    }
 }
 
 android {
@@ -14,8 +78,8 @@ android {
         applicationId = "com.desideri.voice2text"
         minSdk = 24
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = gitCommitCount
+        versionName = "1.0.$gitCommitCount"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -64,6 +128,16 @@ android {
             output.outputFileName = "Voice2Text.apk"
         }
     }
+
+    sourceSets {
+        getByName("main") {
+            java.srcDir(changelogGeneratoDir)
+        }
+    }
+}
+
+tasks.matching { it.name.contains("Kotlin") }.configureEach {
+    dependsOn(generaChangelog)
 }
 
 dependencies {

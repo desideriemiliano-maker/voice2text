@@ -14,9 +14,16 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
@@ -24,6 +31,10 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
@@ -37,6 +48,8 @@ fun Voice2TextScreen(viewModel: TranscriptionViewModel, sharedIntent: Intent?) {
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
     val uiState = viewModel.uiState
+    var menuEspanso by remember { mutableStateOf(false) }
+    var mostraVersioni by remember { mutableStateOf(false) }
 
     // Un audio condiviso da un'altra app (es. WhatsApp -> Condividi) arriva come ACTION_SEND
     // con l'Uri in EXTRA_STREAM. Si riattiva a ogni nuovo intent (vedi onNewIntent in MainActivity).
@@ -62,7 +75,23 @@ fun Voice2TextScreen(viewModel: TranscriptionViewModel, sharedIntent: Intent?) {
     }
 
     Scaffold(
-        topBar = { TopAppBar(title = { Text("Voice2Text") }) }
+        topBar = {
+            TopAppBar(
+                title = { Text("Voice2Text") },
+                actions = {
+                    IconButton(onClick = { menuEspanso = true }) {
+                        Icon(Icons.Filled.MoreVert, contentDescription = "Altre opzioni")
+                    }
+                    DropdownMenu(expanded = menuEspanso, onDismissRequest = { menuEspanso = false }) {
+                        DropdownMenuItem(
+                            text = { Text("Versioni") },
+                            leadingIcon = { Icon(Icons.Filled.Info, contentDescription = null) },
+                            onClick = { menuEspanso = false; mostraVersioni = true }
+                        )
+                    }
+                }
+            )
+        }
     ) { padding ->
         Column(
             modifier = Modifier
@@ -139,6 +168,10 @@ fun Voice2TextScreen(viewModel: TranscriptionViewModel, sharedIntent: Intent?) {
                 RigaStima("Tono di voce", risultato.tonoVoce)
             }
         }
+    }
+
+    if (mostraVersioni) {
+        VersioniDialog(onDismiss = { mostraVersioni = false })
     }
 }
 
