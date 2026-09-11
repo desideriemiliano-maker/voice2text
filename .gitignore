@@ -1,0 +1,26 @@
+# File temporanei di Gradle
+.gradle/
+build/
+app/build
+.kotlin/
+local.properties
+
+# Configurazione IDE (IntelliJ / Android Studio)
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# File locali e segreti
+local.properties
+.DS_Store
+
+# Android specifiche
+captures/
+.externalNativeBuild/
+.cxx/
+*.apk
+*.aar
+
+# Backup e Log
+*.log

@@ -1,0 +1,29 @@
+<!--
+   Onda audio (a sinistra) che diventa righe di testo (a destra) = trascrizione.
+   La "scintilla" in alto a destra richiama il fatto che la trascrizione è fatta dall'IA (Gemini).
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Barre dell'onda audio -->
+    <path android:fillColor="#FFFFFFFF" android:pathData="M26,42L34,42L34,66L26,66Z" />
+    <path android:fillColor="#FFFFFFFF" android:pathData="M38,34L46,34L46,74L38,74Z" />
+    <path android:fillColor="#FFFFFFFF" android:pathData="M50,40L58,40L58,68L50,68Z" />
+
+    <!-- Righe di testo trascritto -->
+    <path android:fillColor="#FFFFFFFF" android:pathData="M66,44L86,44L86,52L66,52Z" />
+    <path android:fillColor="#FFFFFFFF" android:pathData="M66,58L82,58L82,66L66,66Z" />
+
+    <!-- Scintilla "IA" -->
+    <group android:translateX="62" android:translateY="6">
+        <path
+            android:fillColor="#FFFFC107"
+            android:pathData="M19,9L20.25,6.25L23,5L20.25,3.75L19,1L17.75,3.75L15,5L17.75,6.25Z" />
+        <path
+            android:fillColor="#FFFFC107"
+            android:pathData="M11.5,9.5L9,4L6.5,9.5L1,12L6.5,14.5L9,20L11.5,14.5L17,12Z" />
+    </group>
+</vector>
