@@ -160,12 +160,17 @@ fun Voice2TextScreen(viewModel: TranscriptionViewModel, sharedIntent: Intent?) {
                 }
 
                 Spacer(Modifier.height(24.dp))
+                Text("Riassunto:", style = MaterialTheme.typography.titleMedium)
+                Spacer(Modifier.height(8.dp))
+                Text(risultato.riassunto)
+
+                Spacer(Modifier.height(24.dp))
                 Text("Stime dalla voce (indicative, non certe):", style = MaterialTheme.typography.titleMedium)
                 Spacer(Modifier.height(8.dp))
                 RigaStima("Genere", risultato.genere)
                 RigaStima("Eta'", risultato.eta)
-                RigaStima("Umore", risultato.umore)
-                RigaStima("Tono di voce", risultato.tonoVoce)
+                RigaStimaConMotivazione("Umore", risultato.umore, risultato.umoreMotivazione)
+                RigaStimaConMotivazione("Tono di voce", risultato.tonoVoce, risultato.tonoVoceMotivazione)
             }
         }
     }
@@ -185,4 +190,22 @@ private fun RigaStima(etichetta: String, valore: String) {
         Text(valore, style = MaterialTheme.typography.bodyLarge)
     }
     Spacer(Modifier.height(4.dp))
+}
+
+@Composable
+private fun RigaStimaConMotivazione(etichetta: String, valore: String, motivazione: String) {
+    Column(modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text(etichetta, style = MaterialTheme.typography.bodyLarge)
+            Text(valore, style = MaterialTheme.typography.bodyLarge)
+        }
+        Text(
+            motivazione,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
 }
