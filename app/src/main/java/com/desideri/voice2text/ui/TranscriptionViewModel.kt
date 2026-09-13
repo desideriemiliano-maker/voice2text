@@ -11,6 +11,7 @@ import androidx.lifecycle.viewModelScope
 import com.desideri.voice2text.BuildConfig
 import com.desideri.voice2text.audio.AudioRecorder
 import com.desideri.voice2text.gemini.GeminiTranscriber
+import com.desideri.voice2text.gemini.StileRiscrittura
 import com.desideri.voice2text.gemini.TrascrizioneResult
 import kotlinx.coroutines.launch
 
@@ -20,6 +21,9 @@ data class TranscriptionUiState(
     val isRecording: Boolean = false,
     val isTranscribing: Boolean = false,
     val result: TrascrizioneResult? = null,
+    val isRiscrivendo: Boolean = false,
+    val stileRiscritto: StileRiscrittura? = null,
+    val testoRiscritto: String? = null,
     val error: String? = null
 )
 
@@ -82,13 +86,35 @@ class TranscriptionViewModel(application: Application) : AndroidViewModel(applic
             return
         }
 
-        uiState = uiState.copy(isTranscribing = true, error = null, result = null)
+        uiState = uiState.copy(
+            isTranscribing = true, error = null, result = null,
+            testoRiscritto = null, stileRiscritto = null
+        )
         viewModelScope.launch {
             uiState = try {
                 val risultato = transcriber.transcribe(getApplication(), BuildConfig.GEMINI_API_KEY, uri)
                 uiState.copy(isTranscribing = false, result = risultato)
             } catch (e: Exception) {
                 uiState.copy(isTranscribing = false, error = e.message ?: "Errore durante la trascrizione.")
+            }
+        }
+    }
+
+    /** Riscrive il testo gia' trascritto nello [stile] scelto (Formale/Amichevole/Neutro). */
+    fun riscrivi(stile: StileRiscrittura) {
+        val testo = uiState.result?.testo ?: return
+        if (BuildConfig.GEMINI_API_KEY.isBlank()) {
+            uiState = uiState.copy(error = "GEMINI_API_KEY non configurata in local.properties.")
+            return
+        }
+
+        uiState = uiState.copy(isRiscrivendo = true, error = null, testoRiscritto = null, stileRiscritto = null)
+        viewModelScope.launch {
+            uiState = try {
+                val riscritto = transcriber.riscrivi(BuildConfig.GEMINI_API_KEY, testo, stile)
+                uiState.copy(isRiscrivendo = false, testoRiscritto = riscritto, stileRiscritto = stile)
+            } catch (e: Exception) {
+                uiState.copy(isRiscrivendo = false, error = e.message ?: "Errore durante la riscrittura.")
             }
         }
     }

@@ -73,6 +73,13 @@ private fun schemaTrascrizione(): Schema =
         )
         .build()
 
+/** Stile con cui far riscrivere a Gemini il testo trascritto. */
+enum class StileRiscrittura(val etichetta: String, val istruzione: String) {
+    FORMALE("Formale", "formale ed educato, adatto a un contesto professionale"),
+    AMICHEVOLE("Amichevole", "amichevole, colloquiale e cordiale, come tra persone che si conoscono bene"),
+    NEUTRO("Neutro", "neutro e diretto, senza toni particolari")
+}
+
 /**
  * Incapsula la chiamata a Gemini per la trascrizione: legge i byte dell'audio dal content
  * resolver (funziona sia per l'Uri ricevuto via condivisione sia per quello scelto dal file
@@ -121,5 +128,29 @@ class GeminiTranscriber {
             tonoVoce = obj.optString("tonoVoce").ifBlank { "Non determinabile" },
             tonoVoceMotivazione = obj.optString("tonoVoceMotivazione").ifBlank { "Nessuna motivazione disponibile." }
         )
+    }
+
+    /**
+     * Riscrive [testo] nello [stile] richiesto, mantenendone il significato. Solo testo (nessun
+     * audio, nessuno schema JSON): stessa modalita' di chiamata usata in [transcribe] ma piu'
+     * semplice, come valutaTesto in GeminiWorkoutAnalyzer.
+     */
+    suspend fun riscrivi(apiKey: String, testo: String, stile: StileRiscrittura): String {
+        val prompt = "Riscrivi il seguente testo (trascrizione di un audio) in italiano, con uno " +
+            "stile ${stile.istruzione}. Mantieni il significato originale, senza aggiungere " +
+            "informazioni non presenti nel testo. Restituisci solo il testo riscritto, senza " +
+            "commenti, titoli o virgolette.\n\nTesto da riscrivere:\n$testo"
+
+        val config = GenerateContentConfig.builder().build()
+
+        val client = Client.builder()
+            .apiKey(apiKey)
+            .build()
+
+        val response = withContext(Dispatchers.IO) {
+            client.models.generateContent(GEMINI_MODEL, Content.fromParts(Part.fromText(prompt)), config)
+        }
+
+        return response.text()?.trim().orEmpty().ifEmpty { "Gemini non ha restituito alcun testo riscritto." }
     }
 }

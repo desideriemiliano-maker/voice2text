@@ -46,6 +46,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import com.desideri.voice2text.gemini.StileRiscrittura
 import kotlinx.coroutines.delay
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -227,6 +228,45 @@ fun Voice2TextScreen(viewModel: TranscriptionViewModel, sharedIntent: Intent?) {
                 Spacer(Modifier.height(16.dp))
                 Button(onClick = { clipboard.setText(AnnotatedString(risultato.testo)) }) {
                     Text("Copia negli appunti")
+                }
+
+                Spacer(Modifier.height(24.dp))
+                Text("Riscrivi con uno stile diverso:", style = MaterialTheme.typography.titleMedium)
+                Spacer(Modifier.height(8.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    StileRiscrittura.entries.forEach { stile ->
+                        OutlinedButton(
+                            onClick = { viewModel.riscrivi(stile) },
+                            enabled = !uiState.isRiscrivendo,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text(stile.etichetta)
+                        }
+                    }
+                }
+
+                if (uiState.isRiscrivendo) {
+                    Spacer(Modifier.height(12.dp))
+                    CircularProgressIndicator()
+                }
+
+                uiState.testoRiscritto?.let { testoRiscritto ->
+                    Spacer(Modifier.height(12.dp))
+                    Text(
+                        "Versione ${uiState.stileRiscritto?.etichetta.orEmpty()}:",
+                        style = MaterialTheme.typography.titleSmall
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    SelectionContainer {
+                        Text(testoRiscritto)
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    Button(onClick = { clipboard.setText(AnnotatedString(testoRiscritto)) }) {
+                        Text("Copia negli appunti")
+                    }
                 }
 
                 Spacer(Modifier.height(24.dp))
