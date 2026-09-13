@@ -91,6 +91,21 @@ fun Voice2TextScreen(viewModel: TranscriptionViewModel, sharedIntent: Intent?) {
         if (giaConcesso) viewModel.avviaRegistrazione() else recordPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
     }
 
+    val savePermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { concesso ->
+        if (concesso) viewModel.salvaAudio() else viewModel.segnalaPermessoSalvataggioNegato()
+    }
+
+    // Da Android 10 (Q) in poi il salvataggio passa da MediaStore: nessun permesso richiesto.
+    fun salvaAudioRichiedendoPermesso() {
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+            viewModel.salvaAudio()
+            return
+        }
+        val giaConcesso = ContextCompat.checkSelfPermission(context, Manifest.permission.WRITE_EXTERNAL_STORAGE) ==
+            PackageManager.PERMISSION_GRANTED
+        if (giaConcesso) viewModel.salvaAudio() else savePermissionLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+    }
+
     // Timer mostrato durante la registrazione: puramente cosmetico, vive solo in UI (lo stato
     // vero, avviato/fermato, resta nel ViewModel/MediaRecorder).
     var secondiRegistrazione by remember { mutableStateOf(0) }
@@ -204,6 +219,17 @@ fun Voice2TextScreen(viewModel: TranscriptionViewModel, sharedIntent: Intent?) {
                         Text("Annulla")
                     }
                 }
+                Spacer(Modifier.height(12.dp))
+                OutlinedButton(
+                    onClick = { salvaAudioRichiedendoPermesso() },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Salva audio localmente")
+                }
+                uiState.messaggioSalvataggio?.let { messaggio ->
+                    Spacer(Modifier.height(8.dp))
+                    Text(messaggio, style = MaterialTheme.typography.bodySmall)
+                }
             }
 
             if (uiState.isTranscribing) {
@@ -229,6 +255,19 @@ fun Voice2TextScreen(viewModel: TranscriptionViewModel, sharedIntent: Intent?) {
                 Button(onClick = { clipboard.setText(AnnotatedString(risultato.testo)) }) {
                     Text("Copia negli appunti")
                 }
+
+                Spacer(Modifier.height(24.dp))
+                Text("Riassunto:", style = MaterialTheme.typography.titleMedium)
+                Spacer(Modifier.height(8.dp))
+                Text(risultato.riassunto)
+
+                Spacer(Modifier.height(24.dp))
+                Text("Stime dalla voce (indicative, non certe):", style = MaterialTheme.typography.titleMedium)
+                Spacer(Modifier.height(8.dp))
+                RigaStima("Genere", risultato.genere)
+                RigaStima("Eta'", risultato.eta)
+                RigaStimaConMotivazione("Umore", risultato.umore, risultato.umoreMotivazione)
+                RigaStimaConMotivazione("Tono di voce", risultato.tonoVoce, risultato.tonoVoceMotivazione)
 
                 Spacer(Modifier.height(24.dp))
                 Text("Riscrivi con uno stile diverso:", style = MaterialTheme.typography.titleMedium)
@@ -270,17 +309,12 @@ fun Voice2TextScreen(viewModel: TranscriptionViewModel, sharedIntent: Intent?) {
                 }
 
                 Spacer(Modifier.height(24.dp))
-                Text("Riassunto:", style = MaterialTheme.typography.titleMedium)
-                Spacer(Modifier.height(8.dp))
-                Text(risultato.riassunto)
-
-                Spacer(Modifier.height(24.dp))
-                Text("Stime dalla voce (indicative, non certe):", style = MaterialTheme.typography.titleMedium)
-                Spacer(Modifier.height(8.dp))
-                RigaStima("Genere", risultato.genere)
-                RigaStima("Eta'", risultato.eta)
-                RigaStimaConMotivazione("Umore", risultato.umore, risultato.umoreMotivazione)
-                RigaStimaConMotivazione("Tono di voce", risultato.tonoVoce, risultato.tonoVoceMotivazione)
+                OutlinedButton(
+                    onClick = { viewModel.puliciRisultati() },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Pulisci risultati")
+                }
             }
         }
     }

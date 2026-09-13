@@ -10,10 +10,13 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.desideri.voice2text.BuildConfig
 import com.desideri.voice2text.audio.AudioRecorder
+import com.desideri.voice2text.audio.AudioSaver
 import com.desideri.voice2text.gemini.GeminiTranscriber
 import com.desideri.voice2text.gemini.StileRiscrittura
 import com.desideri.voice2text.gemini.TrascrizioneResult
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 data class TranscriptionUiState(
     val audioUri: Uri? = null,
@@ -24,6 +27,7 @@ data class TranscriptionUiState(
     val isRiscrivendo: Boolean = false,
     val stileRiscritto: StileRiscrittura? = null,
     val testoRiscritto: String? = null,
+    val messaggioSalvataggio: String? = null,
     val error: String? = null
 )
 
@@ -36,12 +40,41 @@ class TranscriptionViewModel(application: Application) : AndroidViewModel(applic
 
     private val transcriber = GeminiTranscriber()
     private val audioRecorder = AudioRecorder(application)
+    private val audioSaver = AudioSaver(application)
 
     var uiState by mutableStateOf(TranscriptionUiState())
         private set
 
     fun selezionaAudio(uri: Uri) {
         uiState = TranscriptionUiState(audioUri = uri, fileName = resolveFileName(uri))
+    }
+
+    /** Copia il file audio corrente in Musica/Voice2Text, cosi' resta anche fuori dall'app. */
+    fun salvaAudio() {
+        val uri = uiState.audioUri ?: return
+        val nomeFile = uiState.fileName ?: "voice2text_${System.currentTimeMillis()}"
+        uiState = uiState.copy(messaggioSalvataggio = null, error = null)
+        viewModelScope.launch {
+            uiState = try {
+                withContext(Dispatchers.IO) { audioSaver.salva(uri, nomeFile) }
+                uiState.copy(messaggioSalvataggio = "Audio salvato in Musica/Voice2Text.")
+            } catch (e: Exception) {
+                uiState.copy(error = "Impossibile salvare l'audio: ${e.message}")
+            }
+        }
+    }
+
+    fun segnalaPermessoSalvataggioNegato() {
+        uiState = uiState.copy(error = "Permesso di archiviazione negato: impossibile salvare l'audio.")
+    }
+
+    /** Ripulisce solo i risultati (trascrizione, riscrittura, messaggi), non l'audio selezionato. */
+    fun puliciRisultati() {
+        uiState = uiState.copy(
+            result = null, error = null,
+            testoRiscritto = null, stileRiscritto = null, isRiscrivendo = false,
+            messaggioSalvataggio = null
+        )
     }
 
     /** Il permesso RECORD_AUDIO va gia' concesso a questo punto: lo richiede la UI. */
