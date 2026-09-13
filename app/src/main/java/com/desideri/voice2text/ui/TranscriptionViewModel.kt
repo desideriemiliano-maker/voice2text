@@ -9,6 +9,7 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.desideri.voice2text.BuildConfig
+import com.desideri.voice2text.audio.AudioRecorder
 import com.desideri.voice2text.gemini.GeminiTranscriber
 import com.desideri.voice2text.gemini.TrascrizioneResult
 import kotlinx.coroutines.launch
@@ -16,6 +17,7 @@ import kotlinx.coroutines.launch
 data class TranscriptionUiState(
     val audioUri: Uri? = null,
     val fileName: String? = null,
+    val isRecording: Boolean = false,
     val isTranscribing: Boolean = false,
     val result: TrascrizioneResult? = null,
     val error: String? = null
@@ -29,12 +31,48 @@ data class TranscriptionUiState(
 class TranscriptionViewModel(application: Application) : AndroidViewModel(application) {
 
     private val transcriber = GeminiTranscriber()
+    private val audioRecorder = AudioRecorder(application)
 
     var uiState by mutableStateOf(TranscriptionUiState())
         private set
 
     fun selezionaAudio(uri: Uri) {
         uiState = TranscriptionUiState(audioUri = uri, fileName = resolveFileName(uri))
+    }
+
+    /** Il permesso RECORD_AUDIO va gia' concesso a questo punto: lo richiede la UI. */
+    fun avviaRegistrazione() {
+        try {
+            audioRecorder.avvia()
+            uiState = TranscriptionUiState(isRecording = true)
+        } catch (e: Exception) {
+            uiState = TranscriptionUiState(error = "Impossibile avviare la registrazione: ${e.message}")
+        }
+    }
+
+    /** Ferma la registrazione e avvia subito la trascrizione del file appena registrato. */
+    fun fermaRegistrazioneETrascrivi() {
+        val uri = audioRecorder.ferma()
+        if (uri != null) {
+            selezionaAudio(uri)
+            trascrivi()
+        } else {
+            uiState = TranscriptionUiState(error = "Registrazione non riuscita.")
+        }
+    }
+
+    fun annullaRegistrazione() {
+        audioRecorder.annulla()
+        uiState = TranscriptionUiState()
+    }
+
+    fun segnalaPermessoMicrofonoNegato() {
+        uiState = uiState.copy(error = "Permesso microfono negato: impossibile registrare.")
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        if (uiState.isRecording) audioRecorder.annulla()
     }
 
     fun trascrivi() {

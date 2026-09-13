@@ -1,6 +1,8 @@
 package com.desideri.voice2text.ui
 
+import android.Manifest
 import android.content.Intent
+import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -11,10 +13,12 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.FiberManualRecord
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.Button
@@ -41,6 +45,8 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
+import kotlinx.coroutines.delay
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -74,6 +80,29 @@ fun Voice2TextScreen(viewModel: TranscriptionViewModel, sharedIntent: Intent?) {
         }
     }
 
+    val recordPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { concesso ->
+        if (concesso) viewModel.avviaRegistrazione() else viewModel.segnalaPermessoMicrofonoNegato()
+    }
+
+    fun avviaRegistrazioneRichiedendoPermesso() {
+        val giaConcesso = ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) ==
+            PackageManager.PERMISSION_GRANTED
+        if (giaConcesso) viewModel.avviaRegistrazione() else recordPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+    }
+
+    // Timer mostrato durante la registrazione: puramente cosmetico, vive solo in UI (lo stato
+    // vero, avviato/fermato, resta nel ViewModel/MediaRecorder).
+    var secondiRegistrazione by remember { mutableStateOf(0) }
+    LaunchedEffect(uiState.isRecording) {
+        if (uiState.isRecording) {
+            secondiRegistrazione = 0
+            while (true) {
+                delay(1000)
+                secondiRegistrazione++
+            }
+        }
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -101,11 +130,52 @@ fun Voice2TextScreen(viewModel: TranscriptionViewModel, sharedIntent: Intent?) {
                 .verticalScroll(rememberScrollState()),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Button(
-                onClick = { filePicker.launch(arrayOf("audio/*")) },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text("Scegli file audio")
+            if (uiState.isRecording) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        Icons.Filled.FiberManualRecord,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.error
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text("Registrazione in corso... ${formattaTempo(secondiRegistrazione)}")
+                }
+                Spacer(Modifier.height(16.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Button(
+                        onClick = { viewModel.fermaRegistrazioneETrascrivi() },
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("Ferma e trascrivi")
+                    }
+                    OutlinedButton(
+                        onClick = { viewModel.annullaRegistrazione() },
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("Annulla")
+                    }
+                }
+            } else {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Button(
+                        onClick = { filePicker.launch(arrayOf("audio/*")) },
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("Scegli file audio")
+                    }
+                    Button(
+                        onClick = { avviaRegistrazioneRichiedendoPermesso() },
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("Registra audio")
+                    }
+                }
             }
 
             Spacer(Modifier.height(16.dp))
@@ -178,6 +248,12 @@ fun Voice2TextScreen(viewModel: TranscriptionViewModel, sharedIntent: Intent?) {
     if (mostraVersioni) {
         VersioniDialog(onDismiss = { mostraVersioni = false })
     }
+}
+
+private fun formattaTempo(secondi: Int): String {
+    val minuti = secondi / 60
+    val resto = secondi % 60
+    return "%02d:%02d".format(minuti, resto)
 }
 
 @Composable
