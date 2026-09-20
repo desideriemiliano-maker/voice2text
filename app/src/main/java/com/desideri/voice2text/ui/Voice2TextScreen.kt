@@ -21,6 +21,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.FiberManualRecord
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -257,7 +259,14 @@ fun Voice2TextScreen(viewModel: TranscriptionViewModel, sharedIntent: Intent?) {
                 }
 
                 Spacer(Modifier.height(24.dp))
-                Text("Riassunto:", style = MaterialTheme.typography.titleMedium)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Riassunto:", style = MaterialTheme.typography.titleMedium)
+                    PulsanteAscolto(
+                        inLettura = uiState.testoInLettura == TestoInLettura.RIASSUNTO,
+                        contentDescription = "Ascolta riassunto",
+                        onClick = { viewModel.leggiORiassunto() }
+                    )
+                }
                 Spacer(Modifier.height(8.dp))
                 Text(risultato.riassunto)
 
@@ -294,10 +303,17 @@ fun Voice2TextScreen(viewModel: TranscriptionViewModel, sharedIntent: Intent?) {
 
                 uiState.testoRiscritto?.let { testoRiscritto ->
                     Spacer(Modifier.height(12.dp))
-                    Text(
-                        "Versione ${uiState.stileRiscritto?.etichetta.orEmpty()}:",
-                        style = MaterialTheme.typography.titleSmall
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            "Versione ${uiState.stileRiscritto?.etichetta.orEmpty()}:",
+                            style = MaterialTheme.typography.titleSmall
+                        )
+                        PulsanteAscolto(
+                            inLettura = uiState.testoInLettura == TestoInLettura.RISCRITTO,
+                            contentDescription = "Ascolta versione riscritta",
+                            onClick = { viewModel.leggiOTestoRiscritto() }
+                        )
+                    }
                     Spacer(Modifier.height(4.dp))
                     SelectionContainer {
                         Text(testoRiscritto)
@@ -321,6 +337,18 @@ fun Voice2TextScreen(viewModel: TranscriptionViewModel, sharedIntent: Intent?) {
 
     if (mostraVersioni) {
         VersioniDialog(onDismiss = { mostraVersioni = false })
+    }
+}
+
+/** Pulsante a icona che alterna play/stop per la lettura ad alta voce di un testo. */
+@Composable
+private fun PulsanteAscolto(inLettura: Boolean, contentDescription: String, onClick: () -> Unit) {
+    IconButton(onClick = onClick) {
+        if (inLettura) {
+            Icon(Icons.Filled.Stop, contentDescription = "Ferma lettura")
+        } else {
+            Icon(Icons.Filled.PlayArrow, contentDescription = contentDescription)
+        }
     }
 }
 

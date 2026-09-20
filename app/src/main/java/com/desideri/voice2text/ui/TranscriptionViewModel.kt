@@ -11,12 +11,16 @@ import androidx.lifecycle.viewModelScope
 import com.desideri.voice2text.BuildConfig
 import com.desideri.voice2text.audio.AudioRecorder
 import com.desideri.voice2text.audio.AudioSaver
+import com.desideri.voice2text.audio.TtsSpeaker
 import com.desideri.voice2text.gemini.GeminiTranscriber
 import com.desideri.voice2text.gemini.StileRiscrittura
 import com.desideri.voice2text.gemini.TrascrizioneResult
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+
+/** Quale testo sta leggendo il TTS in questo momento, se ce n'e' uno. */
+enum class TestoInLettura { RIASSUNTO, RISCRITTO }
 
 data class TranscriptionUiState(
     val audioUri: Uri? = null,
@@ -27,6 +31,7 @@ data class TranscriptionUiState(
     val isRiscrivendo: Boolean = false,
     val stileRiscritto: StileRiscrittura? = null,
     val testoRiscritto: String? = null,
+    val testoInLettura: TestoInLettura? = null,
     val messaggioSalvataggio: String? = null,
     val error: String? = null
 )
@@ -41,6 +46,9 @@ class TranscriptionViewModel(application: Application) : AndroidViewModel(applic
     private val transcriber = GeminiTranscriber()
     private val audioRecorder = AudioRecorder(application)
     private val audioSaver = AudioSaver(application)
+    private val ttsSpeaker = TtsSpeaker(application) {
+        viewModelScope.launch(Dispatchers.Main) { uiState = uiState.copy(testoInLettura = null) }
+    }
 
     var uiState by mutableStateOf(TranscriptionUiState())
         private set
@@ -70,10 +78,11 @@ class TranscriptionViewModel(application: Application) : AndroidViewModel(applic
 
     /** Ripulisce solo i risultati (trascrizione, riscrittura, messaggi), non l'audio selezionato. */
     fun puliciRisultati() {
+        ttsSpeaker.ferma()
         uiState = uiState.copy(
             result = null, error = null,
             testoRiscritto = null, stileRiscritto = null, isRiscrivendo = false,
-            messaggioSalvataggio = null
+            testoInLettura = null, messaggioSalvataggio = null
         )
     }
 
@@ -110,6 +119,7 @@ class TranscriptionViewModel(application: Application) : AndroidViewModel(applic
     override fun onCleared() {
         super.onCleared()
         if (uiState.isRecording) audioRecorder.annulla()
+        ttsSpeaker.rilascia()
     }
 
     fun trascrivi() {
@@ -119,9 +129,10 @@ class TranscriptionViewModel(application: Application) : AndroidViewModel(applic
             return
         }
 
+        ttsSpeaker.ferma()
         uiState = uiState.copy(
             isTranscribing = true, error = null, result = null,
-            testoRiscritto = null, stileRiscritto = null
+            testoRiscritto = null, stileRiscritto = null, testoInLettura = null
         )
         viewModelScope.launch {
             uiState = try {
@@ -141,7 +152,12 @@ class TranscriptionViewModel(application: Application) : AndroidViewModel(applic
             return
         }
 
-        uiState = uiState.copy(isRiscrivendo = true, error = null, testoRiscritto = null, stileRiscritto = null)
+        val stavaLeggendoRiscritto = uiState.testoInLettura == TestoInLettura.RISCRITTO
+        if (stavaLeggendoRiscritto) ttsSpeaker.ferma()
+        uiState = uiState.copy(
+            isRiscrivendo = true, error = null, testoRiscritto = null, stileRiscritto = null,
+            testoInLettura = if (stavaLeggendoRiscritto) null else uiState.testoInLettura
+        )
         viewModelScope.launch {
             uiState = try {
                 val riscritto = transcriber.riscrivi(BuildConfig.GEMINI_API_KEY, testo, stile)
@@ -153,7 +169,35 @@ class TranscriptionViewModel(application: Application) : AndroidViewModel(applic
     }
 
     fun reset() {
+        ttsSpeaker.ferma()
         uiState = TranscriptionUiState()
+    }
+
+    /** Avvia/ferma la lettura ad alta voce del riassunto (toggle sul pulsante in UI). */
+    fun leggiORiassunto() {
+        if (uiState.testoInLettura == TestoInLettura.RIASSUNTO) {
+            fermaLettura()
+            return
+        }
+        val testo = uiState.result?.riassunto ?: return
+        ttsSpeaker.leggi(testo, "riassunto")
+        uiState = uiState.copy(testoInLettura = TestoInLettura.RIASSUNTO)
+    }
+
+    /** Avvia/ferma la lettura ad alta voce del testo riscritto (toggle sul pulsante in UI). */
+    fun leggiOTestoRiscritto() {
+        if (uiState.testoInLettura == TestoInLettura.RISCRITTO) {
+            fermaLettura()
+            return
+        }
+        val testo = uiState.testoRiscritto ?: return
+        ttsSpeaker.leggi(testo, "riscritto")
+        uiState = uiState.copy(testoInLettura = TestoInLettura.RISCRITTO)
+    }
+
+    private fun fermaLettura() {
+        ttsSpeaker.ferma()
+        uiState = uiState.copy(testoInLettura = null)
     }
 
     private fun resolveFileName(uri: Uri): String? {
