@@ -93,7 +93,23 @@ android {
         android.buildFeatures.buildConfig = true
     }
 
+    // Keystore di debug condiviso (committato in keystore/debug.keystore) invece di quello
+    // generato in automatico da AGP per ogni macchina: cosi' le build CI e quelle locali
+    // firmano allo stesso modo e l'apk si installa come aggiornamento, senza mai richiedere
+    // la disinstallazione. Stesso approccio usato in WorkoutAnalyzer e Calendario++.
+    signingConfigs {
+        getByName("debug") {
+            storeFile = rootProject.file("keystore/debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
+    }
+
     buildTypes {
+        debug {
+            signingConfig = signingConfigs.getByName("debug")
+        }
         release {
             isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
