@@ -13,6 +13,7 @@ import com.desideri.voice2text.audio.AudioRecorder
 import com.desideri.voice2text.audio.AudioSaver
 import com.desideri.voice2text.audio.TtsSpeaker
 import com.desideri.voice2text.gemini.GeminiTranscriber
+import com.desideri.voice2text.gemini.RegistroPromptStore
 import com.desideri.voice2text.gemini.StileRiscrittura
 import com.desideri.voice2text.gemini.TrascrizioneResult
 import kotlinx.coroutines.Dispatchers
@@ -43,7 +44,7 @@ data class TranscriptionUiState(
  */
 class TranscriptionViewModel(application: Application) : AndroidViewModel(application) {
 
-    private val transcriber = GeminiTranscriber()
+    private val transcriber = GeminiTranscriber(RegistroPromptStore(application))
     private val audioRecorder = AudioRecorder(application)
     private val audioSaver = AudioSaver(application)
     private val ttsSpeaker = TtsSpeaker(application) {

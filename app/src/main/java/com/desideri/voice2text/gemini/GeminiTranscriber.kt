@@ -88,7 +88,7 @@ enum class StileRiscrittura(val etichetta: String, val istruzione: String) {
  * progetto WorkoutAnalyzer, qui con responseSchema per ottenere un JSON affidabile invece del
  * solo testo (vedi generaJsonStrutturato in GeminiWorkoutAnalyzer).
  */
-class GeminiTranscriber {
+class GeminiTranscriber(private val registro: RegistroPromptStore? = null) {
 
     suspend fun transcribe(context: Context, apiKey: String, uri: Uri): TrascrizioneResult {
         val mimeType = context.contentResolver.getType(uri) ?: DEFAULT_AUDIO_MIME_TYPE
@@ -110,24 +110,31 @@ class GeminiTranscriber {
             .apiKey(apiKey)
             .build()
 
-        val response = withContext(Dispatchers.IO) {
-            client.models.generateContent(GEMINI_MODEL, Content.fromParts(audioPart, textPart), config)
+        try {
+            val response = withContext(Dispatchers.IO) {
+                client.models.generateContent(GEMINI_MODEL, Content.fromParts(audioPart, textPart), config)
+            }
+
+            val json = response.text()
+                ?: throw IllegalStateException("Gemini non ha restituito alcuna trascrizione.")
+
+            registraChiamata(TipoChiamataGemini.TRASCRIZIONE, PROMPT_TRASCRIZIONE, json, errore = false)
+
+            val obj = JSONObject(json)
+            return TrascrizioneResult(
+                testo = obj.optString("testoTrascritto").ifBlank { "Nessun testo trascritto." },
+                riassunto = obj.optString("riassunto").ifBlank { "Nessun riassunto disponibile." },
+                genere = obj.optString("genere").ifBlank { "Non determinabile" },
+                eta = obj.optString("eta").ifBlank { "Non determinabile" },
+                umore = obj.optString("umore").ifBlank { "Non determinabile" },
+                umoreMotivazione = obj.optString("umoreMotivazione").ifBlank { "Nessuna motivazione disponibile." },
+                tonoVoce = obj.optString("tonoVoce").ifBlank { "Non determinabile" },
+                tonoVoceMotivazione = obj.optString("tonoVoceMotivazione").ifBlank { "Nessuna motivazione disponibile." }
+            )
+        } catch (e: Exception) {
+            registraChiamata(TipoChiamataGemini.TRASCRIZIONE, PROMPT_TRASCRIZIONE, e.message ?: "Errore sconosciuto.", errore = true)
+            throw e
         }
-
-        val json = response.text()
-            ?: throw IllegalStateException("Gemini non ha restituito alcuna trascrizione.")
-
-        val obj = JSONObject(json)
-        return TrascrizioneResult(
-            testo = obj.optString("testoTrascritto").ifBlank { "Nessun testo trascritto." },
-            riassunto = obj.optString("riassunto").ifBlank { "Nessun riassunto disponibile." },
-            genere = obj.optString("genere").ifBlank { "Non determinabile" },
-            eta = obj.optString("eta").ifBlank { "Non determinabile" },
-            umore = obj.optString("umore").ifBlank { "Non determinabile" },
-            umoreMotivazione = obj.optString("umoreMotivazione").ifBlank { "Nessuna motivazione disponibile." },
-            tonoVoce = obj.optString("tonoVoce").ifBlank { "Non determinabile" },
-            tonoVoceMotivazione = obj.optString("tonoVoceMotivazione").ifBlank { "Nessuna motivazione disponibile." }
-        )
     }
 
     /**
@@ -147,10 +154,22 @@ class GeminiTranscriber {
             .apiKey(apiKey)
             .build()
 
-        val response = withContext(Dispatchers.IO) {
-            client.models.generateContent(GEMINI_MODEL, Content.fromParts(Part.fromText(prompt)), config)
-        }
+        try {
+            val response = withContext(Dispatchers.IO) {
+                client.models.generateContent(GEMINI_MODEL, Content.fromParts(Part.fromText(prompt)), config)
+            }
 
-        return response.text()?.trim().orEmpty().ifEmpty { "Gemini non ha restituito alcun testo riscritto." }
+            val risultato = response.text()?.trim().orEmpty().ifEmpty { "Gemini non ha restituito alcun testo riscritto." }
+            registraChiamata(TipoChiamataGemini.RISCRITTURA, prompt, risultato, errore = false)
+            return risultato
+        } catch (e: Exception) {
+            registraChiamata(TipoChiamataGemini.RISCRITTURA, prompt, e.message ?: "Errore sconosciuto.", errore = true)
+            throw e
+        }
+    }
+
+    private suspend fun registraChiamata(tipo: TipoChiamataGemini, prompt: String, risultato: String, errore: Boolean) {
+        val store = registro ?: return
+        withContext(Dispatchers.IO) { store.registra(tipo, prompt, risultato, errore) }
     }
 }

@@ -19,6 +19,7 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.FiberManualRecord
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
@@ -59,6 +60,7 @@ fun Voice2TextScreen(viewModel: TranscriptionViewModel, sharedIntent: Intent?) {
     val uiState = viewModel.uiState
     var menuEspanso by remember { mutableStateOf(false) }
     var mostraVersioni by remember { mutableStateOf(false) }
+    var mostraRegistro by remember { mutableStateOf(false) }
 
     // Un audio condiviso da un'altra app (es. WhatsApp -> Condividi) arriva come ACTION_SEND
     // con l'Uri in EXTRA_STREAM. Si riattiva a ogni nuovo intent (vedi onNewIntent in MainActivity).
@@ -134,6 +136,11 @@ fun Voice2TextScreen(viewModel: TranscriptionViewModel, sharedIntent: Intent?) {
                             text = { Text("Versioni") },
                             leadingIcon = { Icon(Icons.Filled.Info, contentDescription = null) },
                             onClick = { menuEspanso = false; mostraVersioni = true }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Registro") },
+                            leadingIcon = { Icon(Icons.Filled.History, contentDescription = null) },
+                            onClick = { menuEspanso = false; mostraRegistro = true }
                         )
                     }
                 }
@@ -337,6 +344,9 @@ fun Voice2TextScreen(viewModel: TranscriptionViewModel, sharedIntent: Intent?) {
 
     if (mostraVersioni) {
         VersioniDialog(onDismiss = { mostraVersioni = false })
+    }
+    if (mostraRegistro) {
+        RegistroDialog(onDismiss = { mostraRegistro = false })
     }
 }
 
