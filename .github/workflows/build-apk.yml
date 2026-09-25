@@ -2,6 +2,9 @@ name: Build debug APK
 on:
   push:
     branches: [master]
+    paths-ignore:
+      - "SpeseFamiglia/**"
+      - ".github/workflows/build-spese-apk.yml"
   workflow_dispatch:
 permissions:
   contents: write

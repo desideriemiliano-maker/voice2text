@@ -1,0 +1,4 @@
+# Mai committare l'Excel con i dati reali: il repository è pubblico.
+*.xlsx
+*.xls
+*.db
