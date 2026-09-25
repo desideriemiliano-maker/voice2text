@@ -1,5 +1,15 @@
 package com.desideri.familybalance.ui
 
+import android.net.Uri
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.material.icons.automirrored.filled.ReceiptLong
+import androidx.compose.material.icons.filled.Link
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.TextButton
+import com.desideri.familybalance.data.Conto
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -60,6 +70,7 @@ sealed interface Schermata {
     data class Operazioni(val contoValutaId: Long) : Schermata
     data object AnagraficaSpese : Schermata
     data object AnagraficaConti : Schermata
+    data object AnagraficaAssociazioni : Schermata
     data object Impostazioni : Schermata
     data object Backup : Schermata
 }
@@ -85,6 +96,7 @@ fun SpeseApp(vm: SpeseViewModel = viewModel()) {
             is Schermata.Operazioni -> OperazioniScreen(vm, corrente.contoValutaId, onIndietro = ::chiudi)
             Schermata.AnagraficaSpese -> AnagraficaSpeseScreen(vm, onIndietro = ::chiudi)
             Schermata.AnagraficaConti -> AnagraficaContiScreen(vm, onIndietro = ::chiudi)
+            Schermata.AnagraficaAssociazioni -> AnagraficaAssociazioniScreen(vm, onIndietro = ::chiudi)
             Schermata.Impostazioni -> ImpostazioniScreen(vm, onIndietro = ::chiudi)
             Schermata.Backup -> BackupScreen(vm, onIndietro = ::chiudi)
         }
@@ -100,6 +112,14 @@ private fun SchermataPrincipale(vm: SpeseViewModel, sezione: Sezione, onSezione:
     var confermaImport by remember { mutableStateOf(false) }
     val importazioneInCorso by vm.importazioneInCorso.collectAsStateWithLifecycle()
     val analisiImport by vm.analisiImport.collectAsStateWithLifecycle()
+    val importEstratto by vm.importEstratto.collectAsStateWithLifecycle()
+    val testoAttesa by vm.testoAttesa.collectAsStateWithLifecycle()
+    val dati by vm.dati.collectAsStateWithLifecycle()
+    // File dell'estratto conto scelto, in attesa della scelta del conto su cui importarlo.
+    var fileEstratto by remember { mutableStateOf<Uri?>(null) }
+    val sceltaEstratto = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) fileEstratto = uri
+    }
 
     val sceltaExcel = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) vm.importaExcel(uri)
@@ -117,6 +137,11 @@ private fun SchermataPrincipale(vm: SpeseViewModel, sezione: Sezione, onSezione:
                             VoceMenu("Anagrafica conti", Icons.Filled.AccountBalanceWallet) { menuAperto = false; onApri(Schermata.AnagraficaConti) }
                             VoceMenu("Impostazioni", Icons.Filled.Settings) { menuAperto = false; onApri(Schermata.Impostazioni) }
                             VoceMenu("Backup Google Drive", Icons.Filled.CloudUpload) { menuAperto = false; onApri(Schermata.Backup) }
+                            VoceMenu("Importa estratto conto", Icons.AutoMirrored.Filled.ReceiptLong) {
+                                menuAperto = false
+                                sceltaEstratto.launch(arrayOf("*/*"))
+                            }
+                            VoceMenu("Anagrafica associazioni", Icons.Filled.Link) { menuAperto = false; onApri(Schermata.AnagraficaAssociazioni) }
                             VoceMenu("Importa da Excel", Icons.Filled.FileOpen) { menuAperto = false; confermaImport = true }
                             VoceMenu("Versioni", Icons.Filled.Info) { menuAperto = false; mostraVersioni = true }
                         }
@@ -180,6 +205,19 @@ private fun SchermataPrincipale(vm: SpeseViewModel, sezione: Sezione, onSezione:
         )
     }
 
+    fileEstratto?.let { uri ->
+        SceltaContoDialog(
+            conti = dati.conti,
+            onScelto = { contoId ->
+                fileEstratto = null
+                vm.importaEstratto(uri, contoId)
+            },
+            onAnnulla = { fileEstratto = null }
+        )
+    }
+
+    importEstratto?.let { ImportEstrattoDialog(vm, dati, it) }
+
     if (importazioneInCorso) {
         AlertDialog(
             onDismissRequest = {},
@@ -188,11 +226,42 @@ private fun SchermataPrincipale(vm: SpeseViewModel, sezione: Sezione, onSezione:
             text = {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     CircularProgressIndicator(modifier = Modifier.padding(end = 16.dp))
-                    Text("Lettura del file Excel…")
+                    Text(testoAttesa)
                 }
             }
         )
     }
+}
+
+/** Scelta del conto corrente su cui importare l'estratto conto. */
+@Composable
+private fun SceltaContoDialog(conti: List<Conto>, onScelto: (Long) -> Unit, onAnnulla: () -> Unit) {
+    var scelto by remember { mutableStateOf(conti.singleOrNull()?.id) }
+    AlertDialog(
+        onDismissRequest = onAnnulla,
+        title = { Text("Importa estratto conto nel conto") },
+        text = {
+            Column {
+                if (conti.isEmpty()) Text("Nessun conto configurato: crealo in Anagrafica conti.")
+                conti.forEach { conto ->
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth().clickable { scelto = conto.id }
+                    ) {
+                        RadioButton(selected = scelto == conto.id, onClick = { scelto = conto.id })
+                        Text(conto.nome)
+                    }
+                }
+                Text(
+                    "Il file viene inviato a Gemini per leggerne i movimenti.",
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(top = 8.dp)
+                )
+            }
+        },
+        confirmButton = { TextButton(onClick = { scelto?.let(onScelto) }, enabled = scelto != null) { Text("Importa") } },
+        dismissButton = { TextButton(onClick = onAnnulla) { Text("Annulla") } }
+    )
 }
 
 @Composable

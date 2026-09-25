@@ -9,14 +9,21 @@ import androidx.room.withTransaction
 import com.desideri.familybalance.backup.BackupDrive
 import com.desideri.familybalance.backup.InfoBackup
 import com.desideri.familybalance.data.AppDatabase
+import com.desideri.familybalance.data.Associazione
 import com.desideri.familybalance.data.Conto
 import com.desideri.familybalance.data.ContoValuta
 import com.desideri.familybalance.data.Impostazioni
 import com.desideri.familybalance.data.Operazione
 import com.desideri.familybalance.data.Preferenze
+import com.desideri.familybalance.data.Valute
 import com.desideri.familybalance.data.Voce
 import com.desideri.familybalance.importazione.AnalisiImport
 import com.desideri.familybalance.importazione.ImportatoreExcel
+import com.desideri.familybalance.estratto.EstrattoGemini
+import com.desideri.familybalance.estratto.ImportEstratto
+import com.desideri.familybalance.estratto.RigaEstratto
+import com.desideri.familybalance.estratto.SceltaEstratto
+import com.desideri.familybalance.logica.Associazioni
 import com.desideri.familybalance.logica.Calcoli
 import com.desideri.familybalance.logica.MeseRicorrenti
 import com.desideri.familybalance.logica.RigaBilancio
@@ -296,6 +303,139 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
             "Importate ${esito.operazioni} operazioni, ${esito.voci} voci (${esito.vociRicorrenti} ricorrenti)" +
                 (esito.targetRisparmioCent?.let { ", target ${formattaCent(it)}" } ?: "")
         )
+    }
+
+    // --- Import estratto conto (Gemini) e anagrafica associazioni ---
+
+    val associazioni: StateFlow<List<Associazione>> = dao.associazioniFlow()
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    private val _importEstratto = MutableStateFlow<ImportEstratto?>(null)
+    val importEstratto: StateFlow<ImportEstratto?> = _importEstratto.asStateFlow()
+
+    private val _testoAttesa = MutableStateFlow("Lettura del file…")
+    val testoAttesa: StateFlow<String> = _testoAttesa.asStateFlow()
+
+    /**
+     * Manda l'estratto conto a Gemini e confronta i movimenti con le operazioni del [contoId]: quelli
+     * con esattamente un'operazione già presente con stessa data e importo vengono saltati, gli altri
+     * sono proposti all'utente con i tipi suggeriti dall'anagrafica associazioni.
+     */
+    fun importaEstratto(uri: Uri, contoId: Long) = viewModelScope.launch {
+        val contiValuta = dati.value.contiValuta.filter { it.contoId == contoId }.sortedBy { if (it.valuta == Valute.EUR) 0 else 1 }
+        if (contiValuta.isEmpty()) return@launch messaggio("Il conto scelto non ha valute configurate")
+        _testoAttesa.value = "Analisi dell'estratto conto con Gemini…"
+        _importazioneInCorso.value = true
+        try {
+            val movimenti = EstrattoGemini(BuildConfig.GEMINI_API_KEY).estrai(getApplication(), uri, contiValuta.first().valuta)
+            val elencoAssociazioni = dao.associazioni()
+            var saltate = 0
+            val righe = movimenti.mapIndexedNotNull { indice, m ->
+                val cv = contiValuta.firstOrNull { it.valuta == m.valuta } ?: contiValuta.first()
+                val presenti = dao.contaOperazioniUguali(cv.id, m.data.toEpochDay(), m.importoCent)
+                if (presenti == 1) {
+                    saltate++
+                    null
+                } else {
+                    RigaEstratto(indice, m, cv.id, Associazioni.candidate(m.descrizione, elencoAssociazioni), presenti)
+                }
+            }
+            if (righe.isEmpty()) {
+                messaggio("Nessuna operazione nuova: ${movimenti.size} movimenti letti, $saltate già presenti")
+            } else {
+                _importEstratto.value = ImportEstratto(contoId, righe, saltate, movimenti.size)
+            }
+        } catch (e: Exception) {
+            messaggio("Import estratto conto non riuscito: ${e.message ?: e.javaClass.simpleName}")
+        } finally {
+            _importazioneInCorso.value = false
+            _testoAttesa.value = "Lettura del file…"
+        }
+    }
+
+    fun annullaImportEstratto() {
+        _importEstratto.value = null
+    }
+
+    /** Registra i movimenti scelti; tipi/sottotipi non ancora in anagrafica vengono creati. */
+    fun confermaImportEstratto(scelte: List<SceltaEstratto>) = viewModelScope.launch {
+        _importEstratto.value = null
+        var importate = 0
+        var nuoveVoci = 0
+        db.withTransaction {
+            val voci = dao.voci().toMutableList()
+            suspend fun voceId(tipo: String, sottotipo: String?): Long {
+                voci.firstOrNull { it.tipo.equals(tipo, true) && (it.sottotipo ?: "").equals(sottotipo ?: "", true) }?.let { return it.id }
+                val modello = voci.firstOrNull { it.tipo.equals(tipo, true) }
+                val nuova = Voce(
+                    tipo = modello?.tipo ?: tipo,
+                    sottotipo = sottotipo,
+                    entrata = modello?.entrata ?: false,
+                    ricorrente = modello?.ricorrente ?: false,
+                    mesiRicorrenza = modello?.mesiRicorrenza ?: 1,
+                    meseInizio = if (sottotipo == null) modello?.meseInizio else null
+                )
+                val id = dao.inserisciVoce(nuova)
+                voci += nuova.copy(id = id)
+                nuoveVoci++
+                return id
+            }
+            for (scelta in scelte) {
+                val m = scelta.riga.movimento
+                val note = m.descrizione.ifBlank { null }
+                val dest = scelta.destinazioneId
+                if (scelta.tipo.equals(Associazione.TIPO_SPOSTAMENTO, ignoreCase = true) && dest != null) {
+                    val op = Operazione(
+                        contoValutaId = scelta.riga.contoValutaId,
+                        data = m.data.toEpochDay(),
+                        importoCent = m.importoCent,
+                        trasferimento = true,
+                        contoValutaDestId = dest,
+                        note = note
+                    )
+                    val id = dao.inserisciOperazione(op)
+                    // Contro-operazione solo nella stessa valuta: con un cambio l'importo accreditato non è noto.
+                    if (dati.value.contiValutaPerId[dest]?.valuta == dati.value.contiValutaPerId[op.contoValutaId]?.valuta) {
+                        val idControparte = dao.inserisciOperazione(
+                            op.copy(contoValutaId = dest, importoCent = -m.importoCent, contoValutaDestId = op.contoValutaId, collegataId = id)
+                        )
+                        dao.aggiornaOperazione(op.copy(id = id, collegataId = idControparte))
+                    }
+                } else {
+                    dao.inserisciOperazione(
+                        Operazione(
+                            contoValutaId = scelta.riga.contoValutaId,
+                            data = m.data.toEpochDay(),
+                            importoCent = m.importoCent,
+                            voceId = voceId(scelta.tipo.trim(), scelta.sottotipo?.trim()?.ifEmpty { null }),
+                            note = note
+                        )
+                    )
+                }
+                importate++
+            }
+        }
+        messaggio("Importate $importate operazioni dall'estratto conto" + if (nuoveVoci > 0) " ($nuoveVoci nuove voci in anagrafica)" else "")
+    }
+
+    fun salvaAssociazione(associazione: Associazione) = viewModelScope.launch {
+        val pulita = associazione.copy(
+            chiave = associazione.chiave.trim(),
+            tipo = associazione.tipo.trim(),
+            sottotipo = associazione.sottotipo?.trim()?.ifEmpty { null }
+        )
+        if (pulita.chiave.isEmpty() || pulita.tipo.isEmpty()) return@launch messaggio("Chiave e tipo sono obbligatori")
+        if (pulita.id == 0L) dao.inserisciAssociazione(pulita) else dao.aggiornaAssociazione(pulita)
+    }
+
+    fun eliminaAssociazione(associazione: Associazione) = viewModelScope.launch { dao.eliminaAssociazione(associazione) }
+
+    /** Aggiunge le associazioni di un elenco incollato ("Chiave (Tipo)" per riga), saltando i doppioni. */
+    fun importaElencoAssociazioni(testo: String) = viewModelScope.launch {
+        val esistenti = dao.associazioni().map { Triple(it.chiave.lowercase(), it.tipo.lowercase(), (it.sottotipo ?: "").lowercase()) }.toMutableSet()
+        val nuove = Associazioni.leggiElenco(testo).filter { esistenti.add(Triple(it.chiave.lowercase(), it.tipo.lowercase(), (it.sottotipo ?: "").lowercase())) }
+        dao.inserisciAssociazioni(nuove)
+        messaggio("Aggiunte ${nuove.size} associazioni")
     }
 
     // --- Backup su Google Drive ---

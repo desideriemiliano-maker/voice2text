@@ -44,6 +44,9 @@ interface SpeseDao {
     @Query("SELECT * FROM voci ORDER BY tipo COLLATE NOCASE, sottotipo COLLATE NOCASE")
     fun vociFlow(): Flow<List<Voce>>
 
+    @Query("SELECT * FROM voci")
+    suspend fun voci(): List<Voce>
+
     @Insert
     suspend fun inserisciVoce(voce: Voce): Long
 
@@ -78,6 +81,29 @@ interface SpeseDao {
 
     @Query("DELETE FROM operazioni WHERE id IN (:ids)")
     suspend fun eliminaOperazioni(ids: List<Long>)
+
+    // --- Associazioni (import estratto conto) ---
+    @Query("SELECT * FROM associazioni ORDER BY chiave COLLATE NOCASE")
+    fun associazioniFlow(): Flow<List<Associazione>>
+
+    @Query("SELECT * FROM associazioni")
+    suspend fun associazioni(): List<Associazione>
+
+    @Insert
+    suspend fun inserisciAssociazione(associazione: Associazione): Long
+
+    @Insert
+    suspend fun inserisciAssociazioni(associazioni: List<Associazione>)
+
+    @Update
+    suspend fun aggiornaAssociazione(associazione: Associazione)
+
+    @Delete
+    suspend fun eliminaAssociazione(associazione: Associazione)
+
+    /** Operazioni con quella data e quell'importo sul conto/valuta (per non reimportare doppioni). */
+    @Query("SELECT COUNT(*) FROM operazioni WHERE contoValutaId = :contoValutaId AND data = :data AND importoCent = :importoCent")
+    suspend fun contaOperazioniUguali(contoValutaId: Long, data: Long, importoCent: Long): Int
 
     // --- Svuotamento (import da Excel) ---
     @Query("DELETE FROM operazioni")

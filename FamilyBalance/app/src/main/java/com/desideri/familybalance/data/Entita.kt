@@ -83,3 +83,23 @@ data class Operazione(
     val collegataId: Long? = null,
     val note: String? = null
 )
+
+/**
+ * Associazione dell'anagrafica associazioni: se la descrizione di un movimento di un estratto conto
+ * contiene [chiave], all'import si propone [tipo]/[sottotipo]. Salvata come testo (non come id
+ * della voce) così resta valida anche dopo un nuovo import dell'Excel, che ricrea le voci. Il tipo
+ * [TIPO_SPOSTAMENTO] indica uno spostamento tra conti.
+ */
+@Entity(tableName = "associazioni")
+data class Associazione(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val chiave: String,
+    val tipo: String,
+    val sottotipo: String? = null
+) {
+    val destinazione: String get() = if (sottotipo.isNullOrBlank()) tipo else "$tipo / $sottotipo"
+
+    companion object {
+        const val TIPO_SPOSTAMENTO = "Spostamento"
+    }
+}

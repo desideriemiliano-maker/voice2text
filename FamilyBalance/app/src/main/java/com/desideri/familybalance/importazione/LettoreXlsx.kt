@@ -46,11 +46,71 @@ class LettoreXlsx(input: InputStream) {
 
     val nomiFogli: List<String> get() = percorsiFogli.keys.toList()
 
-    /** Il foglio con quel nome (confronto senza distinzione maiuscole/spazi); null se non esiste. */
-    fun foglio(nome: String): Foglio? {
+    /**
+     * Il foglio con quel nome (confronto senza distinzione maiuscole/spazi); null se non esiste.
+     * Con [dateComeTesto] le celle formattate come data diventano stringhe "yyyy-MM-dd" invece del
+     * numero seriale di Excel (utile per passare il foglio come testo a Gemini).
+     */
+    fun foglio(nome: String, dateComeTesto: Boolean = false): Foglio? {
         val chiave = percorsiFogli.keys.firstOrNull { it.trim().equals(nome.trim(), ignoreCase = true) } ?: return null
         val bytes = file[percorsiFogli.getValue(chiave)] ?: return null
-        return leggiFoglio(bytes)
+        return leggiFoglio(bytes, if (dateComeTesto) stiliData else emptySet())
+    }
+
+    /** Tutti i fogli come testo: una riga per riga del foglio, celle separate da " | ", date in ISO. */
+    fun comeTesto(maxRighePerFoglio: Int = 3000): String = buildString {
+        for (nome in nomiFogli) {
+            val foglio = foglio(nome, dateComeTesto = true) ?: continue
+            append("### Foglio: ").append(nome).append('\n')
+            for (riga in foglio.keys.sorted().take(maxRighePerFoglio)) {
+                val celle = foglio.getValue(riga)
+                val ultima = celle.keys.maxOrNull() ?: continue
+                val valori = (1..ultima).map { c ->
+                    when (val v = celle[c]) {
+                        null -> ""
+                        is Double -> if (v == Math.floor(v) && Math.abs(v) < 1e15) v.toLong().toString() else v.toString()
+                        else -> v.toString().replace('\n', ' ')
+                    }
+                }
+                append(valori.joinToString(" | ")).append('\n')
+            }
+            append('\n')
+        }
+    }
+
+    /**
+     * Indici degli stili di cella (cellXfs in styles.xml) con un formato numerico di tipo data:
+     * i formati predefiniti 14-22 e 45-47 e quelli personalizzati il cui codice contiene d/m/y
+     * fuori dalle parti tra virgolette o parentesi quadre.
+     */
+    private val stiliData: Set<Int> by lazy {
+        val bytes = file["xl/styles.xml"] ?: return@lazy emptySet()
+        val formatiData = HashSet<Int>((14..22) + (45..47))
+        val p = parser(bytes)
+        var dentroCellXfs = false
+        var indiceXf = 0
+        val risultato = HashSet<Int>()
+        while (p.next() != XmlPullParser.END_DOCUMENT) {
+            when (p.eventType) {
+                XmlPullParser.START_TAG -> when (p.name) {
+                    "numFmt" -> {
+                        val id = p.getAttributeValue(null, "numFmtId")?.toIntOrNull()
+                        val codice = p.getAttributeValue(null, "formatCode").orEmpty()
+                            .replace(Regex("\"[^\"]*\"|\\[[^\\]]*\\]"), "")
+                            .lowercase()
+                        if (id != null && codice.any { it == 'd' || it == 'y' } ) formatiData += id
+                    }
+                    "cellXfs" -> dentroCellXfs = true
+                    "xf" -> if (dentroCellXfs) {
+                        val numFmt = p.getAttributeValue(null, "numFmtId")?.toIntOrNull()
+                        if (numFmt != null && numFmt in formatiData) risultato += indiceXf
+                        indiceXf++
+                    }
+                }
+                XmlPullParser.END_TAG -> if (p.name == "cellXfs") dentroCellXfs = false
+            }
+        }
+        risultato
     }
 
     private fun parser(bytes: ByteArray): XmlPullParser = Xml.newPullParser().apply {
@@ -109,11 +169,12 @@ class LettoreXlsx(input: InputStream) {
         return risultato
     }
 
-    private fun leggiFoglio(bytes: ByteArray): Foglio {
+    private fun leggiFoglio(bytes: ByteArray, stiliData: Set<Int>): Foglio {
         val righe = HashMap<Int, HashMap<Int, Any>>()
         val p = parser(bytes)
         var rif: String? = null
         var tipo: String? = null
+        var stile: Int? = null
         var valore: StringBuilder? = null
         var dentroValore = false
         while (p.next() != XmlPullParser.END_DOCUMENT) {
@@ -122,6 +183,7 @@ class LettoreXlsx(input: InputStream) {
                     "c" -> {
                         rif = p.getAttributeValue(null, "r")
                         tipo = p.getAttributeValue(null, "t")
+                        stile = p.getAttributeValue(null, "s")?.toIntOrNull()
                         valore = null
                     }
                     "v", "t" -> {
@@ -142,7 +204,14 @@ class LettoreXlsx(input: InputStream) {
                                 "str", "inlineStr" -> testo
                                 "b" -> if (testo == "1") "TRUE" else "FALSE"
                                 "e" -> null
-                                else -> testo.toDoubleOrNull() ?: testo
+                                else -> {
+                                    val numero = testo.toDoubleOrNull()
+                                    if (numero != null && stile != null && stile in stiliData && numero > 1) {
+                                        EPOCA_EXCEL.plusDays(numero.toLong()).toString()
+                                    } else {
+                                        numero ?: testo
+                                    }
+                                }
                             }
                             if (interpretato != null && riga > 0 && colonna > 0) {
                                 righe.getOrPut(riga) { HashMap() }[colonna] = interpretato
@@ -159,6 +228,8 @@ class LettoreXlsx(input: InputStream) {
     }
 
     companion object {
+        private val EPOCA_EXCEL: java.time.LocalDate = java.time.LocalDate.of(1899, 12, 30)
+
         /** "AB12" -> (12, 28). */
         fun coordinate(riferimento: String): Pair<Int, Int> {
             var colonna = 0

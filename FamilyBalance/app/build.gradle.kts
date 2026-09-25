@@ -81,6 +81,13 @@ android {
         targetSdk = 35
         versionCode = gitCommitCount
         versionName = "1.0.$gitCommitCount"
+
+        // Chiave Gemini per l'import degli estratti conto: da local.properties (mai committato),
+        // scritto in CI dal secret GEMINI_API_KEY del repository, come in Voice2Text.
+        val proprietaLocali = java.util.Properties()
+        val fileProprieta = rootProject.file("local.properties")
+        if (fileProprieta.exists()) fileProprieta.inputStream().use { proprietaLocali.load(it) }
+        buildConfigField("String", "GEMINI_API_KEY", "\"${proprietaLocali.getProperty("GEMINI_API_KEY", "")}\"")
     }
 
     // Keystore di debug condiviso e committato: build CI e locali firmano allo stesso modo, così
@@ -165,6 +172,9 @@ dependencies {
     implementation("androidx.room:room-runtime:2.6.1")
     implementation("androidx.room:room-ktx:2.6.1")
     ksp("androidx.room:room-compiler:2.6.1")
+
+    // --- GEMINI (import estratti conto, stessa libreria di Voice2Text) ---
+    implementation("com.google.genai:google-genai:1.63.0")
 
     // --- BACKUP SU GOOGLE DRIVE (stesse versioni di WorkoutAnalyzer) ---
     implementation("com.google.android.gms:play-services-auth:21.0.0")

@@ -35,6 +35,9 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
+      - name: Scrivi local.properties con la chiave Gemini
+        run: echo "GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}" > local.properties
+
       - name: Unit test e build debug APK
         run: ./gradlew testDebugUnitTest assembleDebug
 
