@@ -8,7 +8,9 @@ data class Impostazioni(
     val targetRisparmioCent: Long = 0,
     /** Tasso di cambio usato per esprimere in EUR gli importi in CHF (1 CHF = x EUR). */
     val cambioChfEur: Double = 1.0,
-    val emailBackup: String? = null
+    val emailBackup: String? = null,
+    /** Richiede impronta/volto/PIN del dispositivo all'apertura dell'app. */
+    val bloccoBiometrico: Boolean = true
 )
 
 class Preferenze(context: Context) {
@@ -17,7 +19,8 @@ class Preferenze(context: Context) {
     fun carica(): Impostazioni = Impostazioni(
         targetRisparmioCent = prefs.getLong(CHIAVE_TARGET, 0),
         cambioChfEur = prefs.getString(CHIAVE_CAMBIO, null)?.toDoubleOrNull() ?: 1.0,
-        emailBackup = prefs.getString(CHIAVE_EMAIL_BACKUP, null)
+        emailBackup = prefs.getString(CHIAVE_EMAIL_BACKUP, null),
+        bloccoBiometrico = prefs.getBoolean(CHIAVE_BLOCCO_BIOMETRICO, true)
     )
 
     fun salva(impostazioni: Impostazioni) {
@@ -25,6 +28,7 @@ class Preferenze(context: Context) {
             .putLong(CHIAVE_TARGET, impostazioni.targetRisparmioCent)
             .putString(CHIAVE_CAMBIO, impostazioni.cambioChfEur.toString())
             .putString(CHIAVE_EMAIL_BACKUP, impostazioni.emailBackup)
+            .putBoolean(CHIAVE_BLOCCO_BIOMETRICO, impostazioni.bloccoBiometrico)
             .apply()
     }
 
@@ -32,5 +36,6 @@ class Preferenze(context: Context) {
         const val CHIAVE_TARGET = "target_risparmio_cent"
         const val CHIAVE_CAMBIO = "cambio_chf_eur"
         const val CHIAVE_EMAIL_BACKUP = "email_backup"
+        const val CHIAVE_BLOCCO_BIOMETRICO = "blocco_biometrico"
     }
 }
