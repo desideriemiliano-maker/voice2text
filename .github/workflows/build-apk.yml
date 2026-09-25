@@ -3,8 +3,8 @@ on:
   push:
     branches: [master]
     paths-ignore:
-      - "SpeseFamiglia/**"
-      - ".github/workflows/build-spese-apk.yml"
+      - "FamilyBalance/**"
+      - ".github/workflows/build-familybalance-apk.yml"
   workflow_dispatch:
 permissions:
   contents: write

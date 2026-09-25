@@ -1,0 +1,340 @@
+package com.desideri.familybalance
+
+import android.app.Application
+import android.content.Intent
+import android.net.Uri
+import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.viewModelScope
+import androidx.room.withTransaction
+import com.desideri.familybalance.backup.BackupDrive
+import com.desideri.familybalance.backup.InfoBackup
+import com.desideri.familybalance.data.AppDatabase
+import com.desideri.familybalance.data.Conto
+import com.desideri.familybalance.data.ContoValuta
+import com.desideri.familybalance.data.Impostazioni
+import com.desideri.familybalance.data.Operazione
+import com.desideri.familybalance.data.Preferenze
+import com.desideri.familybalance.data.Voce
+import com.desideri.familybalance.importazione.ImportatoreExcel
+import com.desideri.familybalance.logica.Calcoli
+import com.desideri.familybalance.logica.MeseRicorrenti
+import com.desideri.familybalance.logica.RigaBilancio
+import com.desideri.familybalance.logica.formattaCent
+import com.google.api.client.googleapis.extensions.android.gms.auth.GooglePlayServicesAvailabilityIOException
+import com.google.api.client.googleapis.extensions.android.gms.auth.UserRecoverableAuthIOException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.File
+import java.time.YearMonth
+
+data class DatiApp(
+    val conti: List<Conto> = emptyList(),
+    val contiValuta: List<ContoValuta> = emptyList(),
+    val voci: List<Voce> = emptyList(),
+    val operazioni: List<Operazione> = emptyList(),
+    val caricati: Boolean = false
+) {
+    private val contiPerId by lazy { conti.associateBy { it.id } }
+    val contiValutaPerId by lazy { contiValuta.associateBy { it.id } }
+    val vociPerId by lazy { voci.associateBy { it.id } }
+
+    /** Conti/valuta ordinati per nome conto e valuta, come mostrati nelle liste. */
+    val contiValutaOrdinati: List<ContoValuta> by lazy {
+        contiValuta.sortedWith(compareBy({ contiPerId[it.contoId]?.nome?.lowercase() ?: "" }, { it.valuta }))
+    }
+
+    fun etichetta(contoValutaId: Long?): String {
+        val cv = contoValutaId?.let { contiValutaPerId[it] } ?: return "Conto eliminato"
+        return "${contiPerId[cv.contoId]?.nome ?: "?"} ${cv.valuta}"
+    }
+}
+
+data class StatoBackup(
+    val inCorso: Boolean = false,
+    val info: InfoBackup? = null,
+    val infoCaricata: Boolean = false,
+    val errore: String? = null
+)
+
+class SpeseViewModel(application: Application) : AndroidViewModel(application) {
+
+    private val db = AppDatabase.get(application)
+    private val dao = db.dao()
+    private val preferenze = Preferenze(application)
+
+    private val _impostazioni = MutableStateFlow(preferenze.carica())
+    val impostazioni: StateFlow<Impostazioni> = _impostazioni.asStateFlow()
+
+    private val _messaggi = MutableSharedFlow<String>(extraBufferCapacity = 8)
+    val messaggi: SharedFlow<String> = _messaggi
+
+    private val _importazioneInCorso = MutableStateFlow(false)
+    val importazioneInCorso: StateFlow<Boolean> = _importazioneInCorso.asStateFlow()
+
+    val dati: StateFlow<DatiApp> = combine(dao.contiFlow(), dao.contiValutaFlow(), dao.vociFlow(), dao.operazioniFlow()) { conti, cv, voci, ops ->
+        DatiApp(conti, cv, voci, ops, caricati = true)
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, DatiApp())
+
+    /** Saldo in centesimi (valuta propria) di ogni conto/valuta. */
+    val saldi: StateFlow<Map<Long, Long>> = dati.map { Calcoli.saldiCent(it.contiValuta, it.operazioni) }
+        .flowOn(Dispatchers.Default)
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
+
+    val bilancio: StateFlow<List<RigaBilancio>> = combine(dati, _impostazioni) { d, imp ->
+        Calcoli.bilancio(d.contiValuta, d.voci, d.operazioni, imp.cambioChfEur, imp.targetRisparmioCent / 100.0, YearMonth.now())
+    }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    /** Spese ricorrenti da 12 mesi fa a 12 mesi avanti. */
+    val ricorrenti: StateFlow<List<MeseRicorrenti>> = combine(dati, _impostazioni) { d, imp ->
+        val oggi = YearMonth.now()
+        val mesi = (-12L..12L).map { oggi.plusMonths(it) }
+        Calcoli.ricorrenti(mesi, d.voci, d.contiValuta, d.operazioni, imp.cambioChfEur, oggi)
+    }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    private fun messaggio(testo: String) {
+        _messaggi.tryEmit(testo)
+    }
+
+    // --- Impostazioni ---
+
+    fun salvaImpostazioni(nuove: Impostazioni) {
+        preferenze.salva(nuove)
+        _impostazioni.value = nuove
+    }
+
+    // --- Operazioni ---
+
+    /**
+     * Salva un'operazione. Per uno spostamento inserito dall'app crea (o aggiorna) la
+     * contro-operazione sul conto di destinazione con importo [importoDestinazioneCent] (o l'opposto
+     * dell'importo, se nella stessa valuta). Gli spostamenti importati senza contro-operazione
+     * collegata vengono aggiornati solo sul proprio conto, perché la riga speculare esiste già.
+     */
+    fun salvaOperazione(op: Operazione, importoDestinazioneCent: Long?) = viewModelScope.launch {
+        db.withTransaction {
+            val precedente = if (op.id != 0L) dao.operazione(op.id) else null
+            val collegata = precedente?.collegataId?.let { dao.operazione(it) }
+            val dest = op.contoValutaDestId
+            if (op.trasferimento && dest != null) {
+                val importoControparte = importoDestinazioneCent ?: -op.importoCent
+                val controparte = Operazione(
+                    contoValutaId = dest,
+                    data = op.data,
+                    importoCent = importoControparte,
+                    trasferimento = true,
+                    contoValutaDestId = op.contoValutaId,
+                    note = op.note
+                )
+                when {
+                    precedente == null -> {
+                        val id = dao.inserisciOperazione(op.copy(id = 0, voceId = null, collegataId = null))
+                        val idControparte = dao.inserisciOperazione(controparte.copy(collegataId = id))
+                        dao.aggiornaOperazione(op.copy(id = id, voceId = null, collegataId = idControparte))
+                    }
+                    collegata != null -> {
+                        dao.aggiornaOperazione(controparte.copy(id = collegata.id, collegataId = op.id))
+                        dao.aggiornaOperazione(op.copy(voceId = null, collegataId = collegata.id))
+                    }
+                    precedente?.trasferimento == false -> {
+                        val idControparte = dao.inserisciOperazione(controparte.copy(collegataId = op.id))
+                        dao.aggiornaOperazione(op.copy(voceId = null, collegataId = idControparte))
+                    }
+                    else -> dao.aggiornaOperazione(op.copy(voceId = null, collegataId = null))
+                }
+            } else {
+                val semplice = op.copy(trasferimento = false, contoValutaDestId = null, collegataId = null)
+                if (precedente == null) {
+                    dao.inserisciOperazione(semplice.copy(id = 0))
+                } else {
+                    collegata?.let { dao.eliminaOperazioni(listOf(it.id)) }
+                    dao.aggiornaOperazione(semplice)
+                }
+            }
+        }
+    }
+
+    /** Elimina l'operazione e, se è uno spostamento inserito dall'app, anche la contro-operazione. */
+    fun eliminaOperazione(op: Operazione) = viewModelScope.launch {
+        dao.eliminaOperazioni(listOfNotNull(op.id, op.collegataId))
+    }
+
+    // --- Anagrafica conti ---
+
+    /** [saldiIniziali]: valuta -> saldo iniziale in centesimi, solo per le valute attive sul conto. */
+    fun salvaConto(conto: Conto, saldiIniziali: Map<String, Long>) = viewModelScope.launch {
+        val nome = conto.nome.trim()
+        if (nome.isEmpty()) return@launch messaggio("Il nome del conto è obbligatorio")
+        if (saldiIniziali.isEmpty()) return@launch messaggio("Seleziona almeno una valuta")
+        db.withTransaction {
+            val idConto = if (conto.id == 0L) dao.inserisciConto(conto.copy(nome = nome)) else conto.id.also { dao.aggiornaConto(conto.copy(nome = nome)) }
+            val esistenti = dao.contiValutaDelConto(idConto).associateBy { it.valuta }
+            for ((valuta, saldo) in saldiIniziali) {
+                val cv = esistenti[valuta]
+                if (cv == null) dao.inserisciContoValuta(ContoValuta(contoId = idConto, valuta = valuta, saldoInizialeCent = saldo))
+                else dao.aggiornaContoValuta(cv.copy(saldoInizialeCent = saldo))
+            }
+            for ((valuta, cv) in esistenti) {
+                if (valuta in saldiIniziali) continue
+                val usate = dao.contaOperazioniContoValuta(cv.id)
+                if (usate > 0) messaggio("Valuta $valuta non rimossa: ha $usate operazioni")
+                else dao.eliminaContoValuta(cv)
+            }
+        }
+    }
+
+    fun eliminaConto(conto: Conto) = viewModelScope.launch { dao.eliminaConto(conto) }
+
+    // --- Anagrafica voci ---
+
+    fun salvaVoce(voce: Voce, onFatto: () -> Unit) = viewModelScope.launch {
+        val tipo = voce.tipo.trim()
+        val sottotipo = voce.sottotipo?.trim()?.ifEmpty { null }
+        if (tipo.isEmpty()) return@launch messaggio("Il tipo è obbligatorio")
+        val duplicata = dati.value.voci.any {
+            it.id != voce.id && it.tipo.equals(tipo, ignoreCase = true) && (it.sottotipo ?: "").equals(sottotipo ?: "", ignoreCase = true)
+        }
+        if (duplicata) return@launch messaggio("Voce già presente in anagrafica")
+        val pulita = voce.copy(tipo = tipo, sottotipo = sottotipo, mesiRicorrenza = voce.mesiRicorrenza.coerceAtLeast(1))
+        if (pulita.id == 0L) dao.inserisciVoce(pulita) else dao.aggiornaVoce(pulita)
+        onFatto()
+    }
+
+    fun eliminaVoce(voce: Voce, onFatto: () -> Unit) = viewModelScope.launch {
+        val usate = dao.contaOperazioniVoce(voce.id)
+        if (usate > 0) {
+            messaggio("Impossibile eliminare: la voce è usata da $usate operazioni")
+        } else {
+            dao.eliminaVoce(voce)
+            onFatto()
+        }
+    }
+
+    /** Voce per tipo/sottotipo (sottotipo vuoto = voce di solo tipo), creata se manca solo quella di tipo. */
+    suspend fun voceId(tipo: String, sottotipo: String?): Long? {
+        val voci = dati.value.voci
+        val s = sottotipo?.trim()?.ifEmpty { null }
+        voci.firstOrNull { it.tipo.equals(tipo.trim(), true) && (it.sottotipo ?: "").equals(s ?: "", true) }?.let { return it.id }
+        if (s != null) return null
+        // Tipo esistente ma senza una voce "solo tipo": la si crea con le stesse caratteristiche.
+        val modello = voci.firstOrNull { it.tipo.equals(tipo.trim(), true) } ?: return null
+        return dao.inserisciVoce(modello.copy(id = 0, sottotipo = null, importoPrevistoCent = null))
+    }
+
+    // --- Import da Excel ---
+
+    fun importaExcel(uri: Uri) = viewModelScope.launch {
+        _importazioneInCorso.value = true
+        try {
+            val esito = withContext(Dispatchers.IO) {
+                getApplication<Application>().contentResolver.openInputStream(uri)?.use { ImportatoreExcel(db).importa(it) }
+            } ?: throw IllegalStateException("Impossibile aprire il file")
+            esito.targetRisparmioCent?.let { salvaImpostazioni(_impostazioni.value.copy(targetRisparmioCent = it)) }
+            messaggio(
+                "Importate ${esito.operazioni} operazioni, ${esito.voci} voci (${esito.vociRicorrenti} ricorrenti)" +
+                    (esito.targetRisparmioCent?.let { ", target ${formattaCent(it)}" } ?: "")
+            )
+        } catch (e: Exception) {
+            messaggio("Importazione non riuscita: ${e.message ?: e.javaClass.simpleName}")
+        } finally {
+            _importazioneInCorso.value = false
+        }
+    }
+
+    // --- Backup su Google Drive ---
+
+    private val _statoBackup = MutableStateFlow(StatoBackup())
+    val statoBackup: StateFlow<StatoBackup> = _statoBackup.asStateFlow()
+
+    /** Intent della schermata di consenso Google da mostrare (scope Drive non ancora concesso). */
+    private val _richiestaAutorizzazione = MutableStateFlow<Intent?>(null)
+    val richiestaAutorizzazione: StateFlow<Intent?> = _richiestaAutorizzazione.asStateFlow()
+    private var azioneInSospeso: (() -> Unit)? = null
+
+    fun impostaAccountBackup(email: String) {
+        salvaImpostazioni(_impostazioni.value.copy(emailBackup = email))
+        _statoBackup.value = StatoBackup()
+        aggiornaInfoBackup()
+    }
+
+    fun esitoAutorizzazione(concessa: Boolean) {
+        _richiestaAutorizzazione.value = null
+        val azione = azioneInSospeso
+        azioneInSospeso = null
+        if (concessa) azione?.invoke() else _statoBackup.value = _statoBackup.value.copy(inCorso = false, errore = "Autorizzazione Google negata")
+    }
+
+    private fun operazioneDrive(nome: String, azione: suspend (BackupDrive) -> Unit) {
+        val email = _impostazioni.value.emailBackup ?: return messaggio("Scegli prima l'account Google")
+        viewModelScope.launch {
+            _statoBackup.value = _statoBackup.value.copy(inCorso = true, errore = null)
+            try {
+                azione(BackupDrive(getApplication(), email))
+                _statoBackup.value = _statoBackup.value.copy(inCorso = false)
+            } catch (e: UserRecoverableAuthIOException) {
+                azioneInSospeso = { operazioneDrive(nome, azione) }
+                _richiestaAutorizzazione.value = e.intent
+            } catch (e: GooglePlayServicesAvailabilityIOException) {
+                _statoBackup.value = _statoBackup.value.copy(inCorso = false, errore = "Google Play Services non disponibili")
+            } catch (e: Exception) {
+                _statoBackup.value = _statoBackup.value.copy(inCorso = false, errore = "$nome non riuscito: ${e.message ?: e.javaClass.simpleName}")
+            }
+        }
+    }
+
+    fun aggiornaInfoBackup() = operazioneDrive("Lettura backup") { drive ->
+        val info = drive.info()
+        _statoBackup.value = _statoBackup.value.copy(info = info, infoCaricata = true)
+    }
+
+    fun eseguiBackup() = operazioneDrive("Backup") { drive ->
+        val copia = withContext(Dispatchers.IO) {
+            File(getApplication<Application>().cacheDir, "backup.db").also { AppDatabase.fileDatabase(getApplication()).copyTo(it, overwrite = true) }
+        }
+        val info = drive.carica(copia)
+        copia.delete()
+        _statoBackup.value = _statoBackup.value.copy(info = info, infoCaricata = true)
+        messaggio("Backup completato")
+    }
+
+    /** Sostituisce il database con quello su Drive e riavvia l'app. */
+    fun ripristinaBackup() = operazioneDrive("Ripristino") { drive ->
+        val app = getApplication<Application>()
+        val scaricato = File(app.cacheDir, "ripristino.db")
+        if (!drive.scarica(scaricato)) {
+            messaggio("Nessun backup presente su questo account")
+            return@operazioneDrive
+        }
+        val intestazione = withContext(Dispatchers.IO) { scaricato.inputStream().use { input -> ByteArray(15).also { input.read(it) } } }
+        if (String(intestazione, Charsets.US_ASCII) != "SQLite format 3") {
+            scaricato.delete()
+            throw IllegalStateException("il file su Drive non è un database valido")
+        }
+        withContext(Dispatchers.IO) {
+            AppDatabase.chiudi()
+            val destinazione = AppDatabase.fileDatabase(app)
+            scaricato.copyTo(destinazione, overwrite = true)
+            File(destinazione.path + "-journal").delete()
+            scaricato.delete()
+        }
+        riavvia()
+    }
+
+    private fun riavvia() {
+        val app = getApplication<Application>()
+        val intent = app.packageManager.getLaunchIntentForPackage(app.packageName)
+            ?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+        intent?.let { app.startActivity(it) }
+        Runtime.getRuntime().exit(0)
+    }
+}
