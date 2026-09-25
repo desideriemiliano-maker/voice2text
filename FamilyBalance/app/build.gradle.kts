@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -84,7 +86,7 @@ android {
 
         // Chiave Gemini per l'import degli estratti conto: da local.properties (mai committato),
         // scritto in CI dal secret GEMINI_API_KEY del repository, come in Voice2Text.
-        val proprietaLocali = java.util.Properties()
+        val proprietaLocali = Properties()
         val fileProprieta = rootProject.file("local.properties")
         if (fileProprieta.exists()) fileProprieta.inputStream().use { proprietaLocali.load(it) }
         buildConfigField("String", "GEMINI_API_KEY", "\"${proprietaLocali.getProperty("GEMINI_API_KEY", "")}\"")
