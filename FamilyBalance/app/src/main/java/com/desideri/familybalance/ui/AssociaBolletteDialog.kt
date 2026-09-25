@@ -5,6 +5,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -12,6 +14,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -50,6 +53,7 @@ fun AssociaBolletteDialog(
     analisi: AnalisiImport,
     memorizzate: Map<String, String>,
     onConferma: (Map<String, String>) -> Unit,
+    onSalva: (Map<String, String>) -> Unit,
     onAnnulla: () -> Unit
 ) {
     val scelte = remember(analisi) {
@@ -60,19 +64,38 @@ fun AssociaBolletteDialog(
         }
     }
     val ordinate = remember(analisi) { analisi.combinazioni.sortedBy { it.chiave in memorizzate } }
+    val totale = analisi.combinazioni.size
     val mancanti = analisi.combinazioni.count { it.chiave !in scelte }
 
     Dialog(onDismissRequest = onAnnulla, properties = DialogProperties(usePlatformDefaultWidth = false, dismissOnClickOutside = false)) {
         Surface(modifier = Modifier.fillMaxSize()) {
-            Column(modifier = Modifier.padding(16.dp)) {
+            // Barre di sistema e tastiera escluse: i pulsanti non devono finire sotto la barra di navigazione.
+            Column(modifier = Modifier.fillMaxSize().systemBarsPadding().imePadding().padding(16.dp)) {
                 Text("Associa le Bollette alle spese ricorrenti", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                 Text(
                     "Le spese ricorrenti sono quelle del foglio Bollette (${analisi.ricorrenti.size}). Per ogni tipo/sottotipo " +
-                        "\"Bollette\" dei conti scegli a quale associarlo (quelle senza sottotipo una per una): la scelta viene " +
-                        "memorizzata e riproposta nei prossimi import.",
+                        "\"Bollette\" dei conti scegli a quale associarlo (quelle senza sottotipo una per una). " +
+                        "\"Salva scelte\" memorizza quanto fatto finora per riprendere al prossimo import; " +
+                        "\"Importa\" si attiva quando sono tutte associate.",
                     style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier.padding(top = 4.dp, bottom = 8.dp)
                 )
+                // Azioni in alto, sempre visibili anche con elenchi lunghi.
+                Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        "Associate ${totale - mancanti}/$totale",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = if (mancanti > 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.weight(1f)
+                    )
+                    TextButton(onClick = onAnnulla) { Text("Annulla") }
+                    OutlinedButton(onClick = { onSalva(scelte.toMap()) }) { Text("Salva scelte") }
+                }
+                Button(
+                    onClick = { onConferma(scelte.toMap()) },
+                    enabled = mancanti == 0,
+                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 8.dp)
+                ) { Text(if (mancanti == 0) "Importa" else "Importa (mancano $mancanti)") }
                 LazyColumn(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     items(ordinate, key = { it.chiave }) { c ->
                         CardCombinazione(
@@ -83,13 +106,6 @@ fun AssociaBolletteDialog(
                             onScelta = { scelte[c.chiave] = it }
                         )
                     }
-                }
-                if (mancanti > 0) {
-                    Text("Da associare: $mancanti", color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(top = 8.dp))
-                }
-                Row(modifier = Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
-                    TextButton(onClick = onAnnulla) { Text("Annulla") }
-                    Button(onClick = { onConferma(scelte.toMap()) }, enabled = mancanti == 0) { Text("Importa") }
                 }
             }
         }

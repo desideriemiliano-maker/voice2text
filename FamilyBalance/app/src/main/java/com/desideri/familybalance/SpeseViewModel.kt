@@ -278,6 +278,13 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /** Memorizza le scelte fatte finora senza importare: al prossimo import saranno già compilate. */
+    fun salvaScelteImport(scelte: Map<String, String>) {
+        preferenze.salvaMappatureBollette(scelte)
+        _analisiImport.value = null
+        messaggio("Scelte salvate (${scelte.size}): riprendi da ⋮ › Importa da Excel")
+    }
+
     fun annullaImport() {
         _analisiImport.value = null
     }

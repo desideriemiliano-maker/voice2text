@@ -175,6 +175,7 @@ private fun SchermataPrincipale(vm: SpeseViewModel, sezione: Sezione, onSezione:
             analisi = analisi,
             memorizzate = memorizzate,
             onConferma = { vm.confermaImport(it) },
+            onSalva = { vm.salvaScelteImport(it) },
             onAnnulla = { vm.annullaImport() }
         )
     }
