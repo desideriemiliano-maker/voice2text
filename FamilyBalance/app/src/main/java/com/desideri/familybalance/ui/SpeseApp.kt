@@ -99,6 +99,7 @@ private fun SchermataPrincipale(vm: SpeseViewModel, sezione: Sezione, onSezione:
     var mostraVersioni by remember { mutableStateOf(false) }
     var confermaImport by remember { mutableStateOf(false) }
     val importazioneInCorso by vm.importazioneInCorso.collectAsStateWithLifecycle()
+    val analisiImport by vm.analisiImport.collectAsStateWithLifecycle()
 
     val sceltaExcel = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) vm.importaExcel(uri)
@@ -151,7 +152,9 @@ private fun SchermataPrincipale(vm: SpeseViewModel, sezione: Sezione, onSezione:
         DialogConferma(
             titolo = "Importa da Excel",
             testo = "Scegli il file Excel delle spese (fogli HelloBank, LGT, Bollette, Impostazioni). " +
-                "Tutti i conti, le voci e le operazioni presenti nell'app verranno SOSTITUITI dal contenuto del file.",
+                "Le spese ricorrenti vengono dal foglio Bollette; prima di importare potrai scegliere a quale " +
+                "ricorrente associare le operazioni di tipo Bollette. Tutti i conti, le voci e le operazioni " +
+                "presenti nell'app verranno SOSTITUITI dal contenuto del file.",
             conferma = "Scegli file",
             onConferma = {
                 sceltaExcel.launch(
@@ -163,6 +166,16 @@ private fun SchermataPrincipale(vm: SpeseViewModel, sezione: Sezione, onSezione:
                 )
             },
             onAnnulla = { confermaImport = false }
+        )
+    }
+
+    analisiImport?.let { analisi ->
+        val memorizzate = remember(analisi) { vm.mappatureBollette() }
+        AssociaBolletteDialog(
+            analisi = analisi,
+            memorizzate = memorizzate,
+            onConferma = { vm.confermaImport(it) },
+            onAnnulla = { vm.annullaImport() }
         )
     }
 

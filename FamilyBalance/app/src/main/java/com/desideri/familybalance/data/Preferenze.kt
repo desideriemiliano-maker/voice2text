@@ -32,6 +32,21 @@ class Preferenze(context: Context) {
             .apply()
     }
 
+    private val mappature = context.applicationContext.getSharedPreferences("mappature_bollette", Context.MODE_PRIVATE)
+
+    /**
+     * Scelte memorizzate per l'import da Excel: chiave della combinazione tipo/sottotipo "Bollette"
+     * -> spesa ricorrente scelta (vedi importazione.SceltaBollette).
+     */
+    fun caricaMappatureBollette(): Map<String, String> =
+        mappature.all.mapNotNull { (chiave, valore) -> (valore as? String)?.let { chiave to it } }.toMap()
+
+    fun salvaMappatureBollette(scelte: Map<String, String>) {
+        val editor = mappature.edit()
+        scelte.forEach { (chiave, valore) -> editor.putString(chiave, valore) }
+        editor.apply()
+    }
+
     private companion object {
         const val CHIAVE_TARGET = "target_risparmio_cent"
         const val CHIAVE_CAMBIO = "cambio_chf_eur"
