@@ -53,6 +53,10 @@ interface SpeseDao {
     @Delete
     suspend fun eliminaVoce(voce: Voce)
 
+    /** Sposta tutte le operazioni della voce [da] sulla voce [a]; restituisce quante ne ha spostate. */
+    @Query("UPDATE operazioni SET voceId = :a WHERE voceId = :da")
+    suspend fun spostaOperazioniVoce(da: Long, a: Long): Int
+
     @Query("SELECT COUNT(*) FROM operazioni WHERE voceId = :voceId")
     suspend fun contaOperazioniVoce(voceId: Long): Int
 

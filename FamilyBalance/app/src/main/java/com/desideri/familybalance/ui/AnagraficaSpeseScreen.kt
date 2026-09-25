@@ -261,6 +261,8 @@ private fun OperazioniVoceDialog(vm: SpeseViewModel, dati: DatiApp, voce: Voce, 
             .toSortedMap()
     }
     var inModifica by remember { mutableStateOf<Operazione?>(null) }
+    var sceltaDestinazione by remember { mutableStateOf(false) }
+    var chiediEliminazione by remember { mutableStateOf(false) }
 
     Dialog(onDismissRequest = onChiudi, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Surface(
@@ -300,12 +302,78 @@ private fun OperazioniVoceDialog(vm: SpeseViewModel, dati: DatiApp, voce: Voce, 
                         HorizontalDivider()
                     }
                 }
-                TextButton(onClick = onChiudi, modifier = Modifier.align(Alignment.End)) { Text("Chiudi") }
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    TextButton(onClick = { sceltaDestinazione = true }, enabled = operazioni.isNotEmpty()) { Text("Sposta tutte su…") }
+                    TextButton(onClick = onChiudi) { Text("Chiudi") }
+                }
             }
         }
+    }
+
+    if (sceltaDestinazione) {
+        SpostaOperazioniDialog(
+            sorgente = voce,
+            numeroOperazioni = operazioni.size,
+            voci = dati.voci,
+            onConferma = { destinazione ->
+                sceltaDestinazione = false
+                vm.spostaOperazioniVoce(voce, destinazione) { chiediEliminazione = true }
+            },
+            onAnnulla = { sceltaDestinazione = false }
+        )
+    }
+
+    if (chiediEliminazione) {
+        AlertDialog(
+            onDismissRequest = { chiediEliminazione = false },
+            title = { Text("Eliminare la voce di origine?") },
+            text = { Text("\"${voce.descrizione}\" non ha più operazioni. Vuoi eliminarla dall'anagrafica?") },
+            confirmButton = {
+                TextButton(onClick = {
+                    chiediEliminazione = false
+                    vm.eliminaVoce(voce) { onChiudi() }
+                }) { Text("Elimina", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = { TextButton(onClick = { chiediEliminazione = false }) { Text("Mantieni") } }
+        )
     }
 
     inModifica?.let { op ->
         OperazioneDialog(vm = vm, dati = dati, contoValutaId = op.contoValutaId, esistente = op, onChiudi = { inModifica = null })
     }
+}
+
+/** Scelta della voce su cui spostare tutte le operazioni di [sorgente], con conferma. */
+@Composable
+private fun SpostaOperazioniDialog(
+    sorgente: Voce,
+    numeroOperazioni: Int,
+    voci: List<Voce>,
+    onConferma: (Voce) -> Unit,
+    onAnnulla: () -> Unit
+) {
+    val candidate = remember(voci, sorgente.id) { voci.filter { it.id != sorgente.id }.sortedBy { it.descrizione.lowercase() } }
+    var testo by remember { mutableStateOf("") }
+    val destinazione = candidate.firstOrNull { it.descrizione.equals(testo.trim(), ignoreCase = true) }
+
+    AlertDialog(
+        onDismissRequest = onAnnulla,
+        title = { Text("Sposta operazioni") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Sposta le $numeroOperazioni operazioni di \"${sorgente.descrizione}\" su:")
+                CampoAutocompletamento(
+                    etichetta = "Voce di destinazione",
+                    valore = testo,
+                    opzioni = candidate.map { it.descrizione },
+                    onValore = { testo = it },
+                    errore = if (testo.isNotBlank() && destinazione == null) "Scegli una voce dall'elenco" else null
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { destinazione?.let(onConferma) }, enabled = destinazione != null) { Text("Sposta") }
+        },
+        dismissButton = { TextButton(onClick = onAnnulla) { Text("Annulla") } }
+    )
 }
