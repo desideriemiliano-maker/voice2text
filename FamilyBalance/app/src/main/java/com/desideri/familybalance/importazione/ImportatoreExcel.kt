@@ -26,9 +26,12 @@ import kotlin.math.roundToLong
  * - saldo iniziale di ogni conto/valuta = saldo progressivo della prima riga meno il suo importo;
  * - TIPO "Spostamento" -> trasferimento, con conto di destinazione ricavato abbinando le righe
  *   speculari sugli altri conti (stessa data circa, segno opposto);
- * - TIPO "Stipendio"/"Interessi" -> voci di entrata; TIPO "Bollette" -> voci ricorrenti, con
- *   periodicità e mese di partenza presi dal foglio **Bollette** (riga 1 intestazioni, riga 2 ogni
- *   quanti mesi, colonna precedente il contatore del mese);
+ * - TIPO "Stipendio"/"Interessi" -> voci di entrata;
+ * - TIPO "Bollette": ogni SOTTOTIPO diventa un tipo ricorrente a sé (es. "Bollette / Mutuo" ->
+ *   tipo "Mutuo"), con periodicità e mese di partenza presi dal foglio **Bollette** (riga 1
+ *   intestazioni, riga 2 ogni quanti mesi, colonna precedente il contatore del mese). Se il nome
+ *   coincide con un tipo non ricorrente già usato (es. "Autostrada") si aggiunge " (ricorrente)",
+ *   per non rendere ricorrenti anche le spese normali di quel tipo;
  * - foglio **Impostazioni**: "Risparmio target".
  */
 class ImportatoreExcel(private val db: AppDatabase) {
@@ -68,26 +71,31 @@ class ImportatoreExcel(private val db: AppDatabase) {
         righeConVoce.groupBy { it.tipo!!.lowercase() }.forEach { (tipoKey, lista) ->
             sottotipoCanonico[tipoKey] = canonici(lista.mapNotNull { it.sottotipo })
         }
+        /** Nome del tipo ricorrente ricavato da un sottotipo di Bollette, senza collisioni con i tipi normali. */
+        fun tipoRicorrente(nome: String): String =
+            if (nome.lowercase() != TIPO_BOLLETTE && nome.lowercase() in tipoCanonico) "$nome$SUFFISSO_RICORRENTE" else nome
+
         fun chiaveVoce(r: Riga): Pair<String, String?> {
             val tipoKey = r.tipo!!.lowercase()
-            return tipoCanonico.getValue(tipoKey) to r.sottotipo?.let { sottotipoCanonico[tipoKey]?.get(it.lowercase()) }
+            val sottotipo = r.sottotipo?.let { sottotipoCanonico[tipoKey]?.get(it.lowercase()) }
+            if (tipoKey == TIPO_BOLLETTE && sottotipo != null) return tipoRicorrente(sottotipo) to null
+            return tipoCanonico.getValue(tipoKey) to sottotipo
         }
 
         val voci = LinkedHashMap<Pair<String, String?>, Voce>()
         for (r in righeConVoce) {
             val chiave = chiaveVoce(r)
             if (chiave !in voci) {
-                val tipoLower = chiave.first.lowercase()
                 voci[chiave] = Voce(
                     tipo = chiave.first,
                     sottotipo = chiave.second,
-                    entrata = tipoLower in TIPI_ENTRATA,
-                    ricorrente = tipoLower == TIPO_BOLLETTE,
+                    entrata = chiave.first.lowercase() in TIPI_ENTRATA,
+                    ricorrente = r.tipo!!.lowercase() == TIPO_BOLLETTE,
                     mesiRicorrenza = 1
                 )
             }
         }
-        xlsx.foglio("Bollette")?.let { applicaRicorrenze(it, voci, oggi) }
+        xlsx.foglio("Bollette")?.let { applicaRicorrenze(it, voci, oggi, ::tipoRicorrente) }
         val target = xlsx.foglio("Impostazioni")?.let { leggiTarget(it) }
 
         // --- Conti/valute ---
@@ -249,10 +257,14 @@ class ImportatoreExcel(private val db: AppDatabase) {
 
     // --- Ricorrenze dal foglio Bollette ---
 
-    private fun applicaRicorrenze(foglio: Foglio, voci: LinkedHashMap<Pair<String, String?>, Voce>, oggi: YearMonth) {
+    private fun applicaRicorrenze(
+        foglio: Foglio,
+        voci: LinkedHashMap<Pair<String, String?>, Voce>,
+        oggi: YearMonth,
+        tipoRicorrente: (String) -> String
+    ) {
         val mesiRighe = foglio.keys.filter { it >= 3 }.sorted()
             .mapNotNull { r -> data(foglio.cella(r, 1))?.let { r to YearMonth.from(it) } }
-        val tipoBollette = voci.keys.firstOrNull { it.first.equals(TIPO_BOLLETTE, ignoreCase = true) }?.first ?: "Bollette"
         val intestazioni = foglio[1].orEmpty().filter { (colonna, valore) -> colonna >= 8 && valore is String && valore.isNotBlank() }
 
         for ((colonna, valore) in intestazioni.toSortedMap()) {
@@ -263,18 +275,20 @@ class ImportatoreExcel(private val db: AppDatabase) {
             val conContatore1 = mesiRighe.filter { (r, _) -> foglio.numero(r, colonna - 1) == 1.0 }.map { it.second }
             val meseInizio = conContatore1.lastOrNull { it <= oggi } ?: conContatore1.firstOrNull()
 
-            val esistente = voci.entries.firstOrNull { (chiave, _) ->
-                chiave.first.equals(tipoBollette, ignoreCase = true) && chiave.second?.let { normalizza(it) } == chiaveNormalizzata
+            // Solo tra le voci ricorrenti (ex sottotipi di Bollette), confrontando il nome senza suffisso.
+            val esistente = voci.entries.firstOrNull { (chiave, voce) ->
+                voce.ricorrente && chiave.second == null && normalizza(chiave.first.removeSuffix(SUFFISSO_RICORRENTE)) == chiaveNormalizzata
             }
             if (esistente != null) {
-                esistente.setValue(esistente.value.copy(ricorrente = true, mesiRicorrenza = mesi, meseInizio = meseInizio?.toString()))
+                esistente.setValue(esistente.value.copy(mesiRicorrenza = mesi, meseInizio = meseInizio?.toString()))
             } else {
+                val tipo = tipoRicorrente(nome)
+                if ((tipo to null) in voci) continue
                 val ultimoImporto = mesiRighe.filter { it.second <= oggi }
                     .mapNotNull { (r, _) -> foglio.numero(r, colonna)?.takeIf { it != 0.0 } }
                     .lastOrNull()
-                voci[tipoBollette to nome] = Voce(
-                    tipo = tipoBollette,
-                    sottotipo = nome,
+                voci[tipo to null] = Voce(
+                    tipo = tipo,
                     ricorrente = true,
                     mesiRicorrenza = mesi,
                     meseInizio = meseInizio?.toString(),
@@ -328,6 +342,7 @@ class ImportatoreExcel(private val db: AppDatabase) {
         const val CONTO_LGT = "LGT"
         const val TIPO_SPOSTAMENTO = "Spostamento"
         const val TIPO_BOLLETTE = "bollette"
+        const val SUFFISSO_RICORRENTE = " (ricorrente)"
         val TIPI_ENTRATA = setOf("stipendio", "interessi")
         const val GIORNI_ABBINAMENTO = 7L
         val EPOCA_EXCEL: LocalDate = LocalDate.of(1899, 12, 30)
