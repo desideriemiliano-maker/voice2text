@@ -32,6 +32,10 @@ import com.desideri.familybalance.logica.formattaData
 
 private data class Opzione(val valore: String, val etichetta: String)
 
+private val ORDINE_ALFABETICO: Comparator<String> = java.text.Collator.getInstance(java.util.Locale.ITALIAN).apply {
+    strength = java.text.Collator.PRIMARY
+}
+
 /**
  * Seconda fase dell'import da Excel: per ogni combinazione tipo/sottotipo "Bollette" trovata nei
  * conti l'utente sceglie a quale spesa ricorrente del foglio Bollette associarla. Le scelte
@@ -90,9 +94,11 @@ fun AssociaBolletteDialog(
 }
 
 private fun opzioni(c: CombinazioneBollette, analisi: AnalisiImport, memorizzata: String?): List<Opzione> {
-    val lista = analisi.ricorrenti.map { r ->
-        Opzione(SceltaBollette.ricorrente(r.nome), r.nome + if (r.mesi == 1) " · ogni mese" else " · ogni ${r.mesi} mesi")
-    }.toMutableList()
+    // Ricorrenti in ordine alfabetico (senza distinzione di maiuscole/accenti); in fondo le opzioni speciali.
+    val lista = analisi.ricorrenti
+        .sortedWith(compareBy(ORDINE_ALFABETICO) { it.nome })
+        .map { r -> Opzione(SceltaBollette.ricorrente(r.nome), r.nome + if (r.mesi == 1) " · ogni mese" else " · ogni ${r.mesi} mesi") }
+        .toMutableList()
     val nomi = analisi.ricorrenti.map { it.nome.lowercase() }.toSet()
     // Scelta memorizzata verso una ricorrente non più presente nel foglio: resta selezionabile.
     memorizzata?.let { SceltaBollette.nomeRicorrente(it) }?.takeIf { it.lowercase() !in nomi }?.let {
