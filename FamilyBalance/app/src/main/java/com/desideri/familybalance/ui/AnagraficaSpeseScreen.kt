@@ -48,6 +48,8 @@ import com.desideri.familybalance.logica.testoInCent
 import com.desideri.familybalance.logica.testoInMese
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Surface
 import androidx.compose.ui.window.Dialog
@@ -65,6 +67,8 @@ fun AnagraficaSpeseScreen(vm: SpeseViewModel, onIndietro: () -> Unit) {
     var filtro by rememberSaveable { mutableStateOf("") }
     var inModifica by remember { mutableStateOf<Voce?>(null) }
     var operazioniDi by remember { mutableStateOf<Voce?>(null) }
+    var ricorrentiEspansa by rememberSaveable { mutableStateOf(true) }
+    var correntiEspansa by rememberSaveable { mutableStateOf(true) }
 
     val utilizzi = remember(dati.operazioni) { dati.operazioni.mapNotNull { it.voceId }.groupingBy { it }.eachCount() }
     val filtrate = remember(dati.voci, filtro) {
@@ -92,10 +96,27 @@ fun AnagraficaSpeseScreen(vm: SpeseViewModel, onIndietro: () -> Unit) {
                 style = MaterialTheme.typography.bodySmall,
                 modifier = Modifier.padding(horizontal = 16.dp)
             )
+            // Due sezioni espandibili, ognuna con l'ordinamento dell'anagrafica (tipo, sottotipo).
+            val ricorrenti = filtrate.filter { it.ricorrente }
+            val correnti = filtrate.filter { !it.ricorrente }
             LazyColumn(contentPadding = PaddingValues(start = 12.dp, end = 12.dp, bottom = 88.dp)) {
-                items(filtrate, key = { it.id }) { voce ->
-                    RigaVoce(voce, utilizzi[voce.id] ?: 0, onClick = { inModifica = voce }, onOperazioni = { operazioniDi = voce })
-                    HorizontalDivider()
+                item(key = "sezione_ricorrenti") {
+                    IntestazioneSezione("Ricorrenti", ricorrenti.size, ricorrentiEspansa) { ricorrentiEspansa = !ricorrentiEspansa }
+                }
+                if (ricorrentiEspansa) {
+                    items(ricorrenti, key = { it.id }) { voce ->
+                        RigaVoce(voce, utilizzi[voce.id] ?: 0, onClick = { inModifica = voce }, onOperazioni = { operazioniDi = voce })
+                        HorizontalDivider()
+                    }
+                }
+                item(key = "sezione_correnti") {
+                    IntestazioneSezione("Correnti", correnti.size, correntiEspansa) { correntiEspansa = !correntiEspansa }
+                }
+                if (correntiEspansa) {
+                    items(correnti, key = { it.id }) { voce ->
+                        RigaVoce(voce, utilizzi[voce.id] ?: 0, onClick = { inModifica = voce }, onOperazioni = { operazioniDi = voce })
+                        HorizontalDivider()
+                    }
                 }
             }
         }
@@ -118,9 +139,22 @@ fun AnagraficaSpeseScreen(vm: SpeseViewModel, onIndietro: () -> Unit) {
 }
 
 @Composable
+private fun IntestazioneSezione(titolo: String, numero: Int, espansa: Boolean, onClick: () -> Unit) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 12.dp, horizontal = 4.dp)
+    ) {
+        Text("$titolo ($numero)", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+        Icon(if (espansa) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore, contentDescription = if (espansa) "Riduci" else "Espandi")
+    }
+    HorizontalDivider(thickness = 2.dp)
+}
+
+@Composable
 private fun RigaVoce(voce: Voce, utilizzi: Int, onClick: () -> Unit, onOperazioni: () -> Unit) {
     Column(modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 8.dp, horizontal = 4.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
+            PallinoColore(voce.colore, modifier = Modifier.padding(end = 8.dp), dimensione = 14.dp)
             Column(modifier = Modifier.weight(1f)) {
                 Text(voce.tipo, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
                 voce.sottotipo?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
@@ -163,6 +197,7 @@ private fun VoceDialog(
         mutableStateOf(voce.meseInizio?.let { testoInMese(it) }?.let { formattaMeseBreve(it) } ?: if (voce.id == 0L) formattaMeseBreve(YearMonth.now()) else "")
     }
     var importoPrevisto by remember { mutableStateOf(voce.importoPrevistoCent?.let { centInTesto(it) } ?: "") }
+    var colore by remember { mutableStateOf(voce.colore) }
     var errore by remember { mutableStateOf<String?>(null) }
     var confermaElimina by remember { mutableStateOf(false) }
 
@@ -179,7 +214,8 @@ private fun VoceDialog(
                 ricorrente = ricorrente,
                 mesiRicorrenza = if (ricorrente) numeroMesi ?: 1 else voce.mesiRicorrenza,
                 meseInizio = if (ricorrente) inizio?.toString() else voce.meseInizio,
-                importoPrevistoCent = if (ricorrente) previsto?.let { kotlin.math.abs(it) } else voce.importoPrevistoCent
+                importoPrevistoCent = if (ricorrente) previsto?.let { kotlin.math.abs(it) } else voce.importoPrevistoCent,
+                colore = colore
             )
         )
     }
@@ -191,6 +227,7 @@ private fun VoceDialog(
             Column(modifier = Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 CampoAutocompletamento("Tipo", tipo, tipiEsistenti, { tipo = it })
                 OutlinedTextField(value = sottotipo, onValueChange = { sottotipo = it }, label = { Text("Sottotipo (opzionale)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                SelettoreColore(colore) { colore = it }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Checkbox(checked = entrata, onCheckedChange = { entrata = it })
                     Text("Entrata (stipendio, interessi)")
@@ -272,6 +309,7 @@ private fun OperazioniVoceDialog(vm: SpeseViewModel, dati: DatiApp, voce: Voce, 
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
+                    PallinoColore(voce.colore, modifier = Modifier.padding(end = 8.dp), dimensione = 14.dp)
                     Text(voce.descrizione, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
                     IconButton(onClick = onChiudi) { Icon(Icons.Filled.Close, contentDescription = "Chiudi") }
                 }

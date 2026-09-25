@@ -177,7 +177,12 @@ private fun CardMovimento(
     val tipoNoto = tipi.any { it.equals(stato.tipo.trim(), ignoreCase = true) }
     Card(
         modifier = Modifier.fillMaxWidth(),
-        colors = if (!stato.includi) CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant) else CardDefaults.cardColors()
+        // Associati (tipo scelto) in evidenza, esclusi in grigio, da associare con il colore normale.
+        colors = when {
+            !stato.includi -> CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+            stato.tipo.isNotBlank() -> CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
+            else -> CardDefaults.cardColors()
+        }
     ) {
         Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {

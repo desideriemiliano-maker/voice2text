@@ -27,6 +27,7 @@ import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.EventRepeat
 import androidx.compose.material.icons.filled.FileOpen
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Settings
@@ -109,6 +110,7 @@ fun SpeseApp(vm: SpeseViewModel = viewModel()) {
 private fun SchermataPrincipale(vm: SpeseViewModel, sezione: Sezione, onSezione: (Sezione) -> Unit, onApri: (Schermata) -> Unit) {
     var menuAperto by remember { mutableStateOf(false) }
     var mostraVersioni by remember { mutableStateOf(false) }
+    var mostraRegistro by remember { mutableStateOf(false) }
     var confermaImport by remember { mutableStateOf(false) }
     val importazioneInCorso by vm.importazioneInCorso.collectAsStateWithLifecycle()
     val analisiImport by vm.analisiImport.collectAsStateWithLifecycle()
@@ -143,6 +145,7 @@ private fun SchermataPrincipale(vm: SpeseViewModel, sezione: Sezione, onSezione:
                             }
                             VoceMenu("Anagrafica associazioni", Icons.Filled.Link) { menuAperto = false; onApri(Schermata.AnagraficaAssociazioni) }
                             VoceMenu("Importa da Excel", Icons.Filled.FileOpen) { menuAperto = false; confermaImport = true }
+                            VoceMenu("Registro Gemini", Icons.Filled.History) { menuAperto = false; mostraRegistro = true }
                             VoceMenu("Versioni", Icons.Filled.Info) { menuAperto = false; mostraVersioni = true }
                         }
                     }
@@ -172,6 +175,7 @@ private fun SchermataPrincipale(vm: SpeseViewModel, sezione: Sezione, onSezione:
     }
 
     if (mostraVersioni) VersioniDialog(onDismiss = { mostraVersioni = false })
+    if (mostraRegistro) RegistroDialog(onDismiss = { mostraRegistro = false })
 
     if (confermaImport) {
         DialogConferma(

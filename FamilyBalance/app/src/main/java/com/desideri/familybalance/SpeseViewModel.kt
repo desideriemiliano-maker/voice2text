@@ -21,6 +21,7 @@ import com.desideri.familybalance.importazione.AnalisiImport
 import com.desideri.familybalance.importazione.ImportatoreExcel
 import com.desideri.familybalance.estratto.EstrattoGemini
 import com.desideri.familybalance.estratto.ImportEstratto
+import com.desideri.familybalance.estratto.RegistroPromptStore
 import com.desideri.familybalance.estratto.RigaEstratto
 import com.desideri.familybalance.estratto.SceltaEstratto
 import com.desideri.familybalance.logica.Associazioni
@@ -327,7 +328,7 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
         _testoAttesa.value = "Analisi dell'estratto conto con Gemini…"
         _importazioneInCorso.value = true
         try {
-            val movimenti = EstrattoGemini(BuildConfig.GEMINI_API_KEY).estrai(getApplication(), uri, contiValuta.first().valuta)
+            val movimenti = EstrattoGemini(BuildConfig.GEMINI_API_KEY, RegistroPromptStore(getApplication())).estrai(getApplication(), uri, contiValuta.first().valuta)
             val elencoAssociazioni = dao.associazioni()
             var saltate = 0
             val righe = movimenti.mapIndexedNotNull { indice, m ->

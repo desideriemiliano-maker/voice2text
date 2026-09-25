@@ -223,6 +223,10 @@ class ImportatoreExcel(private val db: AppDatabase) {
         var abbinati = 0
         db.withTransaction {
             val dao = db.dao()
+            // I colori scelti per le voci sopravvivono al nuovo import (stesso tipo/sottotipo).
+            val colori = dao.voci().filter { it.colore != null }
+                .associate { (it.tipo.lowercase() to (it.sottotipo ?: "").lowercase()) to it.colore }
+            voci.replaceAll { _, v -> colori[v.tipo.lowercase() to (v.sottotipo ?: "").lowercase()]?.let { v.copy(colore = it) } ?: v }
             dao.svuotaOperazioni()
             dao.svuotaVoci()
             dao.svuotaContiValuta()

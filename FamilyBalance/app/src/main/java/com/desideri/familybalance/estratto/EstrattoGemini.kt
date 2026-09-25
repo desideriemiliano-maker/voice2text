@@ -63,7 +63,7 @@ private fun schemaMovimenti(): Schema {
  * Voice2Text). Gemini non accetta i file .xlsx: i fogli Excel vengono convertiti in testo (con le
  * date già in formato ISO); PDF e immagini sono inviati così come sono, CSV/testo come testo.
  */
-class EstrattoGemini(private val apiKey: String) {
+class EstrattoGemini(private val apiKey: String, private val registro: RegistroPromptStore? = null) {
 
     suspend fun estrai(context: Context, uri: Uri, valutaPredefinita: String): List<MovimentoEstratto> {
         if (apiKey.isBlank()) throw IllegalStateException("Chiave Gemini non configurata in questa build")
@@ -73,29 +73,52 @@ class EstrattoGemini(private val apiKey: String) {
                 ?: throw IllegalStateException("Impossibile leggere il file")
         }
         val nomeMinuscolo = nome.lowercase()
+        // Testo inviato al posto del file (fogli di calcolo e CSV), riportato anche nel registro.
+        var testoInviato: String? = null
         val parteFile: Part = when {
             nomeMinuscolo.endsWith(".xlsx") || mime == MIME_XLSX -> withContext(Dispatchers.Default) {
-                Part.fromText(LettoreXlsx(ByteArrayInputStream(bytes)).comeTesto())
+                LettoreXlsx(ByteArrayInputStream(bytes)).comeTesto().also { testoInviato = it }.let { Part.fromText(it) }
             }
             nomeMinuscolo.endsWith(".xls") || mime == "application/vnd.ms-excel" ->
                 throw IllegalArgumentException("Formato .xls non supportato: salva il file come .xlsx, .csv o PDF")
             mime == "application/pdf" || nomeMinuscolo.endsWith(".pdf") -> Part.fromBytes(bytes, "application/pdf")
             mime?.startsWith("image/") == true -> Part.fromBytes(bytes, mime ?: "image/jpeg")
-            else -> Part.fromText(String(bytes, Charsets.UTF_8))
+            else -> String(bytes, Charsets.UTF_8).also { testoInviato = it }.let { Part.fromText(it) }
         }
         val prompt = "$PROMPT_ESTRATTO La valuta del conto è $valutaPredefinita."
+        val richiesta = buildString {
+            append(prompt).append("\n\nFile: ").append(nome).append(" (").append(mime ?: "tipo sconosciuto")
+            append(", ").append(bytes.size / 1024).append(" KB)")
+            testoInviato?.let { append("\n\nContenuto inviato come testo:\n").append(tronca(it)) }
+                ?: append("\n\nFile allegato così com'è.")
+        }
 
         val config = GenerateContentConfig.builder()
             .responseMimeType("application/json")
             .responseSchema(schemaMovimenti())
             .build()
         val client = Client.builder().apiKey(apiKey).build()
-        val risposta = withContext(Dispatchers.IO) {
-            client.models.generateContent(GEMINI_MODEL, Content.fromParts(parteFile, Part.fromText(prompt)), config)
+        try {
+            val risposta = withContext(Dispatchers.IO) {
+                client.models.generateContent(GEMINI_MODEL, Content.fromParts(parteFile, Part.fromText(prompt)), config)
+            }
+            val json = risposta.text() ?: throw IllegalStateException("Gemini non ha restituito alcun movimento")
+            val movimenti = interpreta(json, valutaPredefinita)
+            registra(richiesta, "${movimenti.size} movimenti interpretati.\n\n${tronca(json)}", errore = false)
+            return movimenti
+        } catch (e: Exception) {
+            registra(richiesta, e.message ?: e.javaClass.simpleName, errore = true)
+            throw e
         }
-        val json = risposta.text() ?: throw IllegalStateException("Gemini non ha restituito alcun movimento")
-        return interpreta(json, valutaPredefinita)
     }
+
+    private suspend fun registra(richiesta: String, risposta: String, errore: Boolean) = withContext(Dispatchers.IO) {
+        registro?.registra(TipoChiamataGemini.ESTRATTO_CONTO, richiesta, risposta, errore)
+    }
+
+    /** Limita i testi molto lunghi nel registro (il file del registro resta leggibile). */
+    private fun tronca(testo: String, max: Int = 60_000): String =
+        if (testo.length <= max) testo else testo.take(max) + "\n… (troncato, ${testo.length} caratteri in totale)"
 
     private fun interpreta(json: String, valutaPredefinita: String): List<MovimentoEstratto> {
         val array = JSONObject(json).optJSONArray("movimenti") ?: return emptyList()

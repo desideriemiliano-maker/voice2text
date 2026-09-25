@@ -1,5 +1,18 @@
 package com.desideri.familybalance.ui
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.Dp
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -193,4 +206,42 @@ fun DialogConferma(titolo: String, testo: String, conferma: String = "Conferma",
         },
         dismissButton = { TextButton(onClick = onAnnulla) { Text("Annulla") } }
     )
+}
+
+/** Colori selezionabili per le voci di spesa (ARGB). */
+val PALETTE_COLORI: List<Int> = listOf(
+    0xFFE53935, 0xFFD81B60, 0xFF8E24AA, 0xFF5E35B1, 0xFF3949AB, 0xFF1E88E5,
+    0xFF00ACC1, 0xFF00897B, 0xFF43A047, 0xFF7CB342, 0xFFFDD835, 0xFFFB8C00,
+    0xFF6D4C41, 0xFF757575
+).map { it.toInt() }
+
+/** Pallino del colore di una voce; niente se la voce non ha colore. */
+@Composable
+fun PallinoColore(colore: Int?, modifier: Modifier = Modifier, dimensione: Dp = 12.dp) {
+    if (colore == null) return
+    Box(modifier = modifier.size(dimensione).clip(CircleShape).background(Color(colore)))
+}
+
+/** Scelta del colore di una voce tra [PALETTE_COLORI], o nessuno. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun SelettoreColore(colore: Int?, onColore: (Int?) -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text("Colore", style = MaterialTheme.typography.labelLarge)
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier.size(32.dp).clip(CircleShape)
+                    .border(if (colore == null) 3.dp else 1.dp, MaterialTheme.colorScheme.outline, CircleShape)
+                    .clickable { onColore(null) }
+            ) { Text("–", style = MaterialTheme.typography.labelLarge) }
+            PALETTE_COLORI.forEach { c ->
+                Box(
+                    modifier = Modifier.size(32.dp).clip(CircleShape).background(Color(c))
+                        .border(if (colore == c) 3.dp else 0.dp, MaterialTheme.colorScheme.onSurface, CircleShape)
+                        .clickable { onColore(c) }
+                )
+            }
+        }
+    }
 }

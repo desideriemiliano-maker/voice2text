@@ -217,6 +217,7 @@ private fun RigaListaOperazione(riga: RigaOperazione, dati: DatiApp, valuta: Str
         modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 10.dp, horizontal = 4.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
+        PallinoColore(op.voceId?.let { dati.vociPerId[it]?.colore }, modifier = Modifier.padding(end = 8.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(descrizione, style = MaterialTheme.typography.bodyLarge)
             Text(

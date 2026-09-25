@@ -43,6 +43,7 @@ data class ContoValuta(
  *   partire da [meseInizio] ("yyyy-MM"); senza [meseInizio] è ricorrente ma senza previsione.
  * - [importoPrevistoCent]: importo atteso (positivo) per la previsione; se null si usa la media
  *   delle ultime occorrenze pagate.
+ * - [colore]: colore con cui la voce è evidenziata nelle liste.
  */
 @Entity(tableName = "voci", indices = [Index(value = ["tipo", "sottotipo"], unique = true)])
 data class Voce(
@@ -53,7 +54,9 @@ data class Voce(
     val ricorrente: Boolean = false,
     val mesiRicorrenza: Int = 1,
     val meseInizio: String? = null,
-    val importoPrevistoCent: Long? = null
+    val importoPrevistoCent: Long? = null,
+    /** Colore scelto per la voce (ARGB), null = nessuno. */
+    val colore: Int? = null
 ) {
     val descrizione: String get() = if (sottotipo.isNullOrBlank()) tipo else "$tipo / $sottotipo"
 }

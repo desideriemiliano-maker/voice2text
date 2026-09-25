@@ -85,6 +85,7 @@ private fun CardMese(mese: MeseRicorrenti, oggi: YearMonth) {
             mese.righe.forEachIndexed { indice, riga ->
                 if (indice == 0) HorizontalDivider(modifier = Modifier.padding(vertical = 6.dp))
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 2.dp)) {
+                    PallinoColore(riga.voce.colore, modifier = Modifier.padding(end = 6.dp), dimensione = 10.dp)
                     Text(
                         (if (riga.previsto != null) "⏳ " else "✓ ") + (riga.voce.sottotipo ?: riga.voce.tipo),
                         style = MaterialTheme.typography.bodyMedium,

@@ -140,7 +140,7 @@ private fun CardCombinazione(
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        colors = if (scelta == null) CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant) else CardDefaults.cardColors()
+        colors = if (scelta != null) CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer) else CardDefaults.cardColors()
     ) {
         Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text("Tipo: ${combinazione.tipo} · Sottotipo: ${combinazione.sottotipo ?: "—"}", style = MaterialTheme.typography.bodyMedium)
