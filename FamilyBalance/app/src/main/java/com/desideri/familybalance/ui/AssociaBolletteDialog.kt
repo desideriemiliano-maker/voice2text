@@ -32,9 +32,12 @@ import com.desideri.familybalance.logica.formattaData
 
 private data class Opzione(val valore: String, val etichetta: String)
 
-private val ORDINE_ALFABETICO: Comparator<String> = java.text.Collator.getInstance(java.util.Locale.ITALIAN).apply {
+private val COLLATOR: java.text.Collator = java.text.Collator.getInstance(java.util.Locale.ITALIAN).apply {
     strength = java.text.Collator.PRIMARY
 }
+
+/** Ordine alfabetico italiano, senza distinzione di maiuscole e accenti. */
+private val ORDINE_ALFABETICO: Comparator<String> = Comparator { a, b -> COLLATOR.compare(a, b) }
 
 /**
  * Seconda fase dell'import da Excel: per ogni combinazione tipo/sottotipo "Bollette" trovata nei
