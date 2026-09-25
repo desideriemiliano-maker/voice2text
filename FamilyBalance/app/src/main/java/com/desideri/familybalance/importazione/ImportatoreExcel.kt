@@ -94,7 +94,8 @@ class AnalisiImport internal constructor(
  *   coincide con un tipo normale già usato (es. "Autostrada") si aggiunge " (ricorrente)";
  * - le operazioni con TIPO "Bollette" vanno sulla ricorrente scelta dall'utente per la loro
  *   combinazione tipo/sottotipo ([CombinazioneBollette]), o restano "Bollette / sottotipo" non
- *   ricorrenti;
+ *   ricorrenti; quelle lasciate senza scelta vanno nella voce generica "Bollette" (ricorrente senza
+ *   previsione), da sistemare in seguito dall'anagrafica spese;
  * - foglio **Impostazioni**: "Risparmio target".
  */
 class ImportatoreExcel(private val db: AppDatabase) {
@@ -175,8 +176,9 @@ class ImportatoreExcel(private val db: AppDatabase) {
             val tipoKey = r.tipo!!.lowercase()
             val sottotipo = r.sottotipo?.let { sottotipoCanonico[tipoKey]?.get(it.lowercase()) }
             if (r.bolletta) {
-                val nomeRicorrente = scelte[chiaviBolletteRighe[indiceRiga.getValue(r)]]?.let { SceltaBollette.nomeRicorrente(it) }
-                if (nomeRicorrente != null) return nomeVoceRicorrente(nomeRicorrente) to null
+                // Nessuna scelta: voce generica "Bollette" (ricorrente senza previsione), da sistemare in seguito.
+                val scelta = scelte[chiaviBolletteRighe[indiceRiga.getValue(r)]] ?: return tipoCanonico.getValue(tipoKey) to null
+                SceltaBollette.nomeRicorrente(scelta)?.let { return nomeVoceRicorrente(it) to null }
             }
             return tipoCanonico.getValue(tipoKey) to sottotipo
         }
@@ -185,8 +187,9 @@ class ImportatoreExcel(private val db: AppDatabase) {
         righe.forEachIndexed { indice, r ->
             val chiave = chiaviRighe[indice] ?: return@forEachIndexed
             if (chiave !in voci) {
-                // Ricorrente scelta ma assente dal foglio Bollette: mensile, senza previsione.
-                val ricorrente = r.bolletta && chiave.second == null && scelte[chiaviBolletteRighe[indice]]?.let { SceltaBollette.nomeRicorrente(it) } != null
+                // Ricorrente scelta ma assente dal foglio Bollette, o voce generica "Bollette" per quelle
+                // lasciate senza scelta: mensile, senza previsione. "Bollette / sottotipo" non ricorrente.
+                val ricorrente = r.bolletta && chiave.second == null
                 voci[chiave] = Voce(
                     tipo = chiave.first,
                     sottotipo = chiave.second,

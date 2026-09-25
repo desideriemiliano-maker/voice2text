@@ -75,8 +75,8 @@ fun AssociaBolletteDialog(
                 Text(
                     "Le spese ricorrenti sono quelle del foglio Bollette (${analisi.ricorrenti.size}). Per ogni tipo/sottotipo " +
                         "\"Bollette\" dei conti scegli a quale associarlo (quelle senza sottotipo una per una). " +
-                        "\"Salva scelte\" memorizza quanto fatto finora per riprendere al prossimo import; " +
-                        "\"Importa\" si attiva quando sono tutte associate.",
+                        "Quelle lasciate vuote finiscono nella voce generica \"Bollette\", da sistemare poi in " +
+                        "Anagrafica spese. \"Salva scelte\" memorizza quanto fatto finora senza importare.",
                     style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier.padding(top = 4.dp, bottom = 8.dp)
                 )
@@ -85,7 +85,7 @@ fun AssociaBolletteDialog(
                     Text(
                         "Associate ${totale - mancanti}/$totale",
                         style = MaterialTheme.typography.labelLarge,
-                        color = if (mancanti > 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+                        color = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.weight(1f)
                     )
                     TextButton(onClick = onAnnulla) { Text("Annulla") }
@@ -93,9 +93,8 @@ fun AssociaBolletteDialog(
                 }
                 Button(
                     onClick = { onConferma(scelte.toMap()) },
-                    enabled = mancanti == 0,
                     modifier = Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 8.dp)
-                ) { Text(if (mancanti == 0) "Importa" else "Importa (mancano $mancanti)") }
+                ) { Text(if (mancanti == 0) "Importa" else "Importa ($mancanti in Bollette generica)") }
                 LazyColumn(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     items(ordinate, key = { it.chiave }) { c ->
                         CardCombinazione(
@@ -126,7 +125,8 @@ private fun opzioni(c: CombinazioneBollette, analisi: AnalisiImport, memorizzata
     c.sottotipo?.takeIf { it.lowercase() !in nomi && lista.none { o -> o.valore == SceltaBollette.ricorrente(it) } }?.let {
         lista += Opzione(SceltaBollette.ricorrente(it), "Nuova ricorrente «$it»")
     }
-    lista += Opzione(SceltaBollette.NON_RICORRENTE, "Non ricorrente (${c.tipo} / ${c.sottotipo ?: "—"})")
+    // Senza sottotipo "non ricorrente" coinciderebbe con la voce generica: basta lasciarla vuota.
+    if (c.sottotipo != null) lista += Opzione(SceltaBollette.NON_RICORRENTE, "Non ricorrente (${c.tipo} / ${c.sottotipo})")
     return lista
 }
 
@@ -140,7 +140,7 @@ private fun CardCombinazione(
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        colors = if (scelta == null) CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer) else CardDefaults.cardColors()
+        colors = if (scelta == null) CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant) else CardDefaults.cardColors()
     ) {
         Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text("Tipo: ${combinazione.tipo} · Sottotipo: ${combinazione.sottotipo ?: "—"}", style = MaterialTheme.typography.bodyMedium)
@@ -164,6 +164,9 @@ private fun CardCombinazione(
                         combinazione.totaliPerValuta.entries.joinToString(" + ") { (valuta, cent) -> formattaCent(cent, valuta) },
                     style = MaterialTheme.typography.bodySmall
                 )
+            }
+            if (scelta == null) {
+                Text("Vuota: andrà nella voce generica \"Bollette\"", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             if (memorizzata) {
                 Text("Scelta memorizzata da un import precedente", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
