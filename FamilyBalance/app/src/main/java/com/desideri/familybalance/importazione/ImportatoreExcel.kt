@@ -36,8 +36,15 @@ data class CombinazioneBollette(
     val prima: LocalDate,
     val ultima: LocalDate,
     /** Ricorrente del foglio Bollette con nome compatibile, proposta come scelta iniziale. */
-    val suggerimento: String?
-)
+    val suggerimento: String?,
+    /**
+     * Presente per le Bollette SENZA sottotipo: ognuna è una combinazione a sé (una sola
+     * operazione), con il conto/valuta a cui appartiene; null per i gruppi con sottotipo.
+     */
+    val contoValuta: String? = null
+) {
+    val singola: Boolean get() = contoValuta != null
+}
 
 /** Scelta per una combinazione Bollette: una ricorrente ("R:<nome>") o [NON_RICORRENTE]. */
 object SceltaBollette {
@@ -108,9 +115,11 @@ class ImportatoreExcel(private val db: AppDatabase) {
         if (righe.isEmpty()) throw IllegalArgumentException("Nessuna operazione trovata nei fogli HelloBank e LGT")
 
         val ricorrenti = xlsx.foglio("Bollette")?.let { leggiRicorrenti(it, oggi) }.orEmpty()
-        val combinazioni = righe.filter { it.bolletta }
-            .groupBy { chiaveBollette(it.tipo!!, it.sottotipo) }
-            .map { (chiave, lista) ->
+        val chiavi = chiaviBollette(righe)
+        val combinazioni = righe.indices.filter { chiavi[it] != null }
+            .groupBy { chiavi[it]!! }
+            .map { (chiave, indici) ->
+                val lista = indici.map { righe[it] }
                 val sottotipo = lista.mapNotNull { it.sottotipo }.groupingBy { it }.eachCount().maxByOrNull { it.value }?.key
                 CombinazioneBollette(
                     chiave = chiave,
@@ -120,10 +129,12 @@ class ImportatoreExcel(private val db: AppDatabase) {
                     totaliPerValuta = lista.groupBy { it.valuta }.mapValues { (_, l) -> l.sumOf { it.importoCent } },
                     prima = lista.minOf { it.data },
                     ultima = lista.maxOf { it.data },
-                    suggerimento = sottotipo?.let { suggerisci(it, ricorrenti) }
+                    suggerimento = sottotipo?.let { suggerisci(it, ricorrenti) },
+                    contoValuta = if (sottotipo == null) lista.first().let { "${it.conto} ${it.valuta}" } else null
                 )
             }
-            .sortedBy { (it.sottotipo ?: "").lowercase() }
+            // Prima i gruppi per sottotipo in ordine alfabetico, poi le singole senza sottotipo per data.
+            .sortedWith(compareBy({ it.singola }, { (it.sottotipo ?: "").lowercase() }, { it.prima }))
 
         AnalisiImport(righe, ricorrenti, combinazioni, xlsx.foglio("Impostazioni")?.let { leggiTarget(it) })
     }
@@ -157,11 +168,14 @@ class ImportatoreExcel(private val db: AppDatabase) {
             )
         }
 
+        val chiaviBolletteRighe = chiaviBollette(righe)
+        val indiceRiga = java.util.IdentityHashMap<RigaExcel, Int>().apply { righe.forEachIndexed { i, r -> put(r, i) } }
+
         fun chiaveVoce(r: RigaExcel): Pair<String, String?> {
             val tipoKey = r.tipo!!.lowercase()
             val sottotipo = r.sottotipo?.let { sottotipoCanonico[tipoKey]?.get(it.lowercase()) }
             if (r.bolletta) {
-                val nomeRicorrente = scelte[chiaveBollette(r.tipo, r.sottotipo)]?.let { SceltaBollette.nomeRicorrente(it) }
+                val nomeRicorrente = scelte[chiaviBolletteRighe[indiceRiga.getValue(r)]]?.let { SceltaBollette.nomeRicorrente(it) }
                 if (nomeRicorrente != null) return nomeVoceRicorrente(nomeRicorrente) to null
             }
             return tipoCanonico.getValue(tipoKey) to sottotipo
@@ -172,7 +186,7 @@ class ImportatoreExcel(private val db: AppDatabase) {
             val chiave = chiaviRighe[indice] ?: return@forEachIndexed
             if (chiave !in voci) {
                 // Ricorrente scelta ma assente dal foglio Bollette: mensile, senza previsione.
-                val ricorrente = r.bolletta && chiave.second == null && scelte[chiaveBollette(r.tipo!!, r.sottotipo)]?.let { SceltaBollette.nomeRicorrente(it) } != null
+                val ricorrente = r.bolletta && chiave.second == null && scelte[chiaviBolletteRighe[indice]]?.let { SceltaBollette.nomeRicorrente(it) } != null
                 voci[chiave] = Voce(
                     tipo = chiave.first,
                     sottotipo = chiave.second,
@@ -423,8 +437,27 @@ class ImportatoreExcel(private val db: AppDatabase) {
     }
 
     companion object {
-        /** Chiave (memorizzabile) di una combinazione tipo/sottotipo Bollette, indipendente da maiuscole e accenti. */
-        fun chiaveBollette(tipo: String, sottotipo: String?): String = normalizza(tipo) + "|" + normalizza(sottotipo ?: "")
+        /**
+         * Chiave memorizzabile della combinazione Bollette di ogni riga (null se non è una
+         * Bollette): tipo/sottotipo, indipendente da maiuscole e accenti; per le Bollette senza
+         * sottotipo la singola operazione (conto, valuta, data, importo e, per righe identiche,
+         * il numero d'ordine), così che ognuna sia scelta a sé e ritrovata nei prossimi import.
+         */
+        internal fun chiaviBollette(righe: List<RigaExcel>): List<String?> {
+            val occorrenze = HashMap<String, Int>()
+            return righe.map { r ->
+                when {
+                    !r.bolletta -> null
+                    r.sottotipo != null -> normalizza(r.tipo!!) + "|" + normalizza(r.sottotipo)
+                    else -> {
+                        val base = normalizza(r.tipo!!) + "||" + r.conto + "|" + r.valuta + "|" + r.data + "|" + r.importoCent
+                        val n = (occorrenze[base] ?: 0) + 1
+                        occorrenze[base] = n
+                        "$base|$n"
+                    }
+                }
+            }
+        }
 
         private fun normalizza(testo: String): String =
             Normalizer.normalize(testo, Normalizer.Form.NFD)

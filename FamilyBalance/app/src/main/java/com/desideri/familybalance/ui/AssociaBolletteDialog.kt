@@ -61,7 +61,8 @@ fun AssociaBolletteDialog(
                 Text("Associa le Bollette alle spese ricorrenti", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                 Text(
                     "Le spese ricorrenti sono quelle del foglio Bollette (${analisi.ricorrenti.size}). Per ogni tipo/sottotipo " +
-                        "\"Bollette\" dei conti scegli a quale associarlo: la scelta viene memorizzata e riproposta nei prossimi import.",
+                        "\"Bollette\" dei conti scegli a quale associarlo (quelle senza sottotipo una per una): la scelta viene " +
+                        "memorizzata e riproposta nei prossimi import.",
                     style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier.padding(top = 4.dp, bottom = 8.dp)
                 )
@@ -117,13 +118,28 @@ private fun CardCombinazione(
         colors = if (scelta == null) CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer) else CardDefaults.cardColors()
     ) {
         Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text("Tipo: ${combinazione.tipo}", style = MaterialTheme.typography.bodyMedium)
-            Text("Sottotipo: ${combinazione.sottotipo ?: "—"}", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
-            Text(
-                "${combinazione.operazioni} operazioni · dal ${formattaData(combinazione.prima.toEpochDay())} al ${formattaData(combinazione.ultima.toEpochDay())} · " +
-                    combinazione.totaliPerValuta.entries.joinToString(" + ") { (valuta, cent) -> formattaCent(cent, valuta) },
-                style = MaterialTheme.typography.bodySmall
-            )
+            Text("Tipo: ${combinazione.tipo} · Sottotipo: ${combinazione.sottotipo ?: "—"}", style = MaterialTheme.typography.bodyMedium)
+            if (combinazione.singola) {
+                // Bollette senza sottotipo: una singola operazione, riconoscibile da data e importo.
+                val (valuta, cent) = combinazione.totaliPerValuta.entries.first()
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        formattaData(combinazione.prima.toEpochDay()),
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.weight(1f)
+                    )
+                    TestoImporto(cent / 100.0, valuta, grassetto = true)
+                }
+                Text("Conto: ${combinazione.contoValuta}", style = MaterialTheme.typography.bodySmall)
+            } else {
+                Text("Sottotipo: ${combinazione.sottotipo ?: "—"}", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                Text(
+                    "${combinazione.operazioni} operazioni · dal ${formattaData(combinazione.prima.toEpochDay())} al ${formattaData(combinazione.ultima.toEpochDay())} · " +
+                        combinazione.totaliPerValuta.entries.joinToString(" + ") { (valuta, cent) -> formattaCent(cent, valuta) },
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
             if (memorizzata) {
                 Text("Scelta memorizzata da un import precedente", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
             }
