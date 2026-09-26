@@ -334,7 +334,9 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
         _testoAttesa.value = "Analisi dell'estratto conto con Gemini…"
         _importazioneInCorso.value = true
         try {
-            val movimenti = EstrattoGemini(BuildConfig.GEMINI_API_KEY, RegistroPromptStore(getApplication())).estrai(getApplication(), uri, contiValuta.first().valuta)
+            val movimenti = EstrattoGemini(BuildConfig.GEMINI_API_KEY, RegistroPromptStore(getApplication())).estrai(getApplication(), uri, contiValuta.first().valuta) { blocco, totale ->
+                _testoAttesa.value = if (totale > 1) "Analisi con Gemini: blocco $blocco di $totale…" else "Analisi dell'estratto conto con Gemini…"
+            }
             val elencoAssociazioni = dao.associazioni()
             // Date delle operazioni esistenti per conto/valuta e importo, per riconoscere i doppioni.
             val esistenti = dati.value.operazioni.groupBy({ it.contoValutaId to it.importoCent }, { it.data })
