@@ -1,5 +1,10 @@
 package com.desideri.familybalance.ui
 
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import com.desideri.familybalance.estratto.Presenza
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -11,7 +16,6 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -44,6 +48,25 @@ import com.desideri.familybalance.estratto.SceltaEstratto
 import com.desideri.familybalance.logica.Associazioni
 import com.desideri.familybalance.logica.formattaData
 
+/** Filtri del pannello di import. */
+private enum class FiltroImport(val etichetta: String) {
+    TUTTI("Tutti"),
+    DA_IMPOSTARE("Da impostare"),
+    SELEZIONATI("Selezionati"),
+    NON_SELEZIONATI("Non selezionati"),
+    PIU_TIPI("Più tipi possibili"),
+    GIA_PRESENTI("Già presenti/doppioni");
+
+    fun corrisponde(riga: RigaEstratto, stato: StatoRiga): Boolean = when (this) {
+        TUTTI -> true
+        DA_IMPOSTARE -> stato.includi && (stato.tipo.isBlank() || (stato.spostamento && stato.destinazione == null))
+        SELEZIONATI -> stato.includi
+        NON_SELEZIONATI -> !stato.includi
+        PIU_TIPI -> riga.piuCandidati
+        GIA_PRESENTI -> riga.presenza != Presenza.NUOVA
+    }
+}
+
 /** Scelte in corso per un movimento dell'estratto conto. */
 private data class StatoRiga(
     val includi: Boolean = true,
@@ -67,7 +90,8 @@ private fun StatoRiga.con(associazione: Associazione, riga: RigaEstratto, dati: 
 }
 
 /**
- * Seconda fase dell'import di un estratto conto: i movimenti non ancora presenti, con il tipo
+ * Seconda fase dell'import di un estratto conto: tutti i movimenti letti (quelli già presenti o
+ * possibili doppioni deselezionati), con filtri per vederne una parte, e il tipo
  * preselezionato quando una sola associazione corrisponde alla descrizione (con più associazioni
  * l'utente sceglie tra quelle proposte). Da ogni movimento si può creare una nuova associazione
  * usando la descrizione, o parte di essa, come chiave.
@@ -77,10 +101,13 @@ private fun StatoRiga.con(associazione: Associazione, riga: RigaEstratto, dati: 
 fun ImportEstrattoDialog(vm: SpeseViewModel, dati: DatiApp, importazione: ImportEstratto) {
     val stati = remember(importazione) {
         mutableStateListOf(*importazione.righe.map { r ->
-            r.candidate.singleOrNull()?.let { StatoRiga().con(it, r, dati) } ?: StatoRiga()
+            // Già presenti o possibili doppioni partono deselezionati.
+            val base = StatoRiga(includi = r.presenza == Presenza.NUOVA)
+            r.candidate.singleOrNull()?.let { base.con(it, r, dati) } ?: base
         }.toTypedArray())
     }
     var nuovaAssociazioneRiga by remember { mutableStateOf<Int?>(null) }
+    var filtro by remember { mutableStateOf(FiltroImport.TUTTI) }
 
     val tipi = remember(dati.voci) { (dati.voci.map { it.tipo } + Associazione.TIPO_SPOSTAMENTO).distinct().sortedBy { it.lowercase() } }
     fun valida(stato: StatoRiga) = stato.includi && stato.tipo.isNotBlank() && (!stato.spostamento || stato.destinazione != null)
@@ -93,9 +120,9 @@ fun ImportEstrattoDialog(vm: SpeseViewModel, dati: DatiApp, importazione: Import
             Column(modifier = Modifier.fillMaxSize().systemBarsPadding().imePadding().padding(16.dp)) {
                 Text("Import estratto conto · $conto", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                 Text(
-                    "${importazione.totali} movimenti letti da Gemini, ${importazione.saltate} già presenti (saltati), " +
-                        "${importazione.righe.size} da verificare. Scegli tipo/sottotipo di ognuno; quelli senza tipo o " +
-                        "deselezionati non vengono importati.",
+                    "${importazione.righe.size} movimenti letti da Gemini: ${importazione.presenti} già presenti e " +
+                        "${importazione.simili} possibili doppioni (deselezionati). Scegli tipo/sottotipo di quelli da " +
+                        "importare; quelli senza tipo o deselezionati non vengono importati.",
                     style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier.padding(top = 4.dp, bottom = 8.dp)
                 )
@@ -124,8 +151,29 @@ fun ImportEstrattoDialog(vm: SpeseViewModel, dati: DatiApp, importazione: Import
                         enabled = daImportare > 0
                     ) { Text("Importa") }
                 }
-                LazyColumn(modifier = Modifier.weight(1f).padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    itemsIndexed(importazione.righe, key = { _, r -> r.id }) { i, riga ->
+                // Filtri: mostrano solo una parte dei movimenti (le scelte fatte restano valide su tutti).
+                Row(
+                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(top = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    FiltroImport.entries.forEach { f ->
+                        val numero = importazione.righe.indices.count { f.corrisponde(importazione.righe[it], stati[it]) }
+                        FilterChip(selected = filtro == f, onClick = { filtro = f }, label = { Text("${f.etichetta} ($numero)") })
+                    }
+                }
+                val visibili = importazione.righe.indices.filter { filtro.corrisponde(importazione.righe[it], stati[it]) }
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    TextButton(onClick = { visibili.forEach { stati[it] = stati[it].copy(includi = true) } }, enabled = visibili.isNotEmpty()) {
+                        Text("Seleziona visibili")
+                    }
+                    TextButton(onClick = { visibili.forEach { stati[it] = stati[it].copy(includi = false) } }, enabled = visibili.isNotEmpty()) {
+                        Text("Deseleziona visibili")
+                    }
+                }
+                LazyColumn(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (visibili.isEmpty()) item { Text("Nessun movimento con questo filtro.", modifier = Modifier.padding(8.dp)) }
+                    items(visibili, key = { importazione.righe[it].id }) { i ->
+                        val riga = importazione.righe[i]
                         val stato = stati[i]
                         CardMovimento(
                             riga = riga,
@@ -177,6 +225,8 @@ private fun CardMovimento(
     val tipoNoto = tipi.any { it.equals(stato.tipo.trim(), ignoreCase = true) }
     Card(
         modifier = Modifier.fillMaxWidth(),
+        // Più tipi possibili: bordo evidenziato finché non se ne sceglie uno.
+        border = if (riga.piuCandidati && stato.includi) BorderStroke(2.dp, MaterialTheme.colorScheme.tertiary) else null,
         // Associati (tipo scelto) in evidenza, esclusi in grigio, da associare con il colore normale.
         colors = when {
             !stato.includi -> CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
@@ -190,17 +240,33 @@ private fun CardMovimento(
                 Text(formattaData(m.data.toEpochDay()), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
                 TestoImporto(m.importoCent / 100.0, m.valuta, grassetto = true)
             }
+            m.dataContabile?.let {
+                Text("Data valuta ${formattaData(m.data.toEpochDay())} · contabile ${formattaData(it.toEpochDay())}", style = MaterialTheme.typography.labelSmall)
+            }
             Text(m.descrizione.ifBlank { "(senza descrizione)" }, style = MaterialTheme.typography.bodyMedium)
-            if (riga.giaPresenti > 1) {
-                Text(
-                    "Attenzione: già ${riga.giaPresenti} operazioni con stessa data e importo",
-                    style = MaterialTheme.typography.labelSmall,
+            when (riga.presenza) {
+                Presenza.PRESENTE -> Text(
+                    "Già presente: operazione con stesso importo e stessa data",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.error
                 )
+                Presenza.SIMILE -> Text(
+                    "Possibile doppione: stesso importo a ${riga.giorniDistanza} giorni di distanza",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.error
+                )
+                Presenza.NUOVA -> Unit
             }
             if (stato.includi) {
-                if (riga.candidate.size > 1) {
-                    Text("Più associazioni corrispondono:", style = MaterialTheme.typography.labelMedium)
+                if (riga.piuCandidati) {
+                    Text(
+                        "⚠ Più tipi possibili: scegline uno",
+                        style = MaterialTheme.typography.labelLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.tertiary
+                    )
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         riga.candidate.forEach { a ->
                             val selezionata = a.tipo.equals(stato.tipo, true) && (a.sottotipo ?: "").equals(stato.sottotipo, true)

@@ -21,6 +21,7 @@ import com.desideri.familybalance.importazione.AnalisiImport
 import com.desideri.familybalance.importazione.ImportatoreExcel
 import com.desideri.familybalance.estratto.EstrattoGemini
 import com.desideri.familybalance.estratto.ImportEstratto
+import com.desideri.familybalance.estratto.Presenza
 import com.desideri.familybalance.estratto.RegistroPromptStore
 import com.desideri.familybalance.estratto.RigaEstratto
 import com.desideri.familybalance.estratto.SceltaEstratto
@@ -75,6 +76,9 @@ data class StatoBackup(
     val infoCaricata: Boolean = false,
     val errore: String? = null
 )
+
+/** Distanza massima in giorni per segnalare un movimento come possibile doppione. */
+private const val GIORNI_DOPPIONE = 7L
 
 class SpeseViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -318,9 +322,10 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
     val testoAttesa: StateFlow<String> = _testoAttesa.asStateFlow()
 
     /**
-     * Manda l'estratto conto a Gemini e confronta i movimenti con le operazioni del [contoId]: quelli
-     * con esattamente un'operazione già presente con stessa data e importo vengono saltati, gli altri
-     * sono proposti all'utente con i tipi suggeriti dall'anagrafica associazioni.
+     * Manda l'estratto conto a Gemini e confronta i movimenti con le operazioni del [contoId]: tutti
+     * sono proposti all'utente con i tipi suggeriti dall'anagrafica associazioni, ma quelli già
+     * presenti (stesso importo nella stessa valuta, data valuta o contabile uguale) o simili (stesso
+     * importo entro [GIORNI_DOPPIONE] giorni) partono deselezionati.
      */
     fun importaEstratto(uri: Uri, contoId: Long) = viewModelScope.launch {
         val contiValuta = dati.value.contiValuta.filter { it.contoId == contoId }.sortedBy { if (it.valuta == Valute.EUR) 0 else 1 }
@@ -330,21 +335,24 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
         try {
             val movimenti = EstrattoGemini(BuildConfig.GEMINI_API_KEY, RegistroPromptStore(getApplication())).estrai(getApplication(), uri, contiValuta.first().valuta)
             val elencoAssociazioni = dao.associazioni()
-            var saltate = 0
-            val righe = movimenti.mapIndexedNotNull { indice, m ->
+            // Date delle operazioni esistenti per conto/valuta e importo, per riconoscere i doppioni.
+            val esistenti = dati.value.operazioni.groupBy({ it.contoValutaId to it.importoCent }, { it.data })
+            val righe = movimenti.mapIndexed { indice, m ->
                 val cv = contiValuta.firstOrNull { it.valuta == m.valuta } ?: contiValuta.first()
-                val presenti = dao.contaOperazioniUguali(cv.id, m.data.toEpochDay(), m.importoCent)
-                if (presenti == 1) {
-                    saltate++
-                    null
-                } else {
-                    RigaEstratto(indice, m, cv.id, Associazioni.candidate(m.descrizione, elencoAssociazioni), presenti)
+                val date = esistenti[cv.id to m.importoCent].orEmpty()
+                val esatte = listOfNotNull(m.data, m.dataContabile).map { it.toEpochDay() }
+                val distanza = date.minOfOrNull { d -> esatte.minOf { kotlin.math.abs(it - d) } }
+                val presenza = when {
+                    distanza == 0L -> Presenza.PRESENTE
+                    distanza != null && distanza <= GIORNI_DOPPIONE -> Presenza.SIMILE
+                    else -> Presenza.NUOVA
                 }
+                RigaEstratto(indice, m, cv.id, Associazioni.candidate(m.descrizione, elencoAssociazioni), presenza, (distanza ?: 0L).toInt())
             }
             if (righe.isEmpty()) {
-                messaggio("Nessuna operazione nuova: ${movimenti.size} movimenti letti, $saltate già presenti")
+                messaggio("Nessun movimento trovato nel file")
             } else {
-                _importEstratto.value = ImportEstratto(contoId, righe, saltate, movimenti.size)
+                _importEstratto.value = ImportEstratto(contoId, righe)
             }
         } catch (e: Exception) {
             messaggio("Import estratto conto non riuscito: ${e.message ?: e.javaClass.simpleName}")

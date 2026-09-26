@@ -23,19 +23,27 @@ private const val GEMINI_MODEL = "gemini-3.5-flash-lite"
 private const val PROMPT_ESTRATTO =
     "Questo è l'estratto conto di un conto corrente. Estrai TUTTI i movimenti (le singole operazioni), " +
         "ignorando saldi iniziali/finali, totali, intestazioni e righe riepilogative. Per ogni movimento indica: " +
-        "data (formato YYYY-MM-DD; se ci sono data contabile e data valuta usa la data dell'operazione/contabile), " +
+        "dataValuta (formato YYYY-MM-DD: la data valuta; se il file ha una sola data usa quella) e " +
+        "dataContabile (formato YYYY-MM-DD: la data contabile, stringa vuota se assente o se il movimento è " +
+        "\"non contabilizzato\"), " +
         "valuta (codice ISO a 3 lettere, es. EUR o CHF; se non indicata usa la valuta del conto), " +
         "importo (numero con segno: NEGATIVO per addebiti/uscite, POSITIVO per accrediti/entrate; se il file ha " +
         "colonne separate Dare/Avere o Addebiti/Accrediti applica tu il segno), " +
-        "descrizione (il testo descrittivo del movimento così come appare: esercente, beneficiario o causale). " +
+        "descrizione (il testo descrittivo del movimento così come appare: esercente, beneficiario o causale; se ci " +
+        "sono più colonne descrittive, es. Descrizione e Dettaglio, uniscile nell'ordine separate da \" · \"). " +
         "Le date nei fogli di calcolo sono già convertite in formato YYYY-MM-DD."
 
-/** Un movimento letto da Gemini dall'estratto conto. */
+/**
+ * Un movimento letto da Gemini dall'estratto conto. [data] è la data valuta (quella usata anche
+ * nell'Excel delle spese), [dataContabile] l'eventuale data contabile: per riconoscere le
+ * operazioni già presenti si confrontano entrambe.
+ */
 data class MovimentoEstratto(
     val data: LocalDate,
     val valuta: String,
     val importoCent: Long,
-    val descrizione: String
+    val descrizione: String,
+    val dataContabile: LocalDate? = null
 )
 
 private fun schemaMovimenti(): Schema {
@@ -43,13 +51,14 @@ private fun schemaMovimenti(): Schema {
         .type(Type.Known.OBJECT)
         .properties(
             mapOf(
-                "data" to Schema.builder().type(Type.Known.STRING).description("data del movimento, YYYY-MM-DD").build(),
+                "dataValuta" to Schema.builder().type(Type.Known.STRING).description("data valuta, YYYY-MM-DD").build(),
+                "dataContabile" to Schema.builder().type(Type.Known.STRING).description("data contabile, YYYY-MM-DD, o vuota").build(),
                 "valuta" to Schema.builder().type(Type.Known.STRING).description("codice valuta ISO, es. EUR").build(),
                 "importo" to Schema.builder().type(Type.Known.NUMBER).description("importo con segno, negativo per le uscite").build(),
                 "descrizione" to Schema.builder().type(Type.Known.STRING).description("descrizione del movimento").build()
             )
         )
-        .required("data", "valuta", "importo", "descrizione")
+        .required("dataValuta", "dataContabile", "valuta", "importo", "descrizione")
         .build()
     return Schema.builder()
         .type(Type.Known.OBJECT)
@@ -124,17 +133,20 @@ class EstrattoGemini(private val apiKey: String, private val registro: RegistroP
         val array = JSONObject(json).optJSONArray("movimenti") ?: return emptyList()
         return (0 until array.length()).mapNotNull { i ->
             val o = array.optJSONObject(i) ?: return@mapNotNull null
-            val data = try {
-                LocalDate.parse(o.optString("data").trim().take(10))
+            fun leggiData(campo: String): LocalDate? = try {
+                LocalDate.parse(o.optString(campo).trim().take(10))
             } catch (e: Exception) {
-                return@mapNotNull null
+                null
             }
+            val dataContabile = leggiData("dataContabile")
+            val data = leggiData("dataValuta") ?: leggiData("data") ?: dataContabile ?: return@mapNotNull null
             val importo = o.opt("importo")?.toString()?.replace(',', '.')?.toBigDecimalOrNull() ?: return@mapNotNull null
             MovimentoEstratto(
                 data = data,
                 valuta = o.optString("valuta").trim().uppercase().ifEmpty { valutaPredefinita },
                 importoCent = importo.setScale(2, RoundingMode.HALF_UP).movePointRight(2).toLong(),
-                descrizione = o.optString("descrizione").trim().replace(Regex("\\s+"), " ")
+                descrizione = o.optString("descrizione").trim().replace(Regex("\\s+"), " "),
+                dataContabile = dataContabile?.takeIf { it != data }
             )
         }.filter { it.importoCent != 0L }
     }
@@ -159,17 +171,32 @@ data class RigaEstratto(
     val contoValutaId: Long,
     /** Associazioni la cui chiave compare nella descrizione, una per destinazione. */
     val candidate: List<com.desideri.familybalance.data.Associazione>,
-    /** Operazioni già presenti con stessa data e importo (0, o più di una se ambiguo). */
-    val giaPresenti: Int
-)
+    /** Se il movimento sembra già registrato sul conto (stesso importo, data uguale o vicina). */
+    val presenza: Presenza = Presenza.NUOVA,
+    /** Per [Presenza.SIMILE]: giorni di distanza dell'operazione più vicina. */
+    val giorniDistanza: Int = 0
+) {
+    /** Più associazioni corrispondono alla descrizione: l'utente deve scegliere. */
+    val piuCandidati: Boolean get() = candidate.size > 1
+}
+
+enum class Presenza {
+    /** Nessuna operazione con lo stesso importo in date vicine. */
+    NUOVA,
+    /** Operazione con lo stesso importo e stessa data valuta o contabile. */
+    PRESENTE,
+    /** Operazione con lo stesso importo entro pochi giorni: possibile doppione. */
+    SIMILE
+}
 
 /** Import di un estratto conto in attesa delle scelte dell'utente. */
 data class ImportEstratto(
     val contoId: Long,
-    val righe: List<RigaEstratto>,
-    val saltate: Int,
-    val totali: Int
-)
+    val righe: List<RigaEstratto>
+) {
+    val presenti: Int get() = righe.count { it.presenza == Presenza.PRESENTE }
+    val simili: Int get() = righe.count { it.presenza == Presenza.SIMILE }
+}
 
 /** Scelta dell'utente per un movimento: tipo/sottotipo, o "Spostamento" verso [destinazioneId]. */
 data class SceltaEstratto(
