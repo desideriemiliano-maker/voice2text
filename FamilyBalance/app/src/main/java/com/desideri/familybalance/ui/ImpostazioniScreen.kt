@@ -6,7 +6,9 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -35,12 +37,13 @@ fun ImpostazioniScreen(vm: SpeseViewModel, onIndietro: () -> Unit) {
     var target by remember { mutableStateOf(centInTesto(impostazioni.targetRisparmioCent)) }
     var cambio by remember { mutableStateOf(impostazioni.cambioChfEur.toString().replace('.', ',')) }
     var bloccoBiometrico by remember { mutableStateOf(impostazioni.bloccoBiometrico) }
+    var backupDaMantenere by remember { mutableStateOf(impostazioni.backupDaMantenere.toString()) }
     val bloccoPossibile = bloccoDisponibile(LocalContext.current)
     var errore by remember { mutableStateOf<String?>(null) }
 
     Scaffold(topBar = { BarraIndietro("Impostazioni", onIndietro) }) { padding ->
         Column(
-            modifier = Modifier.fillMaxSize().padding(padding).padding(16.dp),
+            modifier = Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             OutlinedTextField(
@@ -61,6 +64,15 @@ fun ImpostazioniScreen(vm: SpeseViewModel, onIndietro: () -> Unit) {
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                 modifier = Modifier.fillMaxWidth()
             )
+            OutlinedTextField(
+                value = backupDaMantenere,
+                onValueChange = { backupDaMantenere = it },
+                label = { Text("Backup su Drive da mantenere") },
+                supportingText = { Text("Dopo ogni backup quelli più vecchi oltre questo numero vengono eliminati (1-20).") },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                modifier = Modifier.fillMaxWidth()
+            )
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text("Sblocco biometrico all'apertura", style = MaterialTheme.typography.bodyLarge)
@@ -77,11 +89,20 @@ fun ImpostazioniScreen(vm: SpeseViewModel, onIndietro: () -> Unit) {
                 onClick = {
                     val targetCent = testoInCent(target)
                     val tasso = cambio.trim().replace(',', '.').toDoubleOrNull()
+                    val numeroBackup = backupDaMantenere.trim().toIntOrNull()
                     errore = when {
                         targetCent == null -> "Target non valido"
                         tasso == null || tasso <= 0 -> "Cambio non valido"
+                        numeroBackup == null || numeroBackup !in 1..20 -> "Numero di backup non valido (1-20)"
                         else -> {
-                            vm.salvaImpostazioni(impostazioni.copy(targetRisparmioCent = targetCent, cambioChfEur = tasso, bloccoBiometrico = bloccoBiometrico))
+                            vm.salvaImpostazioni(
+                                impostazioni.copy(
+                                    targetRisparmioCent = targetCent,
+                                    cambioChfEur = tasso,
+                                    bloccoBiometrico = bloccoBiometrico,
+                                    backupDaMantenere = numeroBackup
+                                )
+                            )
                             onIndietro()
                             null
                         }

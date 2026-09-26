@@ -72,7 +72,8 @@ data class DatiApp(
 
 data class StatoBackup(
     val inCorso: Boolean = false,
-    val info: InfoBackup? = null,
+    /** Backup presenti su Drive, dal più recente. */
+    val backup: List<InfoBackup> = emptyList(),
     val infoCaricata: Boolean = false,
     val errore: String? = null
 )
@@ -489,28 +490,25 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun aggiornaInfoBackup() = operazioneDrive("Lettura backup") { drive ->
-        val info = drive.info()
-        _statoBackup.value = _statoBackup.value.copy(info = info, infoCaricata = true)
+        _statoBackup.value = _statoBackup.value.copy(backup = drive.elenco(), infoCaricata = true)
     }
 
-    fun eseguiBackup() = operazioneDrive("Backup") { drive ->
+    /** Nuovo backup con un [testo] facoltativo; restano solo gli ultimi N (Impostazioni). */
+    fun eseguiBackup(testo: String?) = operazioneDrive("Backup") { drive ->
         val copia = withContext(Dispatchers.IO) {
             File(getApplication<Application>().cacheDir, "backup.db").also { AppDatabase.fileDatabase(getApplication()).copyTo(it, overwrite = true) }
         }
-        val info = drive.carica(copia)
+        val rimasti = drive.carica(copia, testo?.trim(), _impostazioni.value.backupDaMantenere)
         copia.delete()
-        _statoBackup.value = _statoBackup.value.copy(info = info, infoCaricata = true)
+        _statoBackup.value = _statoBackup.value.copy(backup = rimasti, infoCaricata = true)
         messaggio("Backup completato")
     }
 
-    /** Sostituisce il database con quello su Drive e riavvia l'app. */
-    fun ripristinaBackup() = operazioneDrive("Ripristino") { drive ->
+    /** Sostituisce il database con il backup [id] su Drive e riavvia l'app. */
+    fun ripristinaBackup(id: String) = operazioneDrive("Ripristino") { drive ->
         val app = getApplication<Application>()
         val scaricato = File(app.cacheDir, "ripristino.db")
-        if (!drive.scarica(scaricato)) {
-            messaggio("Nessun backup presente su questo account")
-            return@operazioneDrive
-        }
+        drive.scarica(id, scaricato)
         val intestazione = withContext(Dispatchers.IO) { scaricato.inputStream().use { input -> ByteArray(15).also { input.read(it) } } }
         if (String(intestazione, Charsets.US_ASCII) != "SQLite format 3") {
             scaricato.delete()

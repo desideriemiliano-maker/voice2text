@@ -10,7 +10,9 @@ data class Impostazioni(
     val cambioChfEur: Double = 1.0,
     val emailBackup: String? = null,
     /** Richiede impronta/volto/PIN del dispositivo all'apertura dell'app. */
-    val bloccoBiometrico: Boolean = true
+    val bloccoBiometrico: Boolean = true,
+    /** Quanti backup su Google Drive conservare: dopo ogni backup i più vecchi vengono eliminati. */
+    val backupDaMantenere: Int = 3
 )
 
 class Preferenze(context: Context) {
@@ -20,7 +22,8 @@ class Preferenze(context: Context) {
         targetRisparmioCent = prefs.getLong(CHIAVE_TARGET, 0),
         cambioChfEur = prefs.getString(CHIAVE_CAMBIO, null)?.toDoubleOrNull() ?: 1.0,
         emailBackup = prefs.getString(CHIAVE_EMAIL_BACKUP, null),
-        bloccoBiometrico = prefs.getBoolean(CHIAVE_BLOCCO_BIOMETRICO, true)
+        bloccoBiometrico = prefs.getBoolean(CHIAVE_BLOCCO_BIOMETRICO, true),
+        backupDaMantenere = prefs.getInt(CHIAVE_BACKUP_DA_MANTENERE, 3)
     )
 
     fun salva(impostazioni: Impostazioni) {
@@ -29,6 +32,7 @@ class Preferenze(context: Context) {
             .putString(CHIAVE_CAMBIO, impostazioni.cambioChfEur.toString())
             .putString(CHIAVE_EMAIL_BACKUP, impostazioni.emailBackup)
             .putBoolean(CHIAVE_BLOCCO_BIOMETRICO, impostazioni.bloccoBiometrico)
+            .putInt(CHIAVE_BACKUP_DA_MANTENERE, impostazioni.backupDaMantenere)
             .apply()
     }
 
@@ -52,5 +56,6 @@ class Preferenze(context: Context) {
         const val CHIAVE_CAMBIO = "cambio_chf_eur"
         const val CHIAVE_EMAIL_BACKUP = "email_backup"
         const val CHIAVE_BLOCCO_BIOMETRICO = "blocco_biometrico"
+        const val CHIAVE_BACKUP_DA_MANTENERE = "backup_da_mantenere"
     }
 }

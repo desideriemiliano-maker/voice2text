@@ -12,15 +12,21 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
 
-/** Data (millisecondi) e dimensione dell'ultimo backup presente su Drive. */
-data class InfoBackup(val modificatoMillis: Long, val dimensioneByte: Long)
+/** Un backup presente su Drive: data (millisecondi), dimensione e testo facoltativo dato dall'utente. */
+data class InfoBackup(
+    val id: String,
+    val modificatoMillis: Long,
+    val dimensioneByte: Long,
+    val testo: String?
+)
 
 /**
  * Backup del database nella cartella nascosta "App Data" di Google Drive dell'account scelto
- * (invisibile su drive.google.com e alle altre app, un solo file per account). L'account viene
- * scelto con il selettore di sistema e usato per email, come in WorkoutAnalyzer: se non ha ancora
- * concesso lo scope, la chiamata lancia UserRecoverableAuthIOException e la UI mostra la schermata
- * di consenso Google.
+ * (invisibile su drive.google.com e alle altre app). Ogni backup è un file a sé, con il testo
+ * facoltativo dell'utente nella descrizione del file; dopo ogni backup si tengono solo gli ultimi N
+ * (Impostazioni). L'account viene scelto con il selettore di sistema e usato per email, come in
+ * WorkoutAnalyzer: se non ha ancora concesso lo scope, la chiamata lancia
+ * UserRecoverableAuthIOException e la UI mostra la schermata di consenso Google.
  */
 class BackupDrive(private val context: Context, email: String) {
 
@@ -32,43 +38,39 @@ class BackupDrive(private val context: Context, email: String) {
             .build()
     }
 
-    private fun trovaBackup(): FileDrive? = drive.files().list()
-        .setSpaces("appDataFolder")
-        .setQ("name = '$NOME_FILE' and trashed = false")
-        .setFields("files(id, name, modifiedTime, size)")
-        .execute()
-        .files
-        ?.firstOrNull()
+    private fun FileDrive.info() = InfoBackup(id, modifiedTime?.value ?: 0L, getSize() ?: 0L, description?.ifBlank { null })
 
-    private fun FileDrive.info() = InfoBackup(modifiedTime?.value ?: 0L, getSize() ?: 0L)
-
-    suspend fun info(): InfoBackup? = withContext(Dispatchers.IO) { trovaBackup()?.info() }
-
-    /** Carica [file] sovrascrivendo il backup precedente. */
-    suspend fun carica(file: File): InfoBackup = withContext(Dispatchers.IO) {
-        val contenuto = FileContent("application/octet-stream", file)
-        val esistente = trovaBackup()
-        val risultato = if (esistente != null) {
-            drive.files().update(esistente.id, FileDrive(), contenuto)
-                .setFields("id, modifiedTime, size")
-                .execute()
-        } else {
-            val metadati = FileDrive().setName(NOME_FILE).setParents(listOf("appDataFolder"))
-            drive.files().create(metadati, contenuto)
-                .setFields("id, modifiedTime, size")
-                .execute()
-        }
-        risultato.info()
+    /** Tutti i backup dell'app su questo account, dal più recente (compreso quello unico delle versioni precedenti). */
+    suspend fun elenco(): List<InfoBackup> = withContext(Dispatchers.IO) {
+        drive.files().list()
+            .setSpaces("appDataFolder")
+            .setQ("name contains '$PREFISSO' and trashed = false")
+            .setFields("files(id, name, modifiedTime, size, description)")
+            .setPageSize(100)
+            .execute()
+            .files
+            .orEmpty()
+            .map { it.info() }
+            .sortedByDescending { it.modificatoMillis }
     }
 
-    /** Scarica il backup in [destinazione]; false se su Drive non c'è nessun backup. */
-    suspend fun scarica(destinazione: File): Boolean = withContext(Dispatchers.IO) {
-        val esistente = trovaBackup() ?: return@withContext false
-        destinazione.outputStream().use { out -> drive.files().get(esistente.id).executeMediaAndDownloadTo(out) }
-        true
+    /** Carica [file] come nuovo backup con [testo], poi elimina i più vecchi oltre i [daMantenere] più recenti. */
+    suspend fun carica(file: File, testo: String?, daMantenere: Int): List<InfoBackup> = withContext(Dispatchers.IO) {
+        val nome = PREFISSO + "_" + System.currentTimeMillis() + ".db"
+        val metadati = FileDrive().setName(nome).setParents(listOf("appDataFolder")).setDescription(testo?.ifBlank { null })
+        drive.files().create(metadati, FileContent("application/octet-stream", file)).setFields("id").execute()
+        val tutti = elenco()
+        tutti.drop(daMantenere.coerceAtLeast(1)).forEach { vecchio -> drive.files().delete(vecchio.id).execute() }
+        tutti.take(daMantenere.coerceAtLeast(1))
+    }
+
+    /** Scarica il backup [id] in [destinazione]. */
+    suspend fun scarica(id: String, destinazione: File) = withContext(Dispatchers.IO) {
+        destinazione.outputStream().use { out -> drive.files().get(id).executeMediaAndDownloadTo(out) }
     }
 
     companion object {
-        const val NOME_FILE = "familybalance_backup.db"
+        /** Prefisso dei file di backup (le versioni precedenti usavano il solo "familybalance_backup.db"). */
+        const val PREFISSO = "familybalance_backup"
     }
 }
