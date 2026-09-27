@@ -1,6 +1,13 @@
 package com.desideri.familybalance.ui
 
-import androidx.compose.foundation.clickable
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.SelectAll
+import androidx.compose.material3.Checkbox
+import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -67,6 +74,10 @@ fun OperazioniScreen(vm: SpeseViewModel, contoValutaId: Long, onIndietro: () -> 
     var filtri by remember { mutableStateOf(Filtri()) }
     var mostraFiltri by rememberSaveable { mutableStateOf(false) }
     var inModifica by remember { mutableStateOf<Operazione?>(null) }
+    // Selezione multipla: si attiva tenendo premuta un'operazione; vuota = modalità normale.
+    var selezione by remember { mutableStateOf(setOf<Long>()) }
+    var confermaEliminazione by remember { mutableStateOf(false) }
+    BackHandler(enabled = selezione.isNotEmpty()) { selezione = emptySet() }
     var nuova by remember { mutableStateOf(false) }
 
     if (cv == null) {
@@ -92,14 +103,27 @@ fun OperazioniScreen(vm: SpeseViewModel, contoValutaId: Long, onIndietro: () -> 
 
     Scaffold(
         topBar = {
-            BarraIndietro(dati.etichetta(contoValutaId), onIndietro) {
-                IconButton(onClick = { mostraFiltri = !mostraFiltri }) {
-                    Icon(if (mostraFiltri) Icons.Filled.FilterListOff else Icons.Filled.FilterList, contentDescription = "Filtri")
+            if (selezione.isNotEmpty()) {
+                BarraIndietro("${selezione.size} selezionate", onIndietro = { selezione = emptySet() }) {
+                    IconButton(onClick = { selezione = filtrate.map { it.operazione.id }.toSet() }) {
+                        Icon(Icons.Filled.SelectAll, contentDescription = "Seleziona tutte")
+                    }
+                    IconButton(onClick = { confermaEliminazione = true }) {
+                        Icon(Icons.Filled.Delete, contentDescription = "Elimina selezionate")
+                    }
+                }
+            } else {
+                BarraIndietro(dati.etichetta(contoValutaId), onIndietro) {
+                    IconButton(onClick = { mostraFiltri = !mostraFiltri }) {
+                        Icon(if (mostraFiltri) Icons.Filled.FilterListOff else Icons.Filled.FilterList, contentDescription = "Filtri")
+                    }
                 }
             }
         },
         floatingActionButton = {
-            FloatingActionButton(onClick = { nuova = true }) { Icon(Icons.Filled.Add, contentDescription = "Nuova operazione") }
+            if (selezione.isEmpty()) {
+                FloatingActionButton(onClick = { nuova = true }) { Icon(Icons.Filled.Add, contentDescription = "Nuova operazione") }
+            }
         }
     ) { padding ->
         LazyColumn(
@@ -130,10 +154,31 @@ fun OperazioniScreen(vm: SpeseViewModel, contoValutaId: Long, onIndietro: () -> 
                 item { Text("Nessuna operazione.", modifier = Modifier.padding(16.dp)) }
             }
             items(filtrate, key = { it.operazione.id }) { riga ->
-                RigaListaOperazione(riga, dati, cv.valuta, onClick = { inModifica = riga.operazione })
+                val id = riga.operazione.id
+                RigaListaOperazione(
+                    riga, dati, cv.valuta,
+                    inSelezione = selezione.isNotEmpty(),
+                    selezionata = id in selezione,
+                    onClick = {
+                        if (selezione.isNotEmpty()) selezione = if (id in selezione) selezione - id else selezione + id
+                        else inModifica = riga.operazione
+                    },
+                    onLongClick = { selezione = selezione + id }
+                )
                 HorizontalDivider()
             }
         }
+    }
+
+    if (confermaEliminazione) {
+        DialogEliminaSelezionate(
+            numero = selezione.size,
+            onConferma = {
+                vm.eliminaOperazioni(dati.operazioni.filter { it.id in selezione })
+                selezione = emptySet()
+            },
+            onAnnulla = { confermaEliminazione = false }
+        )
     }
 
     if (nuova || inModifica != null) {
@@ -148,6 +193,18 @@ fun OperazioniScreen(vm: SpeseViewModel, contoValutaId: Long, onIndietro: () -> 
             }
         )
     }
+}
+
+@Composable
+private fun DialogEliminaSelezionate(numero: Int, onConferma: () -> Unit, onAnnulla: () -> Unit) {
+    DialogConferma(
+        titolo = "Elimina operazioni",
+        testo = "Eliminare le $numero operazioni selezionate? Per gli spostamenti inseriti dall'app viene eliminata " +
+            "anche l'operazione collegata sull'altro conto.",
+        conferma = "Elimina",
+        onConferma = onConferma,
+        onAnnulla = onAnnulla
+    )
 }
 
 private fun corrisponde(op: Operazione, f: Filtri, dati: DatiApp): Boolean {
@@ -204,8 +261,17 @@ private fun PannelloFiltri(filtri: Filtri, dati: DatiApp, onFiltri: (Filtri) -> 
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun RigaListaOperazione(riga: RigaOperazione, dati: DatiApp, valuta: String, onClick: () -> Unit) {
+private fun RigaListaOperazione(
+    riga: RigaOperazione,
+    dati: DatiApp,
+    valuta: String,
+    inSelezione: Boolean,
+    selezionata: Boolean,
+    onClick: () -> Unit,
+    onLongClick: () -> Unit
+) {
     val op = riga.operazione
     val descrizione = if (op.trasferimento) {
         val verso = if (op.importoCent < 0) "verso" else "da"
@@ -214,9 +280,15 @@ private fun RigaListaOperazione(riga: RigaOperazione, dati: DatiApp, valuta: Str
         op.voceId?.let { dati.vociPerId[it]?.descrizione } ?: "Senza voce"
     }
     Row(
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 10.dp, horizontal = 4.dp),
+        modifier = Modifier.fillMaxWidth()
+            .background(if (selezionata) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent)
+            .combinedClickable(onClick = onClick, onLongClick = onLongClick)
+            .padding(vertical = 10.dp, horizontal = 4.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
+        if (inSelezione) {
+            Checkbox(checked = selezionata, onCheckedChange = { onClick() })
+        }
         PallinoColore(op.voceId?.let { dati.vociPerId[it]?.colore }, modifier = Modifier.padding(end = 8.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(descrizione, style = MaterialTheme.typography.bodyLarge)

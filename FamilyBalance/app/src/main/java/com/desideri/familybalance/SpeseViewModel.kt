@@ -183,6 +183,13 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
         dao.eliminaOperazioni(listOfNotNull(op.id, op.collegataId))
     }
 
+    /** Eliminazione multipla (selezione nella lista operazioni), con le contro-operazioni collegate. */
+    fun eliminaOperazioni(operazioni: List<Operazione>) = viewModelScope.launch {
+        val ids = operazioni.flatMap { listOfNotNull(it.id, it.collegataId) }.distinct()
+        ids.chunked(500).forEach { dao.eliminaOperazioni(it) }
+        messaggio("Eliminate ${operazioni.size} operazioni")
+    }
+
     // --- Anagrafica conti ---
 
     /** [saldiIniziali]: valuta -> saldo iniziale in centesimi, solo per le valute attive sul conto. */
