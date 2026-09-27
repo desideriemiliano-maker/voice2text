@@ -240,8 +240,11 @@ private fun CardMovimento(
                 Text(formattaData(m.data.toEpochDay()), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
                 TestoImporto(m.importoCent / 100.0, m.valuta, grassetto = true)
             }
-            m.dataContabile?.let {
-                Text("Data valuta ${formattaData(m.data.toEpochDay())} · contabile ${formattaData(it.toEpochDay())}", style = MaterialTheme.typography.labelSmall)
+            if (m.altreDate.isNotEmpty()) {
+                Text(
+                    "Altre date: " + m.altreDate.joinToString(", ") { formattaData(it.toEpochDay()) },
+                    style = MaterialTheme.typography.labelSmall
+                )
             }
             Text(m.descrizione.ifBlank { "(senza descrizione)" }, style = MaterialTheme.typography.bodyMedium)
             when (riga.presenza) {

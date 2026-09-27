@@ -24,9 +24,11 @@ private const val GEMINI_MODEL = "gemini-3.5-flash-lite"
 private const val PROMPT_ESTRATTO =
     "Questo è l'estratto conto di un conto corrente. Estrai TUTTI i movimenti (le singole operazioni), " +
         "ignorando saldi iniziali/finali, totali, intestazioni e righe riepilogative. Per ogni movimento indica: " +
-        "dataValuta (formato YYYY-MM-DD: la data valuta; se il file ha una sola data usa quella) e " +
-        "dataContabile (formato YYYY-MM-DD: la data contabile, stringa vuota se assente o se il movimento è " +
-        "\"non contabilizzato\"), " +
+        "dataOperazione (YYYY-MM-DD: data dell'operazione o della transazione, es. la data del pagamento con " +
+        "carta; stringa vuota se il file non ha una colonna distinta per essa), " +
+        "dataContabile (YYYY-MM-DD: data contabile o di registrazione; stringa vuota se assente o se il " +
+        "movimento è \"non contabilizzato\"), " +
+        "dataValuta (YYYY-MM-DD: data valuta; se il file ha una sola data usa quella), " +
         "valuta (codice ISO a 3 lettere, es. EUR o CHF; se non indicata usa la valuta del conto), " +
         "importo (numero con segno: NEGATIVO per addebiti/uscite, POSITIVO per accrediti/entrate; se il file ha " +
         "colonne separate Dare/Avere o Addebiti/Accrediti applica tu il segno), " +
@@ -36,23 +38,28 @@ private const val PROMPT_ESTRATTO =
         "Le date nei fogli di calcolo sono già convertite in formato YYYY-MM-DD."
 
 /**
- * Un movimento letto da Gemini dall'estratto conto. [data] è la data valuta (quella usata anche
- * nell'Excel delle spese), [dataContabile] l'eventuale data contabile: per riconoscere le
- * operazioni già presenti si confrontano entrambe.
+ * Un movimento letto da Gemini dall'estratto conto. [data] è quella registrata sull'operazione: la
+ * data dell'operazione/transazione se l'estratto la riporta (come nel foglio LGT dell'Excel),
+ * altrimenti la data valuta (come nel foglio HelloBank). [altreDate] sono le altre date del
+ * movimento (contabile/registrazione, valuta): per riconoscere le operazioni già presenti si
+ * confrontano tutte.
  */
 data class MovimentoEstratto(
     val data: LocalDate,
     val valuta: String,
     val importoCent: Long,
     val descrizione: String,
-    val dataContabile: LocalDate? = null
-)
+    val altreDate: List<LocalDate> = emptyList()
+) {
+    val tutteLeDate: List<LocalDate> get() = listOf(data) + altreDate
+}
 
 private fun schemaMovimenti(): Schema {
     val movimento = Schema.builder()
         .type(Type.Known.OBJECT)
         .properties(
             mapOf(
+                "dataOperazione" to Schema.builder().type(Type.Known.STRING).description("data operazione/transazione, YYYY-MM-DD, o vuota").build(),
                 "dataValuta" to Schema.builder().type(Type.Known.STRING).description("data valuta, YYYY-MM-DD").build(),
                 "dataContabile" to Schema.builder().type(Type.Known.STRING).description("data contabile, YYYY-MM-DD, o vuota").build(),
                 "valuta" to Schema.builder().type(Type.Known.STRING).description("codice valuta ISO, es. EUR").build(),
@@ -60,7 +67,7 @@ private fun schemaMovimenti(): Schema {
                 "descrizione" to Schema.builder().type(Type.Known.STRING).description("descrizione del movimento").build()
             )
         )
-        .required("dataValuta", "dataContabile", "valuta", "importo", "descrizione")
+        .required("dataOperazione", "dataContabile", "dataValuta", "valuta", "importo", "descrizione")
         .build()
     return Schema.builder()
         .type(Type.Known.OBJECT)
@@ -132,7 +139,7 @@ class EstrattoGemini(private val apiKey: String, private val registro: RegistroP
         // e movimenti divisi in blocchi, così ogni risposta di Gemini resta breve e completa.
         val righe = testo.lines().filter { riga -> riga.replace("|", "").isNotBlank() }
         val indiceIntestazione = righe.take(RIGHE_INTESTAZIONE_MAX).indexOfFirst {
-            RIGA_INTESTAZIONE.containsMatchIn(it) && !DATA_NEL_TESTO.containsMatchIn(it)
+            !it.startsWith("Nota:") && RIGA_INTESTAZIONE.containsMatchIn(it) && !DATA_NEL_TESTO.containsMatchIn(it)
         }
         val intestazione = if (indiceIntestazione >= 0) righe.take(indiceIntestazione + 1) else emptyList()
         val blocchi = righe.drop(intestazione.size).chunked(RIGHE_PER_BLOCCO).ifEmpty { listOf(emptyList()) }
@@ -209,15 +216,17 @@ class EstrattoGemini(private val apiKey: String, private val registro: RegistroP
             } catch (e: Exception) {
                 null
             }
+            val dataOperazione = leggiData("dataOperazione")
             val dataContabile = leggiData("dataContabile")
-            val data = leggiData("dataValuta") ?: leggiData("data") ?: dataContabile ?: return@mapNotNull null
+            val dataValuta = leggiData("dataValuta") ?: leggiData("data")
+            val data = dataOperazione ?: dataValuta ?: dataContabile ?: return@mapNotNull null
             val importo = o.opt("importo")?.toString()?.replace(',', '.')?.toBigDecimalOrNull() ?: return@mapNotNull null
             MovimentoEstratto(
                 data = data,
                 valuta = o.optString("valuta").trim().uppercase().ifEmpty { valutaPredefinita },
                 importoCent = importo.setScale(2, RoundingMode.HALF_UP).movePointRight(2).toLong(),
                 descrizione = o.optString("descrizione").trim().replace(Regex("\\s+"), " ").take(MAX_DESCRIZIONE),
-                dataContabile = dataContabile?.takeIf { it != data }
+                altreDate = listOfNotNull(dataContabile, dataValuta).distinct().filter { it != data }
             )
         }.filter { it.importoCent != 0L }
         return movimenti to completa

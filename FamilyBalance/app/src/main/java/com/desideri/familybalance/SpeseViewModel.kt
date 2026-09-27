@@ -350,7 +350,7 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
             val righe = movimenti.mapIndexed { indice, m ->
                 val cv = contiValuta.firstOrNull { it.valuta == m.valuta } ?: contiValuta.first()
                 val date = esistenti[cv.id to m.importoCent].orEmpty()
-                val esatte = listOfNotNull(m.data, m.dataContabile).map { it.toEpochDay() }
+                val esatte = m.tutteLeDate.map { it.toEpochDay() }
                 val distanza = date.minOfOrNull { d -> esatte.minOf { kotlin.math.abs(it - d) } }
                 val presenza = when {
                     distanza == 0L -> Presenza.PRESENTE

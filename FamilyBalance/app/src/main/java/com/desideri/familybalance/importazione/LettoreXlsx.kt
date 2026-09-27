@@ -57,25 +57,50 @@ class LettoreXlsx(input: InputStream) {
         return leggiFoglio(bytes, if (dateComeTesto) stiliData else emptySet())
     }
 
-    /** Tutti i fogli come testo: una riga per riga del foglio, celle separate da " | ", date in ISO. */
+    /**
+     * Tutti i fogli come testo, per Gemini: una riga per riga del foglio, celle separate da " | ",
+     * date in ISO, a capo interni alle celle sostituiti da " / ". Le colonne con lo stesso valore in
+     * tutte le righe dopo l'intestazione (es. nome del cliente, IBAN, valuta) vengono tolte dalle
+     * righe e riportate una sola volta in una riga "Nota:", per non ripeterle in ogni movimento.
+     */
     fun comeTesto(maxRighePerFoglio: Int = 3000): String = buildString {
         for (nome in nomiFogli) {
             val foglio = foglio(nome, dateComeTesto = true) ?: continue
+            val righe = foglio.keys.sorted().take(maxRighePerFoglio).map { r ->
+                val celle = foglio.getValue(r)
+                (1..(celle.keys.maxOrNull() ?: 0)).map { c -> testoCella(celle[c]) }
+            }.filter { riga -> riga.any { it.isNotBlank() } }
+            if (righe.isEmpty()) continue
+
+            // Intestazione: la prima riga con almeno 4 celle valorizzate (i nomi delle colonne).
+            val indiceIntestazione = righe.indexOfFirst { riga -> riga.count { it.isNotBlank() } >= 4 }
+            val datiRighe = if (indiceIntestazione >= 0) righe.drop(indiceIntestazione + 1) else righe
+            val colonne = righe.maxOf { it.size }
+            val costanti = if (datiRighe.size >= 3) {
+                (0 until colonne).filter { c -> datiRighe.map { it.getOrElse(c) { "" } }.toSet().size == 1 }.toSet()
+            } else {
+                emptySet()
+            }
+
             append("### Foglio: ").append(nome).append('\n')
-            for (riga in foglio.keys.sorted().take(maxRighePerFoglio)) {
-                val celle = foglio.getValue(riga)
-                val ultima = celle.keys.maxOrNull() ?: continue
-                val valori = (1..ultima).map { c ->
-                    when (val v = celle[c]) {
-                        null -> ""
-                        is Double -> if (v == Math.floor(v) && Math.abs(v) < 1e15) v.toLong().toString() else v.toString()
-                        else -> v.toString().replace('\n', ' ')
-                    }
-                }
-                append(valori.joinToString(" | ")).append('\n')
+            val nota = costanti.mapNotNull { c ->
+                val valore = datiRighe.first().getOrElse(c) { "" }
+                if (valore.isBlank()) null
+                else "${righe.getOrNull(indiceIntestazione)?.getOrNull(c)?.ifBlank { null } ?: "colonna ${c + 1}"} = $valore"
+            }
+            if (nota.isNotEmpty()) append("Nota: valori uguali in tutte le righe: ").append(nota.joinToString("; ")).append('\n')
+            righe.forEachIndexed { i, riga ->
+                val celle = if (i >= indiceIntestazione && indiceIntestazione >= 0) riga.filterIndexed { c, _ -> c !in costanti } else riga
+                append(celle.joinToString(" | ")).append('\n')
             }
             append('\n')
         }
+    }
+
+    private fun testoCella(v: Any?): String = when (v) {
+        null -> ""
+        is Double -> if (v == Math.floor(v) && Math.abs(v) < 1e15) v.toLong().toString() else v.toString()
+        else -> v.toString().replace(Regex("[\\r\\n]+"), " / ").trim()
     }
 
     /**
