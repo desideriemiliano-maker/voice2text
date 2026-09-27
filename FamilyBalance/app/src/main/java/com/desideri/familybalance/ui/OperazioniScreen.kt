@@ -5,6 +5,7 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Deselect
 import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material3.Checkbox
 import androidx.compose.ui.graphics.Color
@@ -104,9 +105,15 @@ fun OperazioniScreen(vm: SpeseViewModel, contoValutaId: Long, onIndietro: () -> 
     Scaffold(
         topBar = {
             if (selezione.isNotEmpty()) {
+                // "Tutte" = le operazioni mostrate, cioè quelle che passano i filtri attivi.
+                val mostrate = filtrate.map { it.operazione.id }.toSet()
+                val tutteSelezionate = mostrate.isNotEmpty() && selezione.containsAll(mostrate)
                 BarraIndietro("${selezione.size} selezionate", onIndietro = { selezione = emptySet() }) {
-                    IconButton(onClick = { selezione = filtrate.map { it.operazione.id }.toSet() }) {
-                        Icon(Icons.Filled.SelectAll, contentDescription = "Seleziona tutte")
+                    IconButton(onClick = { selezione = if (tutteSelezionate) selezione - mostrate else selezione + mostrate }) {
+                        Icon(
+                            if (tutteSelezionate) Icons.Filled.Deselect else Icons.Filled.SelectAll,
+                            contentDescription = if (tutteSelezionate) "Deseleziona le mostrate" else "Seleziona tutte le mostrate"
+                        )
                     }
                     IconButton(onClick = { confermaEliminazione = true }) {
                         Icon(Icons.Filled.Delete, contentDescription = "Elimina selezionate")
@@ -114,6 +121,9 @@ fun OperazioniScreen(vm: SpeseViewModel, contoValutaId: Long, onIndietro: () -> 
                 }
             } else {
                 BarraIndietro(dati.etichetta(contoValutaId), onIndietro) {
+                    IconButton(onClick = { selezione = filtrate.map { it.operazione.id }.toSet() }, enabled = filtrate.isNotEmpty()) {
+                        Icon(Icons.Filled.SelectAll, contentDescription = "Seleziona tutte le mostrate")
+                    }
                     IconButton(onClick = { mostraFiltri = !mostraFiltri }) {
                         Icon(if (mostraFiltri) Icons.Filled.FilterListOff else Icons.Filled.FilterList, contentDescription = "Filtri")
                     }
