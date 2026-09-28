@@ -8,7 +8,6 @@ import com.desideri.familybalance.logica.FonteCambio
 import com.desideri.familybalance.logica.Riscontro
 import com.desideri.familybalance.logica.TipoProblema
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.time.LocalDate
 import java.time.YearMonth
@@ -64,7 +63,7 @@ class CambiRiscontroTest {
     }
 
     @Test
-    fun riscontro_coppieOrfaniCollegamentiEDoppioni() {
+    fun riscontro_coppieOrfaniECollegamenti() {
         val ops = listOf(
             // coppia da collegare (EUR -> EUR)
             Operazione(id = 1, contoValutaId = 2, data = 100, importoCent = -5_000, trasferimento = true, contoValutaDestId = 3),
@@ -73,9 +72,7 @@ class CambiRiscontroTest {
             Operazione(id = 3, contoValutaId = 2, data = 200, importoCent = -7_000, trasferimento = true, contoValutaDestId = 3),
             // coppia collegata con importi diversi
             Operazione(id = 4, contoValutaId = 2, data = 300, importoCent = -1_000, trasferimento = true, contoValutaDestId = 3, collegataId = 5),
-            Operazione(id = 5, contoValutaId = 3, data = 300, importoCent = 900, trasferimento = true, contoValutaDestId = 2, collegataId = 4),
-            // doppione della riga 5 sullo stesso conto
-            Operazione(id = 6, contoValutaId = 3, data = 302, importoCent = 900, voceId = 1)
+            Operazione(id = 5, contoValutaId = 3, data = 300, importoCent = 900, trasferimento = true, contoValutaDestId = 2, collegataId = 4)
         )
         val problemi = Riscontro.analizza(ops, ::valuta)
         val perTipo = problemi.groupBy { it.tipo }
@@ -84,8 +81,6 @@ class CambiRiscontroTest {
         assertEquals(1L to 2L, coppia.operazione.id to coppia.altra!!.id)
         assertEquals(listOf(3L), perTipo.getValue(TipoProblema.SENZA_CONTROPARTE).map { it.operazione.id })
         assertEquals("Gli importi sono diversi", perTipo.getValue(TipoProblema.COLLEGAMENTO_ERRATO).single().dettaglio)
-        val doppione = perTipo.getValue(TipoProblema.POSSIBILE_DOPPIONE).single()
-        assertEquals(5L to 6L, doppione.operazione.id to doppione.altra!!.id)
-        assertTrue(problemi.none { it.tipo == TipoProblema.SENZA_CONTROPARTE && it.operazione.id == 6L })
+        assertEquals(3, problemi.size)
     }
 }

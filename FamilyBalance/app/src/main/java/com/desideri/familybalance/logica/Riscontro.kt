@@ -1,7 +1,6 @@
 package com.desideri.familybalance.logica
 
 import com.desideri.familybalance.data.Operazione
-import kotlin.math.abs
 
 enum class TipoProblema(val titolo: String, val spiegazione: String) {
     DA_COLLEGARE(
@@ -15,14 +14,10 @@ enum class TipoProblema(val titolo: String, val spiegazione: String) {
     COLLEGAMENTO_ERRATO(
         "Collegamenti incoerenti",
         "Spostamenti collegati a una riga che non esiste più, su un altro conto o con importo non corrispondente."
-    ),
-    POSSIBILE_DOPPIONE(
-        "Possibili doppioni",
-        "Righe dello stesso conto con lo stesso importo a pochi giorni di distanza, di cui almeno una è uno spostamento."
     )
 }
 
-/** Un problema trovato dal riscontro: [operazione] e, per coppie e doppioni, l'[altra] riga. */
+/** Un problema trovato dal riscontro: [operazione] e, per coppie e collegamenti, l'[altra] riga. */
 data class ProblemaSpostamento(
     val tipo: TipoProblema,
     val operazione: Operazione,
@@ -36,12 +31,9 @@ data class ProblemaSpostamento(
  * Riscontro degli spostamenti tra conti: ogni spostamento dovrebbe avere sull'altro conto la riga
  * speculare, collegata. Le righe importate dall'Excel (e quelle degli estratti conto con cambio di
  * valuta) nascono non collegate: qui si propongono le coppie da collegare e si segnalano gli
- * spostamenti rimasti senza riga corrispondente, i collegamenti incoerenti e i possibili doppioni.
+ * spostamenti rimasti senza riga corrispondente e i collegamenti incoerenti.
  */
 object Riscontro {
-
-    /** Distanza massima in giorni tra due righe uguali dello stesso conto per segnalarle come doppioni. */
-    const val GIORNI_DOPPIONE = 3L
 
     fun analizza(operazioni: List<Operazione>, valutaDi: (Long) -> String?): List<ProblemaSpostamento> {
         val perId = operazioni.associateBy { it.id }
@@ -104,23 +96,6 @@ object Riscontro {
             }
         }
 
-        // Possibili doppioni: stesso conto e importo, entro pochi giorni, almeno uno spostamento.
-        for ((_, gruppo) in operazioni.groupBy { it.contoValutaId to it.importoCent }) {
-            if (gruppo.size < 2) continue
-            val ordinate = gruppo.sortedWith(compareBy({ it.data }, { it.id }))
-            for (i in ordinate.indices) {
-                for (j in i + 1 until ordinate.size) {
-                    val a = ordinate[i]
-                    val b = ordinate[j]
-                    if (b.data - a.data > GIORNI_DOPPIONE) break
-                    if (!a.trasferimento && !b.trasferimento) continue
-                    problemi += ProblemaSpostamento(
-                        TipoProblema.POSSIBILE_DOPPIONE, a, b,
-                        if (a.data == b.data) "Stessa data" else "${abs(b.data - a.data)} giorni di distanza"
-                    )
-                }
-            }
-        }
         return problemi
     }
 }

@@ -304,28 +304,6 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    /**
-     * Elimina [elimina], doppione di [tieni]: se [elimina] era collegata a una riga sull'altro conto,
-     * il collegamento passa a [tieni] (se non è già collegata), altrimenti quella riga resta scollegata.
-     * Non elimina mai la riga collegata sull'altro conto.
-     */
-    fun eliminaDoppione(elimina: Operazione, tieni: Operazione) = viewModelScope.launch {
-        db.withTransaction {
-            val x = dao.operazione(elimina.id) ?: return@withTransaction
-            val altra = x.collegataId?.let { dao.operazione(it) }?.takeIf { it.collegataId == x.id }
-            dao.eliminaOperazioni(listOf(x.id))
-            if (altra == null) return@withTransaction
-            val t = dao.operazione(tieni.id)
-            if (t != null && t.collegataId == null && t.contoValutaId != altra.contoValutaId) {
-                dao.aggiornaOperazione(t.copy(trasferimento = true, voceId = null, contoValutaDestId = altra.contoValutaId, collegataId = altra.id))
-                dao.aggiornaOperazione(altra.copy(contoValutaDestId = t.contoValutaId, collegataId = t.id))
-            } else {
-                dao.aggiornaOperazione(altra.copy(collegataId = null))
-            }
-        }
-        messaggio("Doppione eliminato")
-    }
-
     // --- Cambi mensili ---
 
     /** Imposta il cambio CHF/EUR del [mese] ([chfEur] null: torna a quello calcolato). */

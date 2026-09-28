@@ -46,7 +46,7 @@ private data class FiltroConto(val id: Long?, val testo: String)
 /**
  * Riscontro degli spostamenti (menu ⋮): per ogni spostamento la riga speculare sull'altro conto.
  * Mostra le coppie da collegare (collegabili con un tocco), gli spostamenti senza riga
- * corrispondente, i collegamenti incoerenti e i possibili doppioni; toccando una riga la si modifica.
+ * corrispondente e i collegamenti incoerenti; toccando una riga la si modifica.
  */
 @Composable
 fun RiscontroScreen(vm: SpeseViewModel, onIndietro: () -> Unit) {
@@ -55,7 +55,6 @@ fun RiscontroScreen(vm: SpeseViewModel, onIndietro: () -> Unit) {
     var filtro by rememberSaveable { mutableStateOf<Long?>(null) }
     var espansi by remember { mutableStateOf(TipoProblema.entries.toSet()) }
     var inModifica by remember { mutableStateOf<Operazione?>(null) }
-    var doppioneDaEliminare by remember { mutableStateOf<Pair<Operazione, Operazione>?>(null) }
     var daScollegare by remember { mutableStateOf<Operazione?>(null) }
 
     val opzioniFiltro = listOf(FiltroConto(null, "Tutti i conti")) +
@@ -115,8 +114,7 @@ fun RiscontroScreen(vm: SpeseViewModel, onIndietro: () -> Unit) {
                                 p, dati,
                                 onModifica = { inModifica = it },
                                 onCollega = { vm.collegaSpostamenti(listOf(p.operazione to p.altra!!)) },
-                                onScollega = { daScollegare = p.operazione },
-                                onEliminaDoppione = { elimina, tieni -> doppioneDaEliminare = elimina to tieni }
+                                onScollega = { daScollegare = p.operazione }
                             )
                         }
                     }
@@ -127,19 +125,6 @@ fun RiscontroScreen(vm: SpeseViewModel, onIndietro: () -> Unit) {
 
     inModifica?.let { op ->
         OperazioneDialog(vm, dati, op.contoValutaId, op, onChiudi = { inModifica = null })
-    }
-    doppioneDaEliminare?.let { (elimina, tieni) ->
-        DialogConferma(
-            titolo = "Elimina doppione",
-            testo = "Eliminare la riga del ${formattaData(elimina.data)} di ${importo(elimina, dati)} su ${dati.etichetta(elimina.contoValutaId)}?" +
-                if (elimina.collegataId != null) " Il suo collegamento con l'altro conto passa alla riga che resta; la riga sull'altro conto non viene eliminata." else "",
-            conferma = "Elimina",
-            onConferma = {
-                vm.eliminaDoppione(elimina, tieni)
-                doppioneDaEliminare = null
-            },
-            onAnnulla = { doppioneDaEliminare = null }
-        )
     }
     daScollegare?.let { op ->
         DialogConferma(
@@ -164,8 +149,7 @@ private fun CardProblema(
     dati: DatiApp,
     onModifica: (Operazione) -> Unit,
     onCollega: () -> Unit,
-    onScollega: () -> Unit,
-    onEliminaDoppione: (elimina: Operazione, tieni: Operazione) -> Unit
+    onScollega: () -> Unit
 ) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -179,12 +163,6 @@ private fun CardProblema(
                     TipoProblema.COLLEGAMENTO_ERRATO -> {
                         OutlinedButton(onClick = { onModifica(p.operazione) }) { Text("Modifica") }
                         OutlinedButton(onClick = onScollega) { Text("Scollega") }
-                    }
-                    TipoProblema.POSSIBILE_DOPPIONE -> {
-                        p.altra?.let { altra ->
-                            OutlinedButton(onClick = { onEliminaDoppione(p.operazione, altra) }) { Text("Elimina la 1ª") }
-                            OutlinedButton(onClick = { onEliminaDoppione(altra, p.operazione) }) { Text("Elimina la 2ª") }
-                        }
                     }
                 }
             }
