@@ -1,6 +1,7 @@
 package com.desideri.familybalance.logica
 
 import com.desideri.familybalance.data.Operazione
+import kotlin.math.abs
 
 enum class TipoProblema(val titolo: String, val spiegazione: String) {
     DA_COLLEGARE(
@@ -22,7 +23,9 @@ data class ProblemaSpostamento(
     val tipo: TipoProblema,
     val operazione: Operazione,
     val altra: Operazione? = null,
-    val dettaglio: String? = null
+    val dettaglio: String? = null,
+    /** Per gli spostamenti senza riga corrispondente: operazioni dello stesso conto e importo a pochi giorni (possibili doppioni). */
+    val simili: List<Operazione> = emptyList()
 ) {
     fun coinvolge(contoValutaId: Long): Boolean = operazione.contoValutaId == contoValutaId || altra?.contoValutaId == contoValutaId
 }
@@ -34,6 +37,9 @@ data class ProblemaSpostamento(
  * spostamenti rimasti senza riga corrispondente e i collegamenti incoerenti.
  */
 object Riscontro {
+
+    /** Distanza massima in giorni delle operazioni con lo stesso importo proposte come possibili doppioni. */
+    const val GIORNI_SIMILI = 5L
 
     fun analizza(operazioni: List<Operazione>, valutaDi: (Long) -> String?): List<ProblemaSpostamento> {
         val perId = operazioni.associateBy { it.id }
@@ -66,6 +72,7 @@ object Riscontro {
         val nonCollegati = operazioni.filter { it.trasferimento && it.collegataId == null }.sortedWith(compareBy({ it.data }, { it.id }))
         val usate = HashSet<Long>()
         val trasferimentiPerConto = operazioni.filter { it.trasferimento }.groupBy { it.contoValutaId }
+        val perContoEImporto = operazioni.groupBy { it.contoValutaId to it.importoCent }
         fun cerca(op: Operazione, contoValutaId: Long?): Operazione? {
             val disponibili = trasferimentiPerConto[contoValutaId].orEmpty().filter { it.id !in usate }
             return Spostamenti.trovaControparte(op, contoValutaId, disponibili, valutaDi)
@@ -89,9 +96,13 @@ object Riscontro {
                     if (altrove != null) "Trovata su un conto diverso dalla destinazione indicata" else null
                 )
             } else {
+                val simili = perContoEImporto[op.contoValutaId to op.importoCent].orEmpty()
+                    .filter { it.id != op.id && abs(it.data - op.data) <= GIORNI_SIMILI }
+                    .sortedWith(compareBy({ abs(it.data - op.data) }, { it.id }))
                 problemi += ProblemaSpostamento(
                     TipoProblema.SENZA_CONTROPARTE, op, null,
-                    if (op.contoValutaDestId == null) "Manca il conto di destinazione" else null
+                    if (op.contoValutaDestId == null) "Manca il conto di destinazione" else null,
+                    simili
                 )
             }
         }

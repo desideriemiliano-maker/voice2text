@@ -70,6 +70,9 @@ class CambiRiscontroTest {
             Operazione(id = 2, contoValutaId = 3, data = 101, importoCent = 5_000, trasferimento = true),
             // senza riga corrispondente
             Operazione(id = 3, contoValutaId = 2, data = 200, importoCent = -7_000, trasferimento = true, contoValutaDestId = 3),
+            // stesso importo sullo stesso conto a 2 giorni (possibile doppione della 3) e uno troppo lontano
+            Operazione(id = 6, contoValutaId = 2, data = 202, importoCent = -7_000, voceId = 1),
+            Operazione(id = 7, contoValutaId = 2, data = 220, importoCent = -7_000, voceId = 1),
             // coppia collegata con importi diversi
             Operazione(id = 4, contoValutaId = 2, data = 300, importoCent = -1_000, trasferimento = true, contoValutaDestId = 3, collegataId = 5),
             Operazione(id = 5, contoValutaId = 3, data = 300, importoCent = 900, trasferimento = true, contoValutaDestId = 2, collegataId = 4)
@@ -79,7 +82,9 @@ class CambiRiscontroTest {
 
         val coppia = perTipo.getValue(TipoProblema.DA_COLLEGARE).single()
         assertEquals(1L to 2L, coppia.operazione.id to coppia.altra!!.id)
-        assertEquals(listOf(3L), perTipo.getValue(TipoProblema.SENZA_CONTROPARTE).map { it.operazione.id })
+        val orfano = perTipo.getValue(TipoProblema.SENZA_CONTROPARTE).single()
+        assertEquals(3L, orfano.operazione.id)
+        assertEquals(listOf(6L), orfano.simili.map { it.id })
         assertEquals("Gli importi sono diversi", perTipo.getValue(TipoProblema.COLLEGAMENTO_ERRATO).single().dettaglio)
         assertEquals(3, problemi.size)
     }

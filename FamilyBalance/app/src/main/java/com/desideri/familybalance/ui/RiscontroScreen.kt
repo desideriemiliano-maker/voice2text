@@ -1,6 +1,13 @@
 package com.desideri.familybalance.ui
 
 import androidx.compose.foundation.clickable
+import com.desideri.familybalance.logica.Riscontro
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.IconButton
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.ContentCopy
 import kotlin.math.abs
 import com.desideri.familybalance.logica.Spostamenti
 import androidx.compose.foundation.layout.heightIn
@@ -62,6 +69,8 @@ fun RiscontroScreen(vm: SpeseViewModel, onIndietro: () -> Unit) {
     var inModifica by remember { mutableStateOf<Operazione?>(null) }
     var daScollegare by remember { mutableStateOf<Operazione?>(null) }
     var daAssociare by remember { mutableStateOf<Operazione?>(null) }
+    var dettaglioSimili by remember { mutableStateOf<ProblemaSpostamento?>(null) }
+    var daEliminare by remember { mutableStateOf<Operazione?>(null) }
 
     val opzioniFiltro = listOf(FiltroConto(null, "Tutti i conti")) +
         dati.contiValutaOrdinati.map { FiltroConto(it.id, dati.etichetta(it.id)) }
@@ -121,7 +130,9 @@ fun RiscontroScreen(vm: SpeseViewModel, onIndietro: () -> Unit) {
                                 onModifica = { inModifica = it },
                                 onCollega = { vm.collegaSpostamenti(listOf(p.operazione to p.altra!!)) },
                                 onScollega = { daScollegare = p.operazione },
-                                onAssocia = { daAssociare = p.operazione }
+                                onAssocia = { daAssociare = p.operazione },
+                                onSimili = { dettaglioSimili = p },
+                                onElimina = { daEliminare = p.operazione }
                             )
                         }
                     }
@@ -141,6 +152,46 @@ fun RiscontroScreen(vm: SpeseViewModel, onIndietro: () -> Unit) {
                 daAssociare = null
             },
             onAnnulla = { daAssociare = null }
+        )
+    }
+    dettaglioSimili?.let { p ->
+        AlertDialog(
+            onDismissRequest = { dettaglioSimili = null },
+            title = { Text("Possibili doppioni") },
+            text = {
+                Column(modifier = Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Spostamento senza riga corrispondente:", style = MaterialTheme.typography.labelLarge)
+                    DettaglioOperazione(p.operazione, dati)
+                    Text(
+                        "Operazioni dello stesso conto con lo stesso importo entro ${Riscontro.GIORNI_SIMILI} giorni:",
+                        style = MaterialTheme.typography.labelLarge,
+                        modifier = Modifier.padding(top = 8.dp)
+                    )
+                    p.simili.forEach { s ->
+                        HorizontalDivider()
+                        DettaglioOperazione(s, dati, giorni = abs(s.data - p.operazione.data))
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    daEliminare = p.operazione
+                    dettaglioSimili = null
+                }) { Text("Elimina lo spostamento", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = { TextButton(onClick = { dettaglioSimili = null }) { Text("Chiudi") } }
+        )
+    }
+    daEliminare?.let { op ->
+        DialogConferma(
+            titolo = "Elimina operazione",
+            testo = "Eliminare lo spostamento del ${formattaData(op.data)} di ${importo(op, dati)} su ${dati.etichetta(op.contoValutaId)}?",
+            conferma = "Elimina",
+            onConferma = {
+                vm.eliminaOperazione(op)
+                daEliminare = null
+            },
+            onAnnulla = { daEliminare = null }
         )
     }
     daScollegare?.let { op ->
@@ -167,11 +218,32 @@ private fun CardProblema(
     onModifica: (Operazione) -> Unit,
     onCollega: () -> Unit,
     onScollega: () -> Unit,
-    onAssocia: () -> Unit
+    onAssocia: () -> Unit,
+    onSimili: () -> Unit,
+    onElimina: () -> Unit
 ) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            RigaOperazione(p.operazione, dati, onModifica)
+            if (p.simili.isEmpty()) {
+                RigaOperazione(p.operazione, dati, onModifica)
+            } else {
+                // Possibile doppione: stesso importo su questo conto a pochi giorni.
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(modifier = Modifier.weight(1f)) { RigaOperazione(p.operazione, dati, onModifica) }
+                    IconButton(onClick = onSimili) {
+                        Icon(Icons.Filled.ContentCopy, contentDescription = "Possibili doppioni", tint = MaterialTheme.colorScheme.tertiary)
+                    }
+                    IconButton(onClick = onElimina) {
+                        Icon(Icons.Filled.Delete, contentDescription = "Elimina", tint = MaterialTheme.colorScheme.error)
+                    }
+                }
+                Text(
+                    "Possibile doppione: ${p.simili.size} " + (if (p.simili.size == 1) "operazione" else "operazioni") +
+                        " con lo stesso importo entro ${Riscontro.GIORNI_SIMILI} giorni",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.tertiary
+                )
+            }
             p.altra?.let { RigaOperazione(it, dati, onModifica) }
             p.dettaglio?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -293,4 +365,32 @@ private fun AssociaRigaDialog(op: Operazione, dati: DatiApp, onAssocia: (Operazi
         },
         dismissButton = { TextButton(onClick = onAnnulla) { Text("Annulla") } }
     )
+}
+
+/** Dettaglio di un'operazione nel dialog dei possibili doppioni. */
+@Composable
+private fun DettaglioOperazione(op: Operazione, dati: DatiApp, giorni: Long? = null) {
+    val tipo = when {
+        op.trasferimento && op.contoValutaDestId != null ->
+            "Spostamento " + (if (op.importoCent < 0) "verso " else "da ") + dati.etichetta(op.contoValutaDestId)
+        op.trasferimento -> "Spostamento senza conto indicato"
+        else -> op.voceId?.let { dati.vociPerId[it]?.descrizione } ?: "Senza tipo"
+    }
+    Column {
+        Row {
+            Text(
+                "${dati.etichetta(op.contoValutaId)} · ${formattaData(op.data)}",
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.weight(1f)
+            )
+            Text(importo(op, dati), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
+        }
+        Text(
+            tipo + (if (op.collegataId != null) " · collegata" else "") +
+                (giorni?.let { if (it == 0L) " · stesso giorno" else " · $it giorni di distanza" } ?: ""),
+            style = MaterialTheme.typography.bodySmall
+        )
+        op.note?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+    }
 }
