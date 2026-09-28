@@ -32,6 +32,7 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.CurrencyExchange
+import androidx.compose.material.icons.filled.ViewWeek
 import androidx.compose.material.icons.automirrored.filled.CompareArrows
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
@@ -78,6 +79,7 @@ sealed interface Schermata {
     data object Impostazioni : Schermata
     data object Backup : Schermata
     data object Riscontro : Schermata
+    data object MappaSpostamenti : Schermata
     data object Cambi : Schermata
 }
 
@@ -106,6 +108,7 @@ fun SpeseApp(vm: SpeseViewModel = viewModel()) {
             Schermata.Impostazioni -> ImpostazioniScreen(vm, onIndietro = ::chiudi)
             Schermata.Backup -> BackupScreen(vm, onIndietro = ::chiudi)
             Schermata.Riscontro -> RiscontroScreen(vm, onIndietro = ::chiudi)
+            Schermata.MappaSpostamenti -> MappaSpostamentiScreen(vm, onIndietro = ::chiudi)
             Schermata.Cambi -> CambiScreen(vm, onIndietro = ::chiudi)
         }
         SnackbarHost(snackbar, modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 80.dp))
@@ -153,6 +156,7 @@ private fun SchermataPrincipale(vm: SpeseViewModel, sezione: Sezione, onSezione:
                             VoceMenu("Importa da Excel", Icons.Filled.FileOpen) { menuAperto = false; confermaImport = true }
                             HorizontalDivider()
                             VoceMenu("Riscontro spostamenti", Icons.AutoMirrored.Filled.CompareArrows) { menuAperto = false; onApri(Schermata.Riscontro) }
+                            VoceMenu("Spostamenti a colonne", Icons.Filled.ViewWeek) { menuAperto = false; onApri(Schermata.MappaSpostamenti) }
                             VoceMenu("Cambi CHF/EUR", Icons.Filled.CurrencyExchange) { menuAperto = false; onApri(Schermata.Cambi) }
                             HorizontalDivider()
                             VoceMenu("Backup Google Drive", Icons.Filled.CloudUpload) { menuAperto = false; onApri(Schermata.Backup) }
