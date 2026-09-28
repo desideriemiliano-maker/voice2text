@@ -69,7 +69,8 @@ fun RiscontroScreen(vm: SpeseViewModel, onIndietro: () -> Unit) {
     var inModifica by remember { mutableStateOf<Operazione?>(null) }
     var daScollegare by remember { mutableStateOf<Operazione?>(null) }
     var daAssociare by remember { mutableStateOf<Operazione?>(null) }
-    var dettaglioSimili by remember { mutableStateOf<ProblemaSpostamento?>(null) }
+    // Spostamento di cui si mostrano i possibili doppioni (per id: il dettaglio segue i dati aggiornati).
+    var dettaglioSimiliId by remember { mutableStateOf<Long?>(null) }
     var daEliminare by remember { mutableStateOf<Operazione?>(null) }
 
     val opzioniFiltro = listOf(FiltroConto(null, "Tutti i conti")) +
@@ -131,7 +132,7 @@ fun RiscontroScreen(vm: SpeseViewModel, onIndietro: () -> Unit) {
                                 onCollega = { vm.collegaSpostamenti(listOf(p.operazione to p.altra!!)) },
                                 onScollega = { daScollegare = p.operazione },
                                 onAssocia = { daAssociare = p.operazione },
-                                onSimili = { dettaglioSimili = p },
+                                onSimili = { dettaglioSimiliId = p.operazione.id },
                                 onElimina = { daEliminare = p.operazione }
                             )
                         }
@@ -154,9 +155,12 @@ fun RiscontroScreen(vm: SpeseViewModel, onIndietro: () -> Unit) {
             onAnnulla = { daAssociare = null }
         )
     }
+    val dettaglioSimili = dettaglioSimiliId?.let { id ->
+        problemi?.firstOrNull { it.tipo == TipoProblema.SENZA_CONTROPARTE && it.operazione.id == id }
+    }
     dettaglioSimili?.let { p ->
         AlertDialog(
-            onDismissRequest = { dettaglioSimili = null },
+            onDismissRequest = { dettaglioSimiliId = null },
             title = { Text("Possibili doppioni") },
             text = {
                 Column(modifier = Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -167,28 +171,37 @@ fun RiscontroScreen(vm: SpeseViewModel, onIndietro: () -> Unit) {
                         style = MaterialTheme.typography.labelLarge,
                         modifier = Modifier.padding(top = 8.dp)
                     )
+                    if (p.simili.isEmpty()) Text("Nessuna (già eliminate).", style = MaterialTheme.typography.bodySmall)
                     p.simili.forEach { s ->
                         HorizontalDivider()
-                        DettaglioOperazione(s, dati, giorni = abs(s.data - p.operazione.data))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                DettaglioOperazione(s, dati, giorni = abs(s.data - p.operazione.data))
+                            }
+                            IconButton(onClick = { daEliminare = s }) {
+                                Icon(Icons.Filled.Delete, contentDescription = "Elimina questo doppione", tint = MaterialTheme.colorScheme.error)
+                            }
+                        }
                     }
                 }
             },
             confirmButton = {
                 TextButton(onClick = {
                     daEliminare = p.operazione
-                    dettaglioSimili = null
+                    dettaglioSimiliId = null
                 }) { Text("Elimina lo spostamento", color = MaterialTheme.colorScheme.error) }
             },
-            dismissButton = { TextButton(onClick = { dettaglioSimili = null }) { Text("Chiudi") } }
+            dismissButton = { TextButton(onClick = { dettaglioSimiliId = null }) { Text("Chiudi") } }
         )
     }
     daEliminare?.let { op ->
         DialogConferma(
             titolo = "Elimina operazione",
-            testo = "Eliminare lo spostamento del ${formattaData(op.data)} di ${importo(op, dati)} su ${dati.etichetta(op.contoValutaId)}?",
+            testo = "Eliminare solo questa operazione del ${formattaData(op.data)} di ${importo(op, dati)} su ${dati.etichetta(op.contoValutaId)}?" +
+                if (op.collegataId != null) " La riga collegata sull'altro conto resta, senza collegamento." else "",
             conferma = "Elimina",
             onConferma = {
-                vm.eliminaOperazione(op)
+                vm.eliminaSoloRiga(op)
                 daEliminare = null
             },
             onAnnulla = { daEliminare = null }

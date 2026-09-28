@@ -295,6 +295,19 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
         messaggio(if (collegati == 1) "Spostamento collegato" else "Collegati $collegati spostamenti")
     }
 
+    /**
+     * Elimina solo la riga [op]: se era collegata a una riga sull'altro conto, quella resta (senza
+     * collegamento) invece di essere eliminata insieme.
+     */
+    fun eliminaSoloRiga(op: Operazione) = viewModelScope.launch {
+        db.withTransaction {
+            val x = dao.operazione(op.id) ?: return@withTransaction
+            x.collegataId?.let { dao.operazione(it) }?.takeIf { it.collegataId == x.id }?.let { dao.aggiornaOperazione(it.copy(collegataId = null)) }
+            dao.eliminaOperazioni(listOf(x.id))
+        }
+        messaggio("Operazione eliminata")
+    }
+
     /** Toglie il collegamento di [op] (e quello reciproco della riga collegata). */
     fun scollegaSpostamento(op: Operazione) = viewModelScope.launch {
         db.withTransaction {
