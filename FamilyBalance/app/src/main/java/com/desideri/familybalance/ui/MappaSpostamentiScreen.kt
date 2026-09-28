@@ -3,6 +3,7 @@ package com.desideri.familybalance.ui
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -70,7 +71,8 @@ private fun coerenti(a: Operazione, b: Operazione, dati: DatiApp): Boolean {
  * Spostamenti a colonne (menu ⋮): tutti gli spostamenti del periodo in verticale, una riga per
  * data e una colonna per conto/valuta. Le righe collegate sono unite da una linea (rossa se
  * incoerenti); una riga non collegata si collega tenendola premuta e trascinandola su quella
- * corrispondente di un altro conto. Toccando una riga la si modifica o elimina.
+ * corrispondente di un altro conto; toccando una linea la si può eliminare (scollega). Toccando
+ * una riga la si modifica o elimina.
  */
 @Composable
 fun MappaSpostamentiScreen(vm: SpeseViewModel, onIndietro: () -> Unit) {
@@ -105,6 +107,18 @@ fun MappaSpostamentiScreen(vm: SpeseViewModel, onIndietro: () -> Unit) {
     }
     var daCollegare by remember { mutableStateOf<Pair<Operazione, Operazione>?>(null) }
     var inModifica by remember { mutableStateOf<Operazione?>(null) }
+    var daScollegare by remember { mutableStateOf<Pair<Operazione, Operazione>?>(null) }
+
+    /** Segmenti delle linee di collegamento visibili, in coordinate del contenuto scorrevole. */
+    fun linee(): List<Triple<Operazione, Operazione, Pair<Offset, Offset>>> = trasferimenti.mapNotNull { op ->
+        val idAltra = op.collegataId ?: return@mapNotNull null
+        if (idAltra !in visibili || op.id > idAltra) return@mapNotNull null
+        val r1 = posizioni[op.id]?.translate(-origineContenuto) ?: return@mapNotNull null
+        val r2 = posizioni[idAltra]?.translate(-origineContenuto) ?: return@mapNotNull null
+        val altra = perId[idAltra] ?: return@mapNotNull null
+        val segmento = if (r1.center.x <= r2.center.x) r1.centerRight to r2.centerLeft else r1.centerLeft to r2.centerRight
+        Triple(op, altra, segmento)
+    }
 
     val colorePrimario = MaterialTheme.colorScheme.primary
     val coloreErrore = MaterialTheme.colorScheme.error
@@ -132,7 +146,7 @@ fun MappaSpostamentiScreen(vm: SpeseViewModel, onIndietro: () -> Unit) {
                     FilterChip(selected = soloDaCollegare, onClick = { soloDaCollegare = !soloDaCollegare }, label = { Text("Da collegare") })
                 }
                 Text(
-                    "Tieni premuta una riga non collegata e trascinala su quella corrispondente per collegarle; tocca una riga per modificarla.",
+                    "Tieni premuta una riga non collegata e trascinala su quella corrispondente per collegarle; tocca una linea per scollegarle, una riga per modificarla.",
                     style = MaterialTheme.typography.bodySmall
                 )
             }
@@ -162,17 +176,23 @@ fun MappaSpostamentiScreen(vm: SpeseViewModel, onIndietro: () -> Unit) {
                         .fillMaxWidth()
                         .verticalScroll(scorrimento, enabled = trascinata == null)
                         .onGloballyPositioned { origineContenuto = it.positionInRoot() }
+                        // Tocco su una linea di collegamento (fuori dalle righe): proposta di scollegare.
+                        .pointerInput(trasferimenti) {
+                            detectTapGestures { punto ->
+                                val soglia = 16.dp.toPx()
+                                linee()
+                                    .map { (op, altra, seg) -> Triple(op, altra, distanzaDaSegmento(punto, seg.first, seg.second)) }
+                                    .filter { it.third <= soglia }
+                                    .minByOrNull { it.third }
+                                    ?.let { (op, altra, _) -> daScollegare = op to altra }
+                            }
+                        }
                         .drawWithContent {
                             drawContent()
                             fun locale(r: Rect) = r.translate(-origineContenuto)
                             // Linee tra le righe collegate, entrambe visibili (una volta per coppia).
-                            for (op in trasferimenti) {
-                                val idAltra = op.collegataId ?: continue
-                                if (idAltra !in visibili || op.id > idAltra) continue
-                                val r1 = posizioni[op.id]?.let(::locale) ?: continue
-                                val r2 = posizioni[idAltra]?.let(::locale) ?: continue
-                                val altra = perId[idAltra] ?: continue
-                                val (p1, p2) = if (r1.center.x <= r2.center.x) r1.centerRight to r2.centerLeft else r1.centerLeft to r2.centerRight
+                            for ((op, altra, segmento) in linee()) {
+                                val (p1, p2) = segmento
                                 drawLine(
                                     color = if (coerenti(op, altra, dati)) colorePrimario else coloreErrore,
                                     start = p1,
@@ -286,6 +306,33 @@ fun MappaSpostamentiScreen(vm: SpeseViewModel, onIndietro: () -> Unit) {
         )
     }
 
+    daScollegare?.let { (x, y) ->
+        AlertDialog(
+            onDismissRequest = { daScollegare = null },
+            title = { Text("Elimina collegamento") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    listOf(x, y).forEach { op ->
+                        Text(
+                            "${dati.etichetta(op.contoValutaId)} · ${formattaData(op.data)} · ${importo(op, dati)}",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                        op.note?.let { Text(it, style = MaterialTheme.typography.bodySmall, maxLines = 2) }
+                    }
+                    Text("Le due righe restano, ma non più collegate: i saldi non cambiano. Potrai collegarle di nuovo trascinandole.")
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    vm.scollegaSpostamento(x)
+                    daScollegare = null
+                }) { Text("Scollega", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = { TextButton(onClick = { daScollegare = null }) { Text("Annulla") } }
+        )
+    }
+
     inModifica?.let { op ->
         OperazioneDialog(vm, dati, op.contoValutaId, op, onChiudi = { inModifica = null })
     }
@@ -358,4 +405,13 @@ private fun CartaSpostamento(
             }
         }
     }
+}
+
+/** Distanza del punto [p] dal segmento [a]-[b]. */
+private fun distanzaDaSegmento(p: Offset, a: Offset, b: Offset): Float {
+    val ab = b - a
+    val lunghezza2 = ab.x * ab.x + ab.y * ab.y
+    if (lunghezza2 == 0f) return (p - a).getDistance()
+    val t = (((p.x - a.x) * ab.x + (p.y - a.y) * ab.y) / lunghezza2).coerceIn(0f, 1f)
+    return (p - Offset(a.x + ab.x * t, a.y + ab.y * t)).getDistance()
 }
