@@ -25,6 +25,7 @@ import com.desideri.familybalance.estratto.Presenza
 import com.desideri.familybalance.estratto.RegistroPromptStore
 import com.desideri.familybalance.estratto.RigaEstratto
 import com.desideri.familybalance.estratto.SceltaEstratto
+import com.desideri.familybalance.estratto.TipoData
 import com.desideri.familybalance.logica.Associazioni
 import com.desideri.familybalance.logica.Calcoli
 import com.desideri.familybalance.logica.MeseRicorrenti
@@ -372,6 +373,11 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /** Tipo di data da registrare scelto l'ultima volta per il conto (default: data dell'operazione). */
+    fun tipoDataEstratto(contoId: Long): TipoData = preferenze.caricaTipoDataEstratto(contoId)
+
+    fun salvaTipoDataEstratto(contoId: Long, tipo: TipoData) = preferenze.salvaTipoDataEstratto(contoId, tipo)
+
     fun annullaImportEstratto() {
         _importEstratto.value = null
     }
@@ -406,7 +412,7 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
                 if (scelta.tipo.equals(Associazione.TIPO_SPOSTAMENTO, ignoreCase = true) && dest != null) {
                     val op = Operazione(
                         contoValutaId = scelta.riga.contoValutaId,
-                        data = m.data.toEpochDay(),
+                        data = scelta.data.toEpochDay(),
                         importoCent = m.importoCent,
                         trasferimento = true,
                         contoValutaDestId = dest,
@@ -424,7 +430,7 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
                     dao.inserisciOperazione(
                         Operazione(
                             contoValutaId = scelta.riga.contoValutaId,
-                            data = m.data.toEpochDay(),
+                            data = scelta.data.toEpochDay(),
                             importoCent = m.importoCent,
                             voceId = voceId(scelta.tipo.trim(), scelta.sottotipo?.trim()?.ifEmpty { null }),
                             note = note

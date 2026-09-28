@@ -37,21 +37,36 @@ private const val PROMPT_ESTRATTO =
         "sono più colonne descrittive, es. Descrizione e Dettaglio, uniscile nell'ordine separate da \" · \"). " +
         "Le date nei fogli di calcolo sono già convertite in formato YYYY-MM-DD."
 
+/** Quale data di un movimento registrare sull'operazione (scelta nel pannello di import). */
+enum class TipoData(val etichetta: String) {
+    OPERAZIONE("Operazione"),
+    CONTABILE("Contabile"),
+    VALUTA("Valuta")
+}
+
 /**
- * Un movimento letto da Gemini dall'estratto conto. [data] è quella registrata sull'operazione: la
- * data dell'operazione/transazione se l'estratto la riporta (come nel foglio LGT dell'Excel),
- * altrimenti la data valuta (come nel foglio HelloBank). [altreDate] sono le altre date del
- * movimento (contabile/registrazione, valuta): per riconoscere le operazioni già presenti si
- * confrontano tutte.
+ * Un movimento letto da Gemini dall'estratto conto, con le date che l'estratto riporta:
+ * operazione/transazione, contabile/registrazione, valuta. L'utente sceglie quale registrare
+ * ([data]); per riconoscere le operazioni già presenti si confrontano tutte ([tutteLeDate]).
  */
 data class MovimentoEstratto(
-    val data: LocalDate,
     val valuta: String,
     val importoCent: Long,
     val descrizione: String,
-    val altreDate: List<LocalDate> = emptyList()
+    val dataOperazione: LocalDate? = null,
+    val dataContabile: LocalDate? = null,
+    val dataValuta: LocalDate? = null
 ) {
-    val tutteLeDate: List<LocalDate> get() = listOf(data) + altreDate
+    fun dataDi(tipo: TipoData): LocalDate? = when (tipo) {
+        TipoData.OPERAZIONE -> dataOperazione
+        TipoData.CONTABILE -> dataContabile
+        TipoData.VALUTA -> dataValuta
+    }
+
+    /** La data di tipo [tipo] o, se il movimento non la riporta, la prima disponibile (operazione, valuta, contabile). */
+    fun data(tipo: TipoData): LocalDate = dataDi(tipo) ?: dataOperazione ?: dataValuta ?: dataContabile!!
+
+    val tutteLeDate: List<LocalDate> get() = listOfNotNull(dataOperazione, dataContabile, dataValuta).distinct()
 }
 
 private fun schemaMovimenti(): Schema {
@@ -219,14 +234,15 @@ class EstrattoGemini(private val apiKey: String, private val registro: RegistroP
             val dataOperazione = leggiData("dataOperazione")
             val dataContabile = leggiData("dataContabile")
             val dataValuta = leggiData("dataValuta") ?: leggiData("data")
-            val data = dataOperazione ?: dataValuta ?: dataContabile ?: return@mapNotNull null
+            if (dataOperazione == null && dataContabile == null && dataValuta == null) return@mapNotNull null
             val importo = o.opt("importo")?.toString()?.replace(',', '.')?.toBigDecimalOrNull() ?: return@mapNotNull null
             MovimentoEstratto(
-                data = data,
                 valuta = o.optString("valuta").trim().uppercase().ifEmpty { valutaPredefinita },
                 importoCent = importo.setScale(2, RoundingMode.HALF_UP).movePointRight(2).toLong(),
                 descrizione = o.optString("descrizione").trim().replace(Regex("\\s+"), " ").take(MAX_DESCRIZIONE),
-                altreDate = listOfNotNull(dataContabile, dataValuta).distinct().filter { it != data }
+                dataOperazione = dataOperazione,
+                dataContabile = dataContabile,
+                dataValuta = dataValuta
             )
         }.filter { it.importoCent != 0L }
         return movimenti to completa
@@ -289,9 +305,10 @@ data class ImportEstratto(
     val simili: Int get() = righe.count { it.presenza == Presenza.SIMILE }
 }
 
-/** Scelta dell'utente per un movimento: tipo/sottotipo, o "Spostamento" verso [destinazioneId]. */
+/** Scelta dell'utente per un movimento: data, tipo/sottotipo, o "Spostamento" verso [destinazioneId]. */
 data class SceltaEstratto(
     val riga: RigaEstratto,
+    val data: LocalDate,
     val tipo: String,
     val sottotipo: String?,
     val destinazioneId: Long?

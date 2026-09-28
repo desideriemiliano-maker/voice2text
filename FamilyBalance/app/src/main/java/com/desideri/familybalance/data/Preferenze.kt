@@ -51,6 +51,16 @@ class Preferenze(context: Context) {
         editor.apply()
     }
 
+    /** Data da registrare negli import di estratti conto, ricordata per conto. */
+    fun caricaTipoDataEstratto(contoId: Long): com.desideri.familybalance.estratto.TipoData =
+        prefs.getString("tipo_data_estratto_$contoId", null)
+            ?.let { nome -> com.desideri.familybalance.estratto.TipoData.entries.firstOrNull { it.name == nome } }
+            ?: com.desideri.familybalance.estratto.TipoData.OPERAZIONE
+
+    fun salvaTipoDataEstratto(contoId: Long, tipo: com.desideri.familybalance.estratto.TipoData) {
+        prefs.edit().putString("tipo_data_estratto_$contoId", tipo.name).apply()
+    }
+
     private companion object {
         const val CHIAVE_TARGET = "target_risparmio_cent"
         const val CHIAVE_CAMBIO = "cambio_chf_eur"

@@ -45,6 +45,7 @@ import com.desideri.familybalance.data.Associazione
 import com.desideri.familybalance.estratto.ImportEstratto
 import com.desideri.familybalance.estratto.RigaEstratto
 import com.desideri.familybalance.estratto.SceltaEstratto
+import com.desideri.familybalance.estratto.TipoData
 import com.desideri.familybalance.logica.Associazioni
 import com.desideri.familybalance.logica.formattaData
 
@@ -108,6 +109,8 @@ fun ImportEstrattoDialog(vm: SpeseViewModel, dati: DatiApp, importazione: Import
     }
     var nuovaAssociazioneRiga by remember { mutableStateOf<Int?>(null) }
     var filtro by remember { mutableStateOf(FiltroImport.TUTTI) }
+    // Quale data registrare: ricordata per conto dall'ultimo import.
+    var tipoData by remember(importazione) { mutableStateOf(vm.tipoDataEstratto(importazione.contoId)) }
 
     val tipi = remember(dati.voci) { (dati.voci.map { it.tipo } + Associazione.TIPO_SPOSTAMENTO).distinct().sortedBy { it.lowercase() } }
     fun valida(stato: StatoRiga) = stato.includi && stato.tipo.isNotBlank() && (!stato.spostamento || stato.destinazione != null)
@@ -141,6 +144,7 @@ fun ImportEstrattoDialog(vm: SpeseViewModel, dati: DatiApp, importazione: Import
                                     val s = stati[i]
                                     SceltaEstratto(
                                         riga = importazione.righe[i],
+                                        data = importazione.righe[i].movimento.data(tipoData),
                                         tipo = if (s.spostamento) Associazione.TIPO_SPOSTAMENTO else s.tipo.trim(),
                                         sottotipo = s.sottotipo.trim().ifEmpty { null },
                                         destinazioneId = if (s.spostamento) s.destinazione else null
@@ -150,6 +154,24 @@ fun ImportEstrattoDialog(vm: SpeseViewModel, dati: DatiApp, importazione: Import
                         },
                         enabled = daImportare > 0
                     ) { Text("Importa") }
+                }
+                Row(
+                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(top = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Data da registrare:", style = MaterialTheme.typography.labelLarge)
+                    TipoData.entries.forEach { t ->
+                        val presenti = importazione.righe.count { it.movimento.dataDi(t) != null }
+                        FilterChip(
+                            selected = tipoData == t,
+                            onClick = {
+                                tipoData = t
+                                vm.salvaTipoDataEstratto(importazione.contoId, t)
+                            },
+                            label = { Text("${t.etichetta} ($presenti)") }
+                        )
+                    }
                 }
                 // Filtri: mostrano solo una parte dei movimenti (le scelte fatte restano valide su tutti).
                 Row(
@@ -177,6 +199,7 @@ fun ImportEstrattoDialog(vm: SpeseViewModel, dati: DatiApp, importazione: Import
                         val stato = stati[i]
                         CardMovimento(
                             riga = riga,
+                            tipoData = tipoData,
                             stato = stato,
                             dati = dati,
                             tipi = tipi,
@@ -215,6 +238,7 @@ fun ImportEstrattoDialog(vm: SpeseViewModel, dati: DatiApp, importazione: Import
 @Composable
 private fun CardMovimento(
     riga: RigaEstratto,
+    tipoData: TipoData,
     stato: StatoRiga,
     dati: DatiApp,
     tipi: List<String>,
@@ -237,15 +261,15 @@ private fun CardMovimento(
         Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Checkbox(checked = stato.includi, onCheckedChange = { onStato(stato.copy(includi = it)) })
-                Text(formattaData(m.data.toEpochDay()), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                Text(formattaData(m.data(tipoData).toEpochDay()), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
                 TestoImporto(m.importoCent / 100.0, m.valuta, grassetto = true)
             }
-            if (m.altreDate.isNotEmpty()) {
-                Text(
-                    "Altre date: " + m.altreDate.joinToString(", ") { formattaData(it.toEpochDay()) },
-                    style = MaterialTheme.typography.labelSmall
-                )
-            }
+            // Tutte le date del movimento; se manca quella scelta si usa la prima disponibile.
+            Text(
+                TipoData.entries.mapNotNull { t -> m.dataDi(t)?.let { "${t.etichetta} ${formattaData(it.toEpochDay())}" } }.joinToString(" · ") +
+                    if (m.dataDi(tipoData) == null) " (manca la data ${tipoData.etichetta.lowercase()})" else "",
+                style = MaterialTheme.typography.labelSmall
+            )
             Text(m.descrizione.ifBlank { "(senza descrizione)" }, style = MaterialTheme.typography.bodyMedium)
             when (riga.presenza) {
                 Presenza.PRESENTE -> Text(
