@@ -45,6 +45,9 @@ import com.desideri.familybalance.logica.formattaCent
 import com.google.api.client.googleapis.extensions.android.gms.auth.GooglePlayServicesAvailabilityIOException
 import com.google.api.client.googleapis.extensions.android.gms.auth.UserRecoverableAuthIOException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -108,9 +111,24 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
     private val _importazioneInCorso = MutableStateFlow(false)
     val importazioneInCorso: StateFlow<Boolean> = _importazioneInCorso.asStateFlow()
 
-    val dati: StateFlow<DatiApp> = combine(dao.contiFlow(), dao.contiValutaFlow(), dao.vociFlow(), dao.operazioniFlow()) { conti, cv, voci, ops ->
-        DatiApp(conti, cv, voci, ops, caricati = true)
-    }.stateIn(viewModelScope, SharingStarted.Eagerly, DatiApp())
+    /** Incrementato per rileggere tutto dal database (trascinamento verso il basso nella sezione Conti). */
+    private val ricarica = MutableStateFlow(0)
+    private val _ricaricaInCorso = MutableStateFlow(false)
+    val ricaricaInCorso: StateFlow<Boolean> = _ricaricaInCorso.asStateFlow()
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val dati: StateFlow<DatiApp> = ricarica.flatMapLatest {
+        combine(dao.contiFlow(), dao.contiValutaFlow(), dao.vociFlow(), dao.operazioniFlow()) { conti, cv, voci, ops ->
+            DatiApp(conti, cv, voci, ops, caricati = true)
+        }
+    }.onEach { _ricaricaInCorso.value = false }.stateIn(viewModelScope, SharingStarted.Eagerly, DatiApp())
+
+    /** Rilegge dal database operazioni, conti e voci e dalle preferenze le impostazioni. */
+    fun ricaricaDati() {
+        _ricaricaInCorso.value = true
+        _impostazioni.value = preferenze.carica()
+        ricarica.value++
+    }
 
     /** Saldo in centesimi (valuta propria) di ogni conto/valuta. */
     val saldi: StateFlow<Map<Long, Long>> = dati.map { Calcoli.saldiCent(it.contiValuta, it.operazioni) }

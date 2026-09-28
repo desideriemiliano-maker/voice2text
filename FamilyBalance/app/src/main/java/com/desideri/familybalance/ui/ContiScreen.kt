@@ -15,6 +15,8 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -29,11 +31,13 @@ import com.desideri.familybalance.SpeseViewModel
 import com.desideri.familybalance.logica.Calcoli
 import com.desideri.familybalance.logica.formattaData
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ContiScreen(vm: SpeseViewModel, onApriConto: (Long) -> Unit, onAnagraficaConti: () -> Unit) {
     val dati by vm.dati.collectAsStateWithLifecycle()
     val saldi by vm.saldi.collectAsStateWithLifecycle()
     val impostazioni by vm.impostazioni.collectAsStateWithLifecycle()
+    val ricaricaInCorso by vm.ricaricaInCorso.collectAsStateWithLifecycle()
 
     if (dati.caricati && dati.contiValuta.isEmpty()) {
         Column(
@@ -55,32 +59,35 @@ fun ContiScreen(vm: SpeseViewModel, onApriConto: (Long) -> Unit, onAnagraficaCon
     val totaleEuro = dati.contiValuta.sumOf { Calcoli.inEuro(saldi[it.id] ?: 0L, it.valuta, impostazioni.cambioChfEur) }
     val ultimaPerConto = dati.operazioni.groupBy { it.contoValutaId }.mapValues { (_, ops) -> ops.maxOf { it.data } }
 
-    LazyColumn(contentPadding = PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        item {
-            Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer), modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text("Saldo totale (in EUR)", style = MaterialTheme.typography.labelLarge)
-                    TestoImporto(totaleEuro, grassetto = true)
-                    if (dati.contiValuta.any { it.valuta != "EUR" }) {
-                        Text(
-                            "CHF convertiti a ${impostazioni.cambioChfEur} (Impostazioni)",
-                            style = MaterialTheme.typography.bodySmall
-                        )
+    // Trascinando verso il basso si rileggono i dati dal database.
+    PullToRefreshBox(isRefreshing = ricaricaInCorso, onRefresh = vm::ricaricaDati, modifier = Modifier.fillMaxSize()) {
+        LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            item {
+                Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer), modifier = Modifier.fillMaxWidth()) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text("Saldo totale (in EUR)", style = MaterialTheme.typography.labelLarge)
+                        TestoImporto(totaleEuro, grassetto = true)
+                        if (dati.contiValuta.any { it.valuta != "EUR" }) {
+                            Text(
+                                "CHF convertiti a ${impostazioni.cambioChfEur} (Impostazioni)",
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
                     }
                 }
             }
-        }
-        items(dati.contiValutaOrdinati, key = { it.id }) { cv ->
-            Card(modifier = Modifier.fillMaxWidth().clickable { onApriConto(cv.id) }) {
-                Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(dati.etichetta(cv.id), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                        ultimaPerConto[cv.id]?.let {
-                            Text("Ultima operazione: ${formattaData(it)}", style = MaterialTheme.typography.bodySmall)
+            items(dati.contiValutaOrdinati, key = { it.id }) { cv ->
+                Card(modifier = Modifier.fillMaxWidth().clickable { onApriConto(cv.id) }) {
+                    Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(dati.etichetta(cv.id), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                            ultimaPerConto[cv.id]?.let {
+                                Text("Ultima operazione: ${formattaData(it)}", style = MaterialTheme.typography.bodySmall)
+                            }
                         }
+                        TestoImporto((saldi[cv.id] ?: 0L) / 100.0, cv.valuta, grassetto = true)
+                        Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null)
                     }
-                    TestoImporto((saldi[cv.id] ?: 0L) / 100.0, cv.valuta, grassetto = true)
-                    Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null)
                 }
             }
         }
