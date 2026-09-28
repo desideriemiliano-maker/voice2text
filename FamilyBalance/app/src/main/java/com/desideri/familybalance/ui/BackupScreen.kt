@@ -8,6 +8,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Checkbox
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.ui.Alignment
@@ -49,6 +51,7 @@ fun BackupScreen(vm: SpeseViewModel, onIndietro: () -> Unit) {
     val impostazioni by vm.impostazioni.collectAsStateWithLifecycle()
     val stato by vm.statoBackup.collectAsStateWithLifecycle()
     val richiestaAutorizzazione by vm.richiestaAutorizzazione.collectAsStateWithLifecycle()
+    val ripristinoParziale by vm.ripristinoParziale.collectAsStateWithLifecycle()
     var nuovoBackup by remember { mutableStateOf(false) }
     var sceltaRipristino by remember { mutableStateOf(false) }
 
@@ -144,16 +147,22 @@ fun BackupScreen(vm: SpeseViewModel, onIndietro: () -> Unit) {
     if (sceltaRipristino) {
         // Preselezionato il più recente; con un solo backup la scelta è solo una conferma.
         var scelto by remember { mutableStateOf(stato.backup.firstOrNull()?.id) }
+        var soloAlcuni by remember { mutableStateOf(false) }
         AlertDialog(
             onDismissRequest = { sceltaRipristino = false },
             title = { Text("Ripristina backup") },
             text = {
                 Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
-                    Text(
-                        "Tutti i dati attuali verranno sostituiti con quelli del backup scelto e l'app verrà riavviata.",
-                        style = MaterialTheme.typography.bodySmall,
-                        modifier = Modifier.padding(bottom = 8.dp)
-                    )
+                    Text("Cosa ripristinare", style = MaterialTheme.typography.labelLarge)
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().clickable { soloAlcuni = false }) {
+                        RadioButton(selected = !soloAlcuni, onClick = { soloAlcuni = false })
+                        Text("Tutto il database (l'app verrà riavviata)", style = MaterialTheme.typography.bodyMedium)
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().clickable { soloAlcuni = true }) {
+                        RadioButton(selected = soloAlcuni, onClick = { soloAlcuni = true })
+                        Text("Solo alcuni conti/valute (gli altri restano intatti)", style = MaterialTheme.typography.bodyMedium)
+                    }
+                    Text("Backup", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 8.dp))
                     stato.backup.forEach { b ->
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
@@ -175,10 +184,51 @@ fun BackupScreen(vm: SpeseViewModel, onIndietro: () -> Unit) {
             confirmButton = {
                 TextButton(onClick = {
                     sceltaRipristino = false
-                    scelto?.let { vm.ripristinaBackup(it) }
-                }, enabled = scelto != null) { Text("Ripristina", color = MaterialTheme.colorScheme.error) }
+                    scelto?.let { if (soloAlcuni) vm.preparaRipristinoParziale(it) else vm.ripristinaBackup(it) }
+                }, enabled = scelto != null) {
+                    Text(if (soloAlcuni) "Avanti" else "Ripristina", color = MaterialTheme.colorScheme.error)
+                }
             },
             dismissButton = { TextButton(onClick = { sceltaRipristino = false }) { Text("Annulla") } }
+        )
+    }
+
+    // Ripristino parziale: scelta dei conti/valuta del backup da ripristinare.
+    ripristinoParziale?.let { (_, conti) ->
+        val selezionati = remember(conti) { mutableStateListOf<Long>() }
+        AlertDialog(
+            onDismissRequest = { vm.annullaRipristinoParziale() },
+            title = { Text("Conti da ripristinare") },
+            text = {
+                Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                    Text(
+                        "Per i conti/valute selezionati le operazioni attuali e il saldo iniziale verranno sostituiti con quelli " +
+                            "del backup; gli altri restano intatti. Gli spostamenti verso altri conti vengono ricollegati alla " +
+                            "stessa operazione presente oggi, se c'è.",
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    )
+                    conti.forEach { c ->
+                        val selezionato = c.id in selezionati
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.fillMaxWidth().clickable { if (selezionato) selezionati.remove(c.id) else selezionati.add(c.id) }
+                        ) {
+                            Checkbox(checked = selezionato, onCheckedChange = { if (it) selezionati.add(c.id) else selezionati.remove(c.id) })
+                            Column {
+                                Text(c.etichetta, style = MaterialTheme.typography.bodyLarge)
+                                Text("${c.operazioni} operazioni nel backup", style = MaterialTheme.typography.bodySmall)
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { vm.eseguiRipristinoParziale(selezionati.toSet()) }, enabled = selezionati.isNotEmpty()) {
+                    Text("Ripristina", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = { TextButton(onClick = { vm.annullaRipristinoParziale() }) { Text("Annulla") } }
         )
     }
 }

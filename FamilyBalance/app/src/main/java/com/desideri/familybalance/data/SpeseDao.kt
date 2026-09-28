@@ -44,6 +44,16 @@ interface SpeseDao {
     @Query("SELECT * FROM voci ORDER BY tipo COLLATE NOCASE, sottotipo COLLATE NOCASE")
     fun vociFlow(): Flow<List<Voce>>
 
+    // Letture dirette (senza Flow) per le operazioni in transazione, es. il ripristino parziale.
+    @Query("SELECT * FROM conti")
+    suspend fun conti(): List<Conto>
+
+    @Query("SELECT * FROM conti_valuta")
+    suspend fun contiValuta(): List<ContoValuta>
+
+    @Query("SELECT * FROM operazioni")
+    suspend fun operazioni(): List<Operazione>
+
     @Query("SELECT * FROM voci")
     suspend fun voci(): List<Voce>
 

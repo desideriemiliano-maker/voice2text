@@ -7,7 +7,10 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.room.withTransaction
 import com.desideri.familybalance.backup.BackupDrive
+import com.desideri.familybalance.backup.ContoBackup
 import com.desideri.familybalance.backup.InfoBackup
+import com.desideri.familybalance.backup.LetturaBackup
+import com.desideri.familybalance.backup.RipristinoParziale
 import com.desideri.familybalance.data.AppDatabase
 import com.desideri.familybalance.data.Associazione
 import com.desideri.familybalance.data.Conto
@@ -599,6 +602,50 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
             scaricato.delete()
         }
         riavvia()
+    }
+
+    /** Ripristino parziale in attesa della scelta dei conti/valuta: backup scaricato e suoi conti. */
+    private val _ripristinoParziale = MutableStateFlow<Pair<String, List<ContoBackup>>?>(null)
+    val ripristinoParziale: StateFlow<Pair<String, List<ContoBackup>>?> = _ripristinoParziale.asStateFlow()
+
+    private fun fileRipristinoParziale() = File(getApplication<Application>().cacheDir, "ripristino_parziale.db")
+
+    /** Scarica il backup [id] e ne legge i conti/valuta, per scegliere cosa ripristinare. */
+    fun preparaRipristinoParziale(id: String) = operazioneDrive("Lettura backup") { drive ->
+        val file = fileRipristinoParziale()
+        drive.scarica(id, file)
+        val conti = withContext(Dispatchers.IO) {
+            val intestazione = file.inputStream().use { input -> ByteArray(15).also { input.read(it) } }
+            if (String(intestazione, Charsets.US_ASCII) != "SQLite format 3") throw IllegalStateException("il file su Drive non è un database valido")
+            LetturaBackup(file).use { it.contiValuta() }
+        }
+        _ripristinoParziale.value = id to conti
+    }
+
+    fun annullaRipristinoParziale() {
+        _ripristinoParziale.value = null
+        fileRipristinoParziale().delete()
+    }
+
+    /** Ripristina solo i conti/valuta [idContiBackup] del backup scaricato, lasciando intatti gli altri. */
+    fun eseguiRipristinoParziale(idContiBackup: Set<Long>) = viewModelScope.launch {
+        _ripristinoParziale.value = null
+        _statoBackup.value = _statoBackup.value.copy(inCorso = true, errore = null)
+        val file = fileRipristinoParziale()
+        try {
+            val esito = withContext(Dispatchers.IO) { RipristinoParziale(db).esegui(file, idContiBackup) }
+            messaggio(
+                "Ripristinate ${esito.ripristinate} operazioni (sostituite ${esito.sostituite})" +
+                    (if (esito.ricollegate > 0) ", ${esito.ricollegate} spostamenti ricollegati" else "") +
+                    (if (esito.scollegate > 0) ", ${esito.scollegate} collegamenti rimossi" else "") +
+                    (if (esito.nuoveVoci > 0) ", ${esito.nuoveVoci} voci aggiunte" else "")
+            )
+        } catch (e: Exception) {
+            _statoBackup.value = _statoBackup.value.copy(errore = "Ripristino parziale non riuscito: ${e.message ?: e.javaClass.simpleName}")
+        } finally {
+            _statoBackup.value = _statoBackup.value.copy(inCorso = false)
+            file.delete()
+        }
     }
 
     private fun riavvia() {
