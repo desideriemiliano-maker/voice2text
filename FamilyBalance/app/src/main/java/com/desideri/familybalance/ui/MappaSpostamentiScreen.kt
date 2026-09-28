@@ -137,12 +137,16 @@ fun MappaSpostamentiScreen(vm: SpeseViewModel, onIndietro: () -> Unit) {
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier.horizontalScroll(rememberScrollState())
                 ) {
-                    listOf(30L to "1 mese", 90L to "3 mesi", 180L to "6 mesi").forEach { (giorni, testo) ->
+                    listOf(90L to "3 mesi", 180L to "6 mesi").forEach { (giorni, testo) ->
                         FilterChip(selected = da == oggi - giorni && a == null, onClick = {
                             da = oggi - giorni
                             a = null
                         }, label = { Text(testo) })
                     }
+                    FilterChip(selected = da == null && a == null, onClick = {
+                        da = null
+                        a = null
+                    }, label = { Text("Tutto") })
                     FilterChip(selected = soloDaCollegare, onClick = { soloDaCollegare = !soloDaCollegare }, label = { Text("Da collegare") })
                 }
                 Text(
