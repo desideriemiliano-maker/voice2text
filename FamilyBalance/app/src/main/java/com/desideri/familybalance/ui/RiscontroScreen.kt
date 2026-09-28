@@ -1,6 +1,11 @@
 package com.desideri.familybalance.ui
 
 import androidx.compose.foundation.clickable
+import kotlin.math.abs
+import com.desideri.familybalance.logica.Spostamenti
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.AlertDialog
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -56,6 +61,7 @@ fun RiscontroScreen(vm: SpeseViewModel, onIndietro: () -> Unit) {
     var espansi by remember { mutableStateOf(TipoProblema.entries.toSet()) }
     var inModifica by remember { mutableStateOf<Operazione?>(null) }
     var daScollegare by remember { mutableStateOf<Operazione?>(null) }
+    var daAssociare by remember { mutableStateOf<Operazione?>(null) }
 
     val opzioniFiltro = listOf(FiltroConto(null, "Tutti i conti")) +
         dati.contiValutaOrdinati.map { FiltroConto(it.id, dati.etichetta(it.id)) }
@@ -114,7 +120,8 @@ fun RiscontroScreen(vm: SpeseViewModel, onIndietro: () -> Unit) {
                                 p, dati,
                                 onModifica = { inModifica = it },
                                 onCollega = { vm.collegaSpostamenti(listOf(p.operazione to p.altra!!)) },
-                                onScollega = { daScollegare = p.operazione }
+                                onScollega = { daScollegare = p.operazione },
+                                onAssocia = { daAssociare = p.operazione }
                             )
                         }
                     }
@@ -125,6 +132,16 @@ fun RiscontroScreen(vm: SpeseViewModel, onIndietro: () -> Unit) {
 
     inModifica?.let { op ->
         OperazioneDialog(vm, dati, op.contoValutaId, op, onChiudi = { inModifica = null })
+    }
+    daAssociare?.let { op ->
+        AssociaRigaDialog(
+            op, dati,
+            onAssocia = { riga ->
+                vm.collegaSpostamenti(listOf(op to riga))
+                daAssociare = null
+            },
+            onAnnulla = { daAssociare = null }
+        )
     }
     daScollegare?.let { op ->
         DialogConferma(
@@ -149,7 +166,8 @@ private fun CardProblema(
     dati: DatiApp,
     onModifica: (Operazione) -> Unit,
     onCollega: () -> Unit,
-    onScollega: () -> Unit
+    onScollega: () -> Unit,
+    onAssocia: () -> Unit
 ) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -159,7 +177,10 @@ private fun CardProblema(
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 when (p.tipo) {
                     TipoProblema.DA_COLLEGARE -> OutlinedButton(onClick = onCollega) { Text("Collega") }
-                    TipoProblema.SENZA_CONTROPARTE -> OutlinedButton(onClick = { onModifica(p.operazione) }) { Text("Modifica") }
+                    TipoProblema.SENZA_CONTROPARTE -> {
+                        OutlinedButton(onClick = onAssocia) { Text("Associa") }
+                        OutlinedButton(onClick = { onModifica(p.operazione) }) { Text("Modifica") }
+                    }
                     TipoProblema.COLLEGAMENTO_ERRATO -> {
                         OutlinedButton(onClick = { onModifica(p.operazione) }) { Text("Modifica") }
                         OutlinedButton(onClick = onScollega) { Text("Scollega") }
@@ -195,4 +216,81 @@ private fun RigaOperazione(op: Operazione, dati: DatiApp, onModifica: (Operazion
         )
         op.note?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2) }
     }
+}
+
+/**
+ * Scelta della riga del conto di destinazione da associare allo spostamento [op] senza riga
+ * corrispondente: operazioni di segno opposto, non collegate ad altro, entro
+ * [Spostamenti.GIORNI_CANDIDATE] giorni, dalla più vicina per data. Il conto si può cambiare.
+ */
+@Composable
+private fun AssociaRigaDialog(op: Operazione, dati: DatiApp, onAssocia: (Operazione) -> Unit, onAnnulla: () -> Unit) {
+    val altriConti = dati.contiValutaOrdinati.filter { it.id != op.contoValutaId }
+    var conto by remember { mutableStateOf(op.contoValutaDestId ?: altriConti.firstOrNull()?.id) }
+    var scelta by remember { mutableStateOf<Operazione?>(null) }
+    val candidate = remember(conto, dati.operazioni) {
+        Spostamenti.candidate(op, null, conto, dati.operazioni).sortedWith(compareBy({ abs(it.data - op.data) }, { it.id }))
+    }
+    AlertDialog(
+        onDismissRequest = onAnnulla,
+        title = { Text("Associa riga") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    "${dati.etichetta(op.contoValutaId)} · ${formattaData(op.data)} · ${importo(op, dati)}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                CampoScelta(
+                    etichetta = "Conto dell'altra riga",
+                    selezionato = altriConti.firstOrNull { it.id == conto },
+                    opzioni = altriConti,
+                    testo = { dati.etichetta(it.id) },
+                    onScelta = {
+                        conto = it.id
+                        scelta = null
+                    }
+                )
+                if (candidate.isEmpty()) {
+                    Text(
+                        "Nessuna operazione di segno opposto e non collegata entro ${Spostamenti.GIORNI_CANDIDATE} giorni su questo conto.",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                } else {
+                    LazyColumn(modifier = Modifier.heightIn(max = 320.dp)) {
+                        items(candidate, key = { it.id }) { c ->
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.fillMaxWidth().clickable { scelta = c }
+                            ) {
+                                RadioButton(selected = scelta?.id == c.id, onClick = { scelta = c })
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Row {
+                                        Text(formattaData(c.data), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                                        Text(importo(c, dati), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
+                                    }
+                                    val giorni = abs(c.data - op.data)
+                                    val descrizione = c.note ?: c.voceId?.let { dati.vociPerId[it]?.descrizione }
+                                        ?: if (c.trasferimento) "Spostamento" else "Senza tipo"
+                                    Text(
+                                        (if (giorni == 0L) "stesso giorno" else "$giorni giorni di distanza") + " · " + descrizione,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        maxLines = 2
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    Text(
+                        "La riga scelta diventa uno spostamento collegato a questo (se aveva un tipo di spesa, lo perde); importo e data restano i suoi.",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { scelta?.let(onAssocia) }, enabled = scelta != null) { Text("Associa") }
+        },
+        dismissButton = { TextButton(onClick = onAnnulla) { Text("Annulla") } }
+    )
 }
