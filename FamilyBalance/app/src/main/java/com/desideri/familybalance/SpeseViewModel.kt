@@ -22,6 +22,7 @@ import com.desideri.familybalance.data.Valute
 import com.desideri.familybalance.data.Voce
 import com.desideri.familybalance.importazione.AnalisiImport
 import com.desideri.familybalance.importazione.ImportatoreExcel
+import com.desideri.familybalance.logica.Spostamenti
 import com.desideri.familybalance.estratto.AggiornamentoData
 import com.desideri.familybalance.estratto.EstrattoGemini
 import com.desideri.familybalance.estratto.ImportEstratto
@@ -137,8 +138,9 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
     /**
      * Salva un'operazione. Per uno spostamento inserito dall'app crea (o aggiorna) la
      * contro-operazione sul conto di destinazione con importo [importoDestinazioneCent] (o l'opposto
-     * dell'importo, se nella stessa valuta). Gli spostamenti importati senza contro-operazione
-     * collegata vengono aggiornati solo sul proprio conto, perché la riga speculare esiste già.
+     * dell'importo, se nella stessa valuta). Per gli spostamenti importati senza contro-operazione
+     * collegata si cerca la riga speculare (vedi [Spostamenti.trovaControparte]) e la si collega,
+     * spostandola sul nuovo conto di destinazione se è cambiato.
      */
     fun salvaOperazione(op: Operazione, importoDestinazioneCent: Long?) = viewModelScope.launch {
         db.withTransaction {
@@ -169,7 +171,31 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
                         val idControparte = dao.inserisciOperazione(controparte.copy(collegataId = op.id))
                         dao.aggiornaOperazione(op.copy(voceId = null, collegataId = idControparte))
                     }
-                    else -> dao.aggiornaOperazione(op.copy(voceId = null, collegataId = null))
+                    else -> {
+                        // Spostamento non collegato (importato): la riga corrispondente sul vecchio conto
+                        // di destinazione viene spostata sul nuovo e aggiornata; se non c'è ma ne esiste già
+                        // una sul nuovo conto la si collega; altrimenti la contro-operazione viene creata.
+                        val prec = requireNotNull(precedente)
+                        val tutte = dao.operazioni()
+                        val valute = dao.contiValuta().associate { it.id to it.valuta }
+                        val valutaDi = { id: Long -> valute[id] }
+                        val sulVecchio = Spostamenti.trovaControparte(prec, prec.contoValutaDestId, tutte, valutaDi)
+                        val sulNuovo = if (sulVecchio == null && prec.contoValutaDestId != dest) {
+                            Spostamenti.trovaControparte(op, dest, tutte, valutaDi)
+                        } else null
+                        val idControparte = when {
+                            sulVecchio != null -> sulVecchio.id.also {
+                                dao.aggiornaOperazione(
+                                    controparte.copy(id = it, collegataId = op.id, note = sulVecchio.note ?: op.note, ordine = sulVecchio.ordine)
+                                )
+                            }
+                            sulNuovo != null -> sulNuovo.id.also {
+                                dao.aggiornaOperazione(sulNuovo.copy(collegataId = op.id, contoValutaDestId = op.contoValutaId))
+                            }
+                            else -> dao.inserisciOperazione(controparte.copy(collegataId = op.id))
+                        }
+                        dao.aggiornaOperazione(op.copy(voceId = null, collegataId = idControparte))
+                    }
                 }
             } else {
                 val semplice = op.copy(trasferimento = false, contoValutaDestId = null, collegataId = null)

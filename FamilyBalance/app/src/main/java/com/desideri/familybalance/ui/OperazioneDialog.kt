@@ -30,6 +30,7 @@ import androidx.compose.ui.unit.dp
 import com.desideri.familybalance.DatiApp
 import com.desideri.familybalance.SpeseViewModel
 import com.desideri.familybalance.data.Operazione
+import com.desideri.familybalance.logica.Spostamenti
 import com.desideri.familybalance.logica.centInTesto
 import com.desideri.familybalance.logica.testoInCent
 import kotlinx.coroutines.launch
@@ -47,6 +48,12 @@ fun OperazioneDialog(vm: SpeseViewModel, dati: DatiApp, contoValutaId: Long, esi
     val scope = rememberCoroutineScope()
     val voceIniziale = esistente?.voceId?.let { dati.vociPerId[it] }
     val collegata = esistente?.collegataId?.let { id -> dati.operazioni.firstOrNull { it.id == id } }
+    // Spostamento importato senza collegamento: la riga speculare sull'altro conto, se c'è.
+    val speculare = remember(esistente, dati.operazioni) {
+        if (esistente != null && esistente.trasferimento && collegata == null) {
+            Spostamenti.trovaControparte(esistente, esistente.contoValutaDestId, dati.operazioni) { dati.contiValutaPerId[it]?.valuta }
+        } else null
+    }
     val valutaPropria = dati.contiValutaPerId[contoValutaId]?.valuta
 
     var data by remember { mutableStateOf(esistente?.data ?: LocalDate.now().toEpochDay()) }
@@ -54,7 +61,7 @@ fun OperazioneDialog(vm: SpeseViewModel, dati: DatiApp, contoValutaId: Long, esi
     var entrata by remember { mutableStateOf((esistente?.importoCent ?: -1L) > 0) }
     var spostamento by remember { mutableStateOf(esistente?.trasferimento ?: false) }
     var destinazione by remember { mutableStateOf(esistente?.contoValutaDestId) }
-    var importoDest by remember { mutableStateOf(collegata?.let { centInTesto(abs(it.importoCent)) } ?: "") }
+    var importoDest by remember { mutableStateOf((collegata ?: speculare)?.let { centInTesto(abs(it.importoCent)) } ?: "") }
     var tipo by remember { mutableStateOf(voceIniziale?.tipo ?: "") }
     var sottotipo by remember { mutableStateOf(voceIniziale?.sottotipo ?: "") }
     var note by remember { mutableStateOf(esistente?.note ?: "") }
@@ -68,8 +75,6 @@ fun OperazioneDialog(vm: SpeseViewModel, dati: DatiApp, contoValutaId: Long, esi
     val altriConti = dati.contiValutaOrdinati.filter { it.id != contoValutaId }
     val valutaDest = destinazione?.let { dati.contiValutaPerId[it]?.valuta }
     val cambioValuta = spostamento && valutaDest != null && valutaDest != valutaPropria
-    // Un nuovo spostamento crea la contro-operazione; uno importato senza collegamento no.
-    val gestisceControparte = esistente == null || collegata != null || esistente.trasferimento == false
 
     fun salva() {
         val cent = testoInCent(importo)?.let { abs(it) }
@@ -78,7 +83,7 @@ fun OperazioneDialog(vm: SpeseViewModel, dati: DatiApp, contoValutaId: Long, esi
         scope.launch {
             if (spostamento) {
                 val dest = destinazione ?: return@launch run { errore = "Scegli il conto di destinazione" }
-                val centDest = if (cambioValuta && gestisceControparte) {
+                val centDest = if (cambioValuta) {
                     testoInCent(importoDest)?.let { abs(it) }?.takeIf { it > 0 } ?: return@launch run { errore = "Importo sul conto di destinazione non valido" }
                 } else {
                     cent
@@ -143,7 +148,7 @@ fun OperazioneDialog(vm: SpeseViewModel, dati: DatiApp, contoValutaId: Long, esi
                         testo = { dati.etichetta(it.id) },
                         onScelta = { destinazione = it.id }
                     )
-                    if (cambioValuta && gestisceControparte) {
+                    if (cambioValuta) {
                         OutlinedTextField(
                             value = importoDest,
                             onValueChange = { importoDest = it },
@@ -153,9 +158,14 @@ fun OperazioneDialog(vm: SpeseViewModel, dati: DatiApp, contoValutaId: Long, esi
                             modifier = Modifier.fillMaxWidth()
                         )
                     }
-                    if (!gestisceControparte) {
+                    if (esistente?.trasferimento == true && collegata == null) {
                         Text(
-                            "Spostamento importato: la riga corrispondente sull'altro conto va modificata a parte.",
+                            if (speculare != null) {
+                                "Riga corrispondente trovata su ${dati.etichetta(speculare.contoValutaId)}: al salvataggio verrà " +
+                                    "collegata e, se cambi conto, spostata sul nuovo."
+                            } else {
+                                "Nessuna riga corrispondente trovata: al salvataggio verrà collegata quella sul conto scelto, se c'è, altrimenti creata."
+                            },
                             style = MaterialTheme.typography.bodySmall
                         )
                     }
