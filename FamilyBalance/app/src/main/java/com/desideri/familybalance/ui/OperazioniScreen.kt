@@ -359,7 +359,7 @@ private fun PannelloFiltri(filtri: Filtri, dati: DatiApp, onFiltri: (Filtri) -> 
 private fun SceltaTipiDialog(tipi: List<String>, selezionati: Set<String>, onConferma: (Set<String>) -> Unit, onAnnulla: () -> Unit) {
     val scelti = remember { mutableStateListOf<String>().apply { addAll(selezionati) } }
     var cerca by remember { mutableStateOf("") }
-    val opzioni = tipi.map { it to it.lowercase() } + ("Senza tipo" to TIPO_VUOTO)
+    val opzioni = (tipi.map { it to it.lowercase() } + ("Senza tipo" to TIPO_VUOTO)).distinctBy { it.second }
     val mostrate = opzioni.filter { cerca.isBlank() || it.first.contains(cerca.trim(), ignoreCase = true) }
     AlertDialog(
         onDismissRequest = onAnnulla,
