@@ -281,7 +281,9 @@ data class RigaEstratto(
     /** Se il movimento sembra già registrato sul conto (stesso importo, data uguale o vicina). */
     val presenza: Presenza = Presenza.NUOVA,
     /** Per [Presenza.SIMILE]: giorni di distanza dell'operazione più vicina. */
-    val giorniDistanza: Int = 0
+    val giorniDistanza: Int = 0,
+    /** Operazione del database che corrisponde al movimento (per aggiornarne la data), se presente. */
+    val esistente: com.desideri.familybalance.data.Operazione? = null
 ) {
     /** Più associazioni corrispondono alla descrizione: l'utente deve scegliere. */
     val piuCandidati: Boolean get() = candidate.size > 1
@@ -304,6 +306,9 @@ data class ImportEstratto(
     val presenti: Int get() = righe.count { it.presenza == Presenza.PRESENTE }
     val simili: Int get() = righe.count { it.presenza == Presenza.SIMILE }
 }
+
+/** Nuova data per un'operazione già presente (l'import aggiorna solo la data). */
+data class AggiornamentoData(val operazione: com.desideri.familybalance.data.Operazione, val nuovaData: LocalDate)
 
 /** Scelta dell'utente per un movimento: data, tipo/sottotipo, o "Spostamento" verso [destinazioneId]. */
 data class SceltaEstratto(

@@ -19,6 +19,7 @@ import com.desideri.familybalance.data.Valute
 import com.desideri.familybalance.data.Voce
 import com.desideri.familybalance.importazione.AnalisiImport
 import com.desideri.familybalance.importazione.ImportatoreExcel
+import com.desideri.familybalance.estratto.AggiornamentoData
 import com.desideri.familybalance.estratto.EstrattoGemini
 import com.desideri.familybalance.estratto.ImportEstratto
 import com.desideri.familybalance.estratto.Presenza
@@ -347,18 +348,35 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
             }
             val elencoAssociazioni = dao.associazioni()
             // Date delle operazioni esistenti per conto/valuta e importo, per riconoscere i doppioni.
-            val esistenti = dati.value.operazioni.groupBy({ it.contoValutaId to it.importoCent }, { it.data })
-            val righe = movimenti.mapIndexed { indice, m ->
-                val cv = contiValuta.firstOrNull { it.valuta == m.valuta } ?: contiValuta.first()
-                val date = esistenti[cv.id to m.importoCent].orEmpty()
-                val esatte = m.tutteLeDate.map { it.toEpochDay() }
-                val distanza = date.minOfOrNull { d -> esatte.minOf { kotlin.math.abs(it - d) } }
-                val presenza = when {
-                    distanza == 0L -> Presenza.PRESENTE
-                    distanza != null && distanza <= GIORNI_DOPPIONE -> Presenza.SIMILE
-                    else -> Presenza.NUOVA
+            // Operazioni esistenti per conto/valuta e importo; ognuna è abbinata al più a un movimento,
+            // prima quelle con data identica e poi quelle vicine (possibili doppioni).
+            val esistenti = dati.value.operazioni.groupBy { it.contoValutaId to it.importoCent }
+            val contoDi = movimenti.map { m -> contiValuta.firstOrNull { it.valuta == m.valuta } ?: contiValuta.first() }
+            val usate = HashSet<Long>()
+            val abbinate = arrayOfNulls<Pair<Operazione, Long>>(movimenti.size)
+            for (massimaDistanza in listOf(0L, GIORNI_DOPPIONE)) {
+                movimenti.forEachIndexed { i, m ->
+                    if (abbinate[i] != null) return@forEachIndexed
+                    val date = m.tutteLeDate.map { it.toEpochDay() }
+                    abbinate[i] = esistenti[contoDi[i].id to m.importoCent].orEmpty()
+                        .filter { it.id !in usate }
+                        .map { op -> op to date.minOf { kotlin.math.abs(it - op.data) } }
+                        .filter { it.second <= massimaDistanza }
+                        .minByOrNull { it.second }
+                        ?.also { usate += it.first.id }
                 }
-                RigaEstratto(indice, m, cv.id, Associazioni.candidate(m.descrizione, elencoAssociazioni), presenza, (distanza ?: 0L).toInt())
+            }
+            val righe = movimenti.mapIndexed { indice, m ->
+                val abbinata = abbinate[indice]
+                val presenza = when {
+                    abbinata == null -> Presenza.NUOVA
+                    abbinata.second == 0L -> Presenza.PRESENTE
+                    else -> Presenza.SIMILE
+                }
+                RigaEstratto(
+                    indice, m, contoDi[indice].id, Associazioni.candidate(m.descrizione, elencoAssociazioni),
+                    presenza, (abbinata?.second ?: 0L).toInt(), abbinata?.first
+                )
             }
             if (righe.isEmpty()) {
                 messaggio("Nessun movimento trovato nel file")
@@ -383,11 +401,18 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /** Registra i movimenti scelti; tipi/sottotipi non ancora in anagrafica vengono creati. */
-    fun confermaImportEstratto(scelte: List<SceltaEstratto>) = viewModelScope.launch {
+    fun confermaImportEstratto(scelte: List<SceltaEstratto>, aggiornamenti: List<AggiornamentoData> = emptyList()) = viewModelScope.launch {
         _importEstratto.value = null
         var importate = 0
         var nuoveVoci = 0
         db.withTransaction {
+            // Operazioni già presenti: si aggiorna solo la data (e quella della contro-operazione collegata).
+            for (a in aggiornamenti) {
+                val op = dao.operazione(a.operazione.id) ?: continue
+                val giorno = a.nuovaData.toEpochDay()
+                dao.aggiornaOperazione(op.copy(data = giorno))
+                op.collegataId?.let { dao.operazione(it) }?.let { dao.aggiornaOperazione(it.copy(data = giorno)) }
+            }
             val voci = dao.voci().toMutableList()
             suspend fun voceId(tipo: String, sottotipo: String?): Long {
                 voci.firstOrNull { it.tipo.equals(tipo, true) && (it.sottotipo ?: "").equals(sottotipo ?: "", true) }?.let { return it.id }
@@ -440,7 +465,11 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
                 importate++
             }
         }
-        messaggio("Importate $importate operazioni dall'estratto conto" + if (nuoveVoci > 0) " ($nuoveVoci nuove voci in anagrafica)" else "")
+        messaggio(
+            "Importate $importate operazioni dall'estratto conto" +
+                (if (aggiornamenti.isNotEmpty()) ", aggiornate le date di ${aggiornamenti.size}" else "") +
+                (if (nuoveVoci > 0) " ($nuoveVoci nuove voci in anagrafica)" else "")
+        )
     }
 
     fun salvaAssociazione(associazione: Associazione) = viewModelScope.launch {

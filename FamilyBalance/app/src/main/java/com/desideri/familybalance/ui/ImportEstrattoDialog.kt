@@ -42,12 +42,17 @@ import androidx.compose.ui.window.DialogProperties
 import com.desideri.familybalance.DatiApp
 import com.desideri.familybalance.SpeseViewModel
 import com.desideri.familybalance.data.Associazione
+import com.desideri.familybalance.estratto.AggiornamentoData
 import com.desideri.familybalance.estratto.ImportEstratto
 import com.desideri.familybalance.estratto.RigaEstratto
 import com.desideri.familybalance.estratto.SceltaEstratto
 import com.desideri.familybalance.estratto.TipoData
 import com.desideri.familybalance.logica.Associazioni
 import com.desideri.familybalance.logica.formattaData
+
+/** true se il movimento ha un'operazione esistente con data diversa da quella scelta. */
+private fun dataDiversa(riga: RigaEstratto, tipoData: TipoData): Boolean =
+    riga.esistente != null && riga.esistente.data != riga.movimento.data(tipoData).toEpochDay()
 
 /** Filtri del pannello di import. */
 private enum class FiltroImport(val etichetta: String) {
@@ -56,21 +61,25 @@ private enum class FiltroImport(val etichetta: String) {
     SELEZIONATI("Selezionati"),
     NON_SELEZIONATI("Non selezionati"),
     PIU_TIPI("Più tipi possibili"),
-    GIA_PRESENTI("Già presenti/doppioni");
+    GIA_PRESENTI("Già presenti/doppioni"),
+    DATA_DA_AGGIORNARE("Data da aggiornare");
 
-    fun corrisponde(riga: RigaEstratto, stato: StatoRiga): Boolean = when (this) {
+    fun corrisponde(riga: RigaEstratto, stato: StatoRiga, tipoData: TipoData): Boolean = when (this) {
         TUTTI -> true
         DA_IMPOSTARE -> stato.includi && (stato.tipo.isBlank() || (stato.spostamento && stato.destinazione == null))
         SELEZIONATI -> stato.includi
         NON_SELEZIONATI -> !stato.includi
         PIU_TIPI -> riga.piuCandidati
         GIA_PRESENTI -> riga.presenza != Presenza.NUOVA
+        DATA_DA_AGGIORNARE -> dataDiversa(riga, tipoData)
     }
 }
 
 /** Scelte in corso per un movimento dell'estratto conto. */
 private data class StatoRiga(
     val includi: Boolean = true,
+    /** Per i movimenti già presenti: aggiornare la data dell'operazione esistente. */
+    val aggiornaData: Boolean = false,
     val tipo: String = "",
     val sottotipo: String = "",
     val destinazione: Long? = null
@@ -103,7 +112,7 @@ fun ImportEstrattoDialog(vm: SpeseViewModel, dati: DatiApp, importazione: Import
     val stati = remember(importazione) {
         mutableStateListOf(*importazione.righe.map { r ->
             // Già presenti o possibili doppioni partono deselezionati.
-            val base = StatoRiga(includi = r.presenza == Presenza.NUOVA)
+            val base = StatoRiga(includi = r.presenza == Presenza.NUOVA, aggiornaData = r.presenza == Presenza.PRESENTE)
             r.candidate.singleOrNull()?.let { base.con(it, r, dati) } ?: base
         }.toTypedArray())
     }
@@ -115,6 +124,7 @@ fun ImportEstrattoDialog(vm: SpeseViewModel, dati: DatiApp, importazione: Import
     val tipi = remember(dati.voci) { (dati.voci.map { it.tipo } + Associazione.TIPO_SPOSTAMENTO).distinct().sortedBy { it.lowercase() } }
     fun valida(stato: StatoRiga) = stato.includi && stato.tipo.isNotBlank() && (!stato.spostamento || stato.destinazione != null)
     val daImportare = stati.count { valida(it) }
+    val dateDaAggiornare = importazione.righe.indices.filter { stati[it].aggiornaData && dataDiversa(importazione.righe[it], tipoData) }
     val senzaTipo = stati.count { it.includi && !valida(it) }
     val conto = dati.conti.firstOrNull { it.id == importazione.contoId }?.nome ?: "conto"
 
@@ -131,7 +141,8 @@ fun ImportEstrattoDialog(vm: SpeseViewModel, dati: DatiApp, importazione: Import
                 )
                 Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        "Da importare $daImportare" + if (senzaTipo > 0) " · senza tipo $senzaTipo" else "",
+                        "Da importare $daImportare" + (if (senzaTipo > 0) " · senza tipo $senzaTipo" else "") +
+                            if (dateDaAggiornare.isNotEmpty()) " · date da aggiornare ${dateDaAggiornare.size}" else "",
                         style = MaterialTheme.typography.labelLarge,
                         color = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.weight(1f)
@@ -149,10 +160,14 @@ fun ImportEstrattoDialog(vm: SpeseViewModel, dati: DatiApp, importazione: Import
                                         sottotipo = s.sottotipo.trim().ifEmpty { null },
                                         destinazioneId = if (s.spostamento) s.destinazione else null
                                     )
+                                },
+                                dateDaAggiornare.map { i ->
+                                    val r = importazione.righe[i]
+                                    AggiornamentoData(r.esistente!!, r.movimento.data(tipoData))
                                 }
                             )
                         },
-                        enabled = daImportare > 0
+                        enabled = daImportare > 0 || dateDaAggiornare.isNotEmpty()
                     ) { Text("Importa") }
                 }
                 Row(
@@ -179,11 +194,11 @@ fun ImportEstrattoDialog(vm: SpeseViewModel, dati: DatiApp, importazione: Import
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     FiltroImport.entries.forEach { f ->
-                        val numero = importazione.righe.indices.count { f.corrisponde(importazione.righe[it], stati[it]) }
+                        val numero = importazione.righe.indices.count { f.corrisponde(importazione.righe[it], stati[it], tipoData) }
                         FilterChip(selected = filtro == f, onClick = { filtro = f }, label = { Text("${f.etichetta} ($numero)") })
                     }
                 }
-                val visibili = importazione.righe.indices.filter { filtro.corrisponde(importazione.righe[it], stati[it]) }
+                val visibili = importazione.righe.indices.filter { filtro.corrisponde(importazione.righe[it], stati[it], tipoData) }
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                     TextButton(onClick = { visibili.forEach { stati[it] = stati[it].copy(includi = true) } }, enabled = visibili.isNotEmpty()) {
                         Text("Seleziona visibili")
@@ -285,6 +300,20 @@ private fun CardMovimento(
                     color = MaterialTheme.colorScheme.error
                 )
                 Presenza.NUOVA -> Unit
+            }
+            riga.esistente?.let { esistente ->
+                val nuova = m.data(tipoData).toEpochDay()
+                if (esistente.data != nuova) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(checked = stato.aggiornaData, onCheckedChange = { onStato(stato.copy(aggiornaData = it)) })
+                        Text(
+                            "Aggiorna la data dell'operazione esistente: ${formattaData(esistente.data)} → ${formattaData(nuova)}",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                } else {
+                    Text("Operazione esistente con la stessa data", style = MaterialTheme.typography.labelSmall)
+                }
             }
             if (stato.includi) {
                 if (riga.piuCandidati) {
