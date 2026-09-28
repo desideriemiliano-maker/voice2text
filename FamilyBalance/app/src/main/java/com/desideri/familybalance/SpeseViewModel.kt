@@ -685,6 +685,13 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
         messaggio("Backup completato")
     }
 
+    /** Elimina il backup [id] da Drive. */
+    fun eliminaBackup(id: String) = operazioneDrive("Eliminazione backup") { drive ->
+        drive.elimina(id)
+        _statoBackup.value = _statoBackup.value.copy(backup = drive.elenco(), infoCaricata = true)
+        messaggio("Backup eliminato")
+    }
+
     /** Sostituisce il database con il backup [id] su Drive e riavvia l'app. */
     fun ripristinaBackup(id: String) = operazioneDrive("Ripristino") { drive ->
         val app = getApplication<Application>()

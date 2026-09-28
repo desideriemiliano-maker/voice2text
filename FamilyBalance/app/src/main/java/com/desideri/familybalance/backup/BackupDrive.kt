@@ -64,6 +64,11 @@ class BackupDrive(private val context: Context, email: String) {
         tutti.take(daMantenere.coerceAtLeast(1))
     }
 
+    /** Elimina definitivamente il backup [id]. */
+    suspend fun elimina(id: String) = withContext(Dispatchers.IO) {
+        drive.files().delete(id).execute()
+    }
+
     /** Scarica il backup [id] in [destinazione]. */
     suspend fun scarica(id: String, destinazione: File) = withContext(Dispatchers.IO) {
         destinazione.outputStream().use { out -> drive.files().get(id).executeMediaAndDownloadTo(out) }

@@ -9,6 +9,10 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
@@ -54,6 +58,7 @@ fun BackupScreen(vm: SpeseViewModel, onIndietro: () -> Unit) {
     val ripristinoParziale by vm.ripristinoParziale.collectAsStateWithLifecycle()
     var nuovoBackup by remember { mutableStateOf(false) }
     var sceltaRipristino by remember { mutableStateOf(false) }
+    var daEliminare by remember { mutableStateOf<InfoBackup?>(null) }
 
     // Selettore di sistema degli account Google: restituisce solo l'email scelta.
     val sceltaAccount = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { risultato ->
@@ -101,9 +106,14 @@ fun BackupScreen(vm: SpeseViewModel, onIndietro: () -> Unit) {
                 when {
                     stato.backup.isNotEmpty() -> stato.backup.forEach { b ->
                         Card(modifier = Modifier.fillMaxWidth()) {
-                            Column(modifier = Modifier.padding(12.dp)) {
-                                Text(descrizioneBackup(b), style = MaterialTheme.typography.bodyLarge)
-                                b.testo?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary) }
+                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 12.dp)) {
+                                Column(modifier = Modifier.weight(1f).padding(vertical = 12.dp)) {
+                                    Text(descrizioneBackup(b), style = MaterialTheme.typography.bodyLarge)
+                                    b.testo?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary) }
+                                }
+                                IconButton(onClick = { daEliminare = b }, enabled = !stato.inCorso) {
+                                    Icon(Icons.Filled.Delete, contentDescription = "Elimina backup", tint = MaterialTheme.colorScheme.error)
+                                }
                             }
                         }
                     }
@@ -141,6 +151,19 @@ fun BackupScreen(vm: SpeseViewModel, onIndietro: () -> Unit) {
                 }) { Text("Esegui") }
             },
             dismissButton = { TextButton(onClick = { nuovoBackup = false }) { Text("Annulla") } }
+        )
+    }
+
+    daEliminare?.let { b ->
+        DialogConferma(
+            titolo = "Elimina backup",
+            testo = "Eliminare definitivamente da Drive il backup del ${descrizioneBackup(b)}" + (b.testo?.let { " (\"$it\")" } ?: "") + "?",
+            conferma = "Elimina",
+            onConferma = {
+                vm.eliminaBackup(b.id)
+                daEliminare = null
+            },
+            onAnnulla = { daEliminare = null }
         )
     }
 
