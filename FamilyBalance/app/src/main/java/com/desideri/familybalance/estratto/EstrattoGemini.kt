@@ -11,6 +11,7 @@ import com.google.genai.types.Part
 import com.google.genai.types.Schema
 import com.google.genai.types.Type
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import org.json.JSONException
 import org.json.JSONObject
@@ -36,6 +37,9 @@ private const val PROMPT_ESTRATTO =
         "beneficiario o causale; se ci " +
         "sono più colonne descrittive, es. Descrizione e Dettaglio, uniscile nell'ordine separate da \" · \"). " +
         "Le date nei fogli di calcolo sono già convertite in formato YYYY-MM-DD."
+
+/** Movimenti letti da un estratto conto, con gli eventuali problemi (blocchi non letti o incompleti). */
+data class EsitoEstrazione(val movimenti: List<MovimentoEstratto>, val avvisi: List<String>)
 
 /** Quale data di un movimento registrare sull'operazione (scelta nel pannello di import). */
 enum class TipoData(val etichetta: String) {
@@ -104,7 +108,7 @@ class EstrattoGemini(private val apiKey: String, private val registro: RegistroP
         uri: Uri,
         valutaPredefinita: String,
         onAvanzamento: (Int, Int) -> Unit = { _, _ -> }
-    ): List<MovimentoEstratto> {
+    ): EsitoEstrazione {
         if (apiKey.isBlank()) throw IllegalStateException("Chiave Gemini non configurata in questa build")
         val (nome, mime) = infoFile(context, uri)
         val bytes = withContext(Dispatchers.IO) {
@@ -146,8 +150,14 @@ class EstrattoGemini(private val apiKey: String, private val registro: RegistroP
             .build()
         val client = Client.builder().apiKey(apiKey).build()
 
+        val avvisi = ArrayList<String>()
         if (testo == null) {
-            return chiama(client, config, listOf(parteBinaria!!, Part.fromText(prompt)), "$prompt\n\n$descrizioneFile\n\nFile allegato così com'è.", valutaPredefinita)
+            val (movimenti, completa) = chiamaConRiprova(
+                client, config, listOf(parteBinaria!!, Part.fromText(prompt)),
+                "$prompt\n\n$descrizioneFile\n\nFile allegato così com'è.", valutaPredefinita
+            )
+            if (!completa) avvisi += "Risposta di Gemini incompleta: alcuni movimenti potrebbero mancare."
+            return EsitoEstrazione(movimenti, avvisi)
         }
 
         // Testo: righe di intestazione (fino alla riga con i nomi delle colonne) ripetute come contesto
@@ -158,26 +168,71 @@ class EstrattoGemini(private val apiKey: String, private val registro: RegistroP
         }
         val intestazione = if (indiceIntestazione >= 0) righe.take(indiceIntestazione + 1) else emptyList()
         val blocchi = righe.drop(intestazione.size).chunked(RIGHE_PER_BLOCCO).ifEmpty { listOf(emptyList()) }
-        val movimenti = ArrayList<MovimentoEstratto>()
-        blocchi.forEachIndexed { i, blocco ->
-            onAvanzamento(i + 1, blocchi.size)
+
+        /** Un blocco (o parte di blocco): se la risposta è interrotta lo si divide a metà e si riprova. */
+        suspend fun elaboraBlocco(blocco: List<String>, etichetta: String): List<MovimentoEstratto> {
             val testoBlocco = buildString {
                 if (intestazione.isNotEmpty()) {
                     append("Intestazione del file (solo per capire le colonne, NON contiene movimenti da estrarre):\n")
                     intestazione.forEach { append(it).append('\n') }
                     append('\n')
                 }
-                append("Righe da elaborare (blocco ${i + 1} di ${blocchi.size}):\n")
+                append("Righe da elaborare ($etichetta):\n")
                 blocco.forEach { append(it).append('\n') }
             }
-            movimenti += chiama(
+            val (movimenti, completa) = chiamaConRiprova(
                 client, config,
                 listOf(Part.fromText(testoBlocco), Part.fromText(prompt)),
-                "$prompt\n\n$descrizioneFile · blocco ${i + 1} di ${blocchi.size}\n\n$testoBlocco",
+                "$prompt\n\n$descrizioneFile · $etichetta\n\n$testoBlocco",
                 valutaPredefinita
             )
+            if (completa) return movimenti
+            if (blocco.size <= RIGHE_MINIME_DIVISIONE) {
+                avvisi += "Risposta incompleta per $etichetta: alcuni movimenti potrebbero mancare."
+                return movimenti
+            }
+            val meta = blocco.size / 2
+            return elaboraBlocco(blocco.take(meta), "$etichetta, parte 1") + elaboraBlocco(blocco.drop(meta), "$etichetta, parte 2")
         }
-        return movimenti
+
+        val movimenti = ArrayList<MovimentoEstratto>()
+        var riusciti = 0
+        var ultimoErrore: Exception? = null
+        blocchi.forEachIndexed { i, blocco ->
+            onAvanzamento(i + 1, blocchi.size)
+            try {
+                movimenti += elaboraBlocco(blocco, "blocco ${i + 1} di ${blocchi.size}")
+                riusciti++
+            } catch (e: Exception) {
+                // Un blocco non letto non ferma l'import: gli altri movimenti restano disponibili.
+                ultimoErrore = e
+                avvisi += "Blocco ${i + 1} di ${blocchi.size} non letto (${blocco.size} righe, dalla riga «${blocco.firstOrNull()?.take(60)}»): " +
+                    (e.message ?: e.javaClass.simpleName)
+            }
+        }
+        if (riusciti == 0) throw ultimoErrore ?: IllegalStateException("Nessun movimento letto")
+        return EsitoEstrazione(movimenti, avvisi)
+    }
+
+    /** [chiama] con fino a 2 nuovi tentativi (attese crescenti) per gli errori temporanei di Gemini. */
+    private suspend fun chiamaConRiprova(
+        client: Client,
+        config: GenerateContentConfig,
+        parti: List<Part>,
+        richiesta: String,
+        valutaPredefinita: String
+    ): Pair<List<MovimentoEstratto>, Boolean> {
+        var ultimo: Exception? = null
+        for ((tentativo, attesa) in ATTESE_RIPROVA_MS.withIndex()) {
+            if (attesa > 0) delay(attesa)
+            try {
+                val suffisso = if (tentativo > 0) "\n\n(tentativo ${tentativo + 1})" else ""
+                return chiama(client, config, parti, richiesta + suffisso, valutaPredefinita)
+            } catch (e: Exception) {
+                ultimo = e
+            }
+        }
+        throw ultimo ?: IllegalStateException("Chiamata a Gemini non riuscita")
     }
 
     /** Una chiamata a Gemini, registrata nel registro con la risposta originale. */
@@ -187,7 +242,7 @@ class EstrattoGemini(private val apiKey: String, private val registro: RegistroP
         parti: List<Part>,
         richiesta: String,
         valutaPredefinita: String
-    ): List<MovimentoEstratto> {
+    ): Pair<List<MovimentoEstratto>, Boolean> {
         var json: String? = null
         try {
             val risposta = withContext(Dispatchers.IO) {
@@ -198,7 +253,7 @@ class EstrattoGemini(private val apiKey: String, private val registro: RegistroP
             val esito = if (completa) "${movimenti.size} movimenti interpretati."
             else "Risposta incompleta (JSON interrotto): recuperati ${movimenti.size} movimenti completi."
             registra(richiesta, "$esito\n\n${tronca(json)}", errore = !completa)
-            return movimenti
+            return movimenti to completa
         } catch (e: Exception) {
             val dettaglio = e.message?.take(500) ?: e.javaClass.simpleName
             registra(richiesta, dettaglio + (json?.let { "\n\nRisposta ricevuta:\n${tronca(it)}" } ?: ""), errore = true)
@@ -259,7 +314,11 @@ class EstrattoGemini(private val apiKey: String, private val registro: RegistroP
     private companion object {
         const val MIME_XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         /** Righe di movimenti per ogni chiamata a Gemini. */
-        const val RIGHE_PER_BLOCCO = 60
+        const val RIGHE_PER_BLOCCO = 40
+        /** Sotto questo numero di righe un blocco con risposta interrotta non viene più diviso. */
+        const val RIGHE_MINIME_DIVISIONE = 5
+        /** Attesa prima di ogni tentativo (il primo subito). */
+        val ATTESE_RIPROVA_MS = listOf(0L, 3_000L, 10_000L)
         /** Entro quante righe iniziali cercare quella con i nomi delle colonne. */
         const val RIGHE_INTESTAZIONE_MAX = 30
         const val MAX_TOKEN_RISPOSTA = 16_384
@@ -301,7 +360,9 @@ enum class Presenza {
 /** Import di un estratto conto in attesa delle scelte dell'utente. */
 data class ImportEstratto(
     val contoId: Long,
-    val righe: List<RigaEstratto>
+    val righe: List<RigaEstratto>,
+    /** Problemi della lettura con Gemini (blocchi non letti o incompleti), mostrati nel pannello. */
+    val avvisi: List<String> = emptyList()
 ) {
     val presenti: Int get() = righe.count { it.presenza == Presenza.PRESENTE }
     val simili: Int get() = righe.count { it.presenza == Presenza.SIMILE }

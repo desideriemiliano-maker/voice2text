@@ -140,6 +140,18 @@ fun ImportEstrattoDialog(vm: SpeseViewModel, dati: DatiApp, importazione: Import
                     style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier.padding(top = 4.dp, bottom = 8.dp)
                 )
+                // Blocchi non letti o risposte incomplete di Gemini: i movimenti relativi mancano dall'elenco.
+                importazione.avvisi.forEach { avviso ->
+                    Text("⚠ $avviso", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                }
+                if (importazione.avvisi.isNotEmpty()) {
+                    Text(
+                        "Dettagli nel Registro Gemini (menu ⋮). Puoi importare questi movimenti e ripetere l'import più tardi: " +
+                            "quelli già importati risulteranno \"Già presenti\".",
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.padding(bottom = 4.dp)
+                    )
+                }
                 Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         "Da importare $daImportare" + (if (senzaTipo > 0) " · senza tipo $senzaTipo" else "") +

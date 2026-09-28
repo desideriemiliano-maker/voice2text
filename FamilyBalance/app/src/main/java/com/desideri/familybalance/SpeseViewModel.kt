@@ -343,9 +343,10 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
         _testoAttesa.value = "Analisi dell'estratto conto con Gemini…"
         _importazioneInCorso.value = true
         try {
-            val movimenti = EstrattoGemini(BuildConfig.GEMINI_API_KEY, RegistroPromptStore(getApplication())).estrai(getApplication(), uri, contiValuta.first().valuta) { blocco, totale ->
+            val esito = EstrattoGemini(BuildConfig.GEMINI_API_KEY, RegistroPromptStore(getApplication())).estrai(getApplication(), uri, contiValuta.first().valuta) { blocco, totale ->
                 _testoAttesa.value = if (totale > 1) "Analisi con Gemini: blocco $blocco di $totale…" else "Analisi dell'estratto conto con Gemini…"
             }
+            val movimenti = esito.movimenti
             val elencoAssociazioni = dao.associazioni()
             // Date delle operazioni esistenti per conto/valuta e importo, per riconoscere i doppioni.
             // Operazioni esistenti per conto/valuta e importo; ognuna è abbinata al più a un movimento,
@@ -379,9 +380,9 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
                 )
             }
             if (righe.isEmpty()) {
-                messaggio("Nessun movimento trovato nel file")
+                messaggio("Nessun movimento trovato nel file" + esito.avvisi.firstOrNull()?.let { ": $it" }.orEmpty())
             } else {
-                _importEstratto.value = ImportEstratto(contoId, righe)
+                _importEstratto.value = ImportEstratto(contoId, righe, esito.avvisi)
             }
         } catch (e: Exception) {
             messaggio("Import estratto conto non riuscito: ${e.message ?: e.javaClass.simpleName}")
