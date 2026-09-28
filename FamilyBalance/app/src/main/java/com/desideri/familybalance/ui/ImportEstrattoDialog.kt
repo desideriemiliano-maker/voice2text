@@ -118,6 +118,7 @@ fun ImportEstrattoDialog(vm: SpeseViewModel, dati: DatiApp, importazione: Import
     }
     var nuovaAssociazioneRiga by remember { mutableStateOf<Int?>(null) }
     var filtro by remember { mutableStateOf(FiltroImport.TUTTI) }
+    var aggiornamentoFiltro by remember { mutableStateOf(0) }
     // Quale data registrare: ricordata per conto dall'ultimo import.
     var tipoData by remember(importazione) { mutableStateOf(vm.tipoDataEstratto(importazione.contoId)) }
 
@@ -195,10 +196,22 @@ fun ImportEstrattoDialog(vm: SpeseViewModel, dati: DatiApp, importazione: Import
                 ) {
                     FiltroImport.entries.forEach { f ->
                         val numero = importazione.righe.indices.count { f.corrisponde(importazione.righe[it], stati[it], tipoData) }
-                        FilterChip(selected = filtro == f, onClick = { filtro = f }, label = { Text("${f.etichetta} ($numero)") })
+                        FilterChip(
+                            selected = filtro == f,
+                            onClick = {
+                                filtro = f
+                                aggiornamentoFiltro++
+                            },
+                            label = { Text("${f.etichetta} ($numero)") }
+                        )
                     }
                 }
-                val visibili = importazione.righe.indices.filter { filtro.corrisponde(importazione.righe[it], stati[it], tipoData) }
+                // Elenco filtrato "fotografato" quando si sceglie il filtro: modificare un movimento (es.
+                // iniziare a scrivere il tipo in "Da impostare") non lo fa sparire mentre lo si compila.
+                // Si ricalcola cambiando filtro o toccando di nuovo quello attivo.
+                val visibili = remember(filtro, aggiornamentoFiltro, importazione) {
+                    importazione.righe.indices.filter { filtro.corrisponde(importazione.righe[it], stati[it], tipoData) }
+                }
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                     TextButton(onClick = { visibili.forEach { stati[it] = stati[it].copy(includi = true) } }, enabled = visibili.isNotEmpty()) {
                         Text("Seleziona visibili")
