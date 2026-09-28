@@ -4,6 +4,9 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material3.AlertDialog
@@ -58,17 +61,21 @@ import com.desideri.familybalance.logica.formattaData
 import com.desideri.familybalance.logica.testoInCent
 import kotlin.math.abs
 
-/** Filtri della lista operazioni: periodo, intervallo di importo (valore assoluto), tipo e sottotipo. */
+/** Filtri della lista operazioni: periodo, intervallo di importo (valore assoluto), tipi (uno o più) e sottotipo. */
 private data class Filtri(
     val da: Long? = null,
     val a: Long? = null,
     val importoMin: String = "",
     val importoMax: String = "",
-    val tipo: String = "",
+    /** Tipi ammessi (minuscoli; [TIPO_VUOTO] = operazioni senza tipo); vuoto = tutti. */
+    val tipi: Set<String> = emptySet(),
     val sottotipo: String = ""
 ) {
     val attivi: Boolean get() = this != Filtri()
 }
+
+/** Chiave del filtro per le operazioni senza tipo di spesa. */
+private const val TIPO_VUOTO = ""
 
 private data class RigaOperazione(val operazione: Operazione, val saldoDopo: Long)
 
@@ -274,7 +281,7 @@ private fun corrisponde(op: Operazione, f: Filtri, dati: DatiApp): Boolean {
     testoInCent(f.importoMax)?.let { if (importo > abs(it)) return false }
     val voce = op.voceId?.let { dati.vociPerId[it] }
     val tipo = if (op.trasferimento) "Spostamento" else voce?.tipo ?: ""
-    if (f.tipo.isNotBlank() && !tipo.contains(f.tipo.trim(), ignoreCase = true)) return false
+    if (f.tipi.isNotEmpty() && tipo.lowercase() !in f.tipi) return false
     if (f.sottotipo.isNotBlank() && !(voce?.sottotipo ?: "").contains(f.sottotipo.trim(), ignoreCase = true)) return false
     return true
 }
@@ -282,8 +289,9 @@ private fun corrisponde(op: Operazione, f: Filtri, dati: DatiApp): Boolean {
 @Composable
 private fun PannelloFiltri(filtri: Filtri, dati: DatiApp, onFiltri: (Filtri) -> Unit) {
     val tipi = remember(dati.voci) { (dati.voci.map { it.tipo } + "Spostamento").distinct().sortedBy { it.lowercase() } }
-    val sottotipi = remember(dati.voci, filtri.tipo) {
-        dati.voci.filter { filtri.tipo.isBlank() || it.tipo.equals(filtri.tipo.trim(), ignoreCase = true) }
+    var sceltaTipi by remember { mutableStateOf(false) }
+    val sottotipi = remember(dati.voci, filtri.tipi) {
+        dati.voci.filter { filtri.tipi.isEmpty() || it.tipo.lowercase() in filtri.tipi }
             .mapNotNull { it.sottotipo }.distinct().sortedBy { it.lowercase() }
     }
     Card(modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
@@ -311,13 +319,85 @@ private fun PannelloFiltri(filtri: Filtri, dati: DatiApp, onFiltri: (Filtri) -> 
                     modifier = Modifier.weight(1f)
                 )
             }
-            CampoAutocompletamento("Tipo", filtri.tipo, tipi, { onFiltri(filtri.copy(tipo = it, sottotipo = "")) })
+            Box {
+                OutlinedTextField(
+                    value = when {
+                        filtri.tipi.isEmpty() -> "Tutti"
+                        else -> (tipi.filter { it.lowercase() in filtri.tipi } + listOfNotNull("Senza tipo".takeIf { TIPO_VUOTO in filtri.tipi }))
+                            .joinToString(", ")
+                    },
+                    onValueChange = {},
+                    readOnly = true,
+                    singleLine = true,
+                    label = { Text(if (filtri.tipi.size > 1) "Tipi (${filtri.tipi.size})" else "Tipo") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                // Il campo è in sola lettura: un tocco apre la scelta multipla.
+                Box(modifier = Modifier.matchParentSize().clickable { sceltaTipi = true })
+            }
             CampoAutocompletamento("Sottotipo", filtri.sottotipo, sottotipi, { onFiltri(filtri.copy(sottotipo = it)) })
             if (filtri.attivi) {
                 TextButton(onClick = { onFiltri(Filtri()) }, modifier = Modifier.align(Alignment.End)) { Text("Azzera filtri") }
             }
         }
     }
+    if (sceltaTipi) {
+        SceltaTipiDialog(
+            tipi = tipi,
+            selezionati = filtri.tipi,
+            onConferma = {
+                onFiltri(filtri.copy(tipi = it, sottotipo = ""))
+                sceltaTipi = false
+            },
+            onAnnulla = { sceltaTipi = false }
+        )
+    }
+}
+
+/** Scelta di uno o più tipi (con ricerca); nessuno selezionato = tutti. */
+@Composable
+private fun SceltaTipiDialog(tipi: List<String>, selezionati: Set<String>, onConferma: (Set<String>) -> Unit, onAnnulla: () -> Unit) {
+    val scelti = remember { mutableStateListOf<String>().apply { addAll(selezionati) } }
+    var cerca by remember { mutableStateOf("") }
+    val opzioni = tipi.map { it to it.lowercase() } + ("Senza tipo" to TIPO_VUOTO)
+    val mostrate = opzioni.filter { cerca.isBlank() || it.first.contains(cerca.trim(), ignoreCase = true) }
+    AlertDialog(
+        onDismissRequest = onAnnulla,
+        title = { Text("Tipi") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                OutlinedTextField(
+                    value = cerca,
+                    onValueChange = { cerca = it },
+                    label = { Text("Cerca") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Row {
+                    TextButton(onClick = { mostrate.forEach { (_, k) -> if (k !in scelti) scelti.add(k) } }) { Text("Seleziona mostrati") }
+                    TextButton(onClick = { scelti.clear() }) { Text("Nessuno") }
+                }
+                LazyColumn(modifier = Modifier.heightIn(max = 360.dp)) {
+                    items(mostrate, key = { "t:" + it.second }) { (nome, chiave) ->
+                        val selezionato = chiave in scelti
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.fillMaxWidth().clickable { if (selezionato) scelti.remove(chiave) else scelti.add(chiave) }
+                        ) {
+                            Checkbox(checked = selezionato, onCheckedChange = { if (it) scelti.add(chiave) else scelti.remove(chiave) })
+                            Text(nome, style = MaterialTheme.typography.bodyMedium)
+                        }
+                    }
+                }
+                Text(
+                    if (scelti.isEmpty()) "Nessun tipo selezionato: si mostrano tutti." else "${scelti.size} selezionati",
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+        },
+        confirmButton = { TextButton(onClick = { onConferma(scelti.toSet()) }) { Text("Applica") } },
+        dismissButton = { TextButton(onClick = onAnnulla) { Text("Annulla") } }
+    )
 }
 
 @OptIn(ExperimentalFoundationApi::class)
