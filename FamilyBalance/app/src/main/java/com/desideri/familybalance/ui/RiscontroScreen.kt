@@ -384,6 +384,15 @@ private fun DettaglioOperazione(op: Operazione, dati: DatiApp, giorni: Long? = n
             style = MaterialTheme.typography.bodySmall
         )
         op.note?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+        // Riga collegata sull'altro conto: aiuta a capire se due righe simili sono lo stesso movimento.
+        op.collegataId?.let { id -> dati.operazioni.firstOrNull { it.id == id } }?.let { c ->
+            Text(
+                "↔ ${dati.etichetta(c.contoValutaId)} · ${formattaData(c.data)} · ${importo(c, dati)}" + (c.note?.let { " · $it" } ?: ""),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.primary,
+                maxLines = 2
+            )
+        }
     }
 }
 
@@ -401,9 +410,10 @@ private fun DoppioniDialog(
 ) {
     val righe = listOf(p.operazione) + p.simili
     val chiave = righe.map { it.id }
-    // Di default si tiene la riga già collegata (se c'è), altrimenti lo spostamento; le altre si eliminano.
-    var tieniId by remember(chiave) { mutableStateOf((righe.firstOrNull { it.collegataId != null } ?: p.operazione).id) }
-    val daEliminare = remember(chiave) { mutableStateListOf<Long>().apply { addAll(righe.map { it.id }.filter { it != tieniId }) } }
+    // Nessuna eliminazione preselezionata: le operazioni simili possono essere movimenti veri
+    // (es. più bonifici dello stesso importo), si spuntano solo quelle da eliminare.
+    var tieniId by remember(chiave) { mutableStateOf(p.operazione.id) }
+    val daEliminare = remember(chiave) { mutableStateListOf<Long>() }
     val tieni = righe.first { it.id == tieniId }
     val eliminate = righe.filter { it.id in daEliminare && it.id != tieniId }
     AlertDialog(
@@ -448,7 +458,7 @@ private fun DoppioniDialog(
         },
         confirmButton = {
             TextButton(onClick = { onApplica(tieni, eliminate) }) {
-                Text(if (eliminate.isEmpty()) "Tieni e associa" else "Applica", color = MaterialTheme.colorScheme.error)
+                Text(if (eliminate.isEmpty()) "Tieni e associa" else "Elimina ${eliminate.size}", color = MaterialTheme.colorScheme.error)
             }
         },
         dismissButton = { TextButton(onClick = onChiudi) { Text("Chiudi") } }
