@@ -324,30 +324,65 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /**
-     * Risolve un gruppo di doppioni tenendo [tieni] ed eliminando [elimina]. Se [tieni] non è
-     * collegata e una delle eliminate lo era a una riga sull'altro conto, il collegamento passa a
-     * [tieni] (che diventa uno spostamento); le altre righe collegate alle eliminate restano, scollegate.
+     * Risolve uno spostamento senza riga corrispondente (schermata Risolvi del riscontro):
+     * 1. salva le modifiche di [op] (data, importo, conto di destinazione, note), senza creare righe;
+     * 2. lo collega alla riga [associaId] del conto di destinazione (che diventa uno spostamento), oppure
+     *    con [creaNuova] crea la contro-operazione con importo [importoDestCent] (o l'opposto, stessa valuta);
+     * 3. elimina i doppioni [elimina] dello stesso conto: se uno era collegato a una riga sull'altro conto
+     *    e lo spostamento è ancora senza collegamento, il collegamento passa allo spostamento; altrimenti
+     *    quella riga resta, scollegata. Le righe sugli altri conti non vengono mai eliminate.
      */
-    fun risolviDoppioni(tieni: Operazione, elimina: List<Operazione>) = viewModelScope.launch {
-        db.withTransaction {
-            var t = dao.operazione(tieni.id) ?: return@withTransaction
-            for (e in elimina) {
-                if (e.id == t.id) continue
-                val x = dao.operazione(e.id) ?: continue
-                val altra = x.collegataId?.let { dao.operazione(it) }?.takeIf { it.collegataId == x.id }
-                dao.eliminaOperazioni(listOf(x.id))
-                if (altra == null) continue
-                if (t.collegataId == null && altra.contoValutaId != t.contoValutaId) {
-                    t = t.copy(trasferimento = true, voceId = null, contoValutaDestId = altra.contoValutaId, collegataId = altra.id)
-                    dao.aggiornaOperazione(t)
-                    dao.aggiornaOperazione(altra.copy(contoValutaDestId = t.contoValutaId, collegataId = t.id))
-                } else {
-                    dao.aggiornaOperazione(altra.copy(collegataId = null))
+    fun risolviSpostamento(op: Operazione, associaId: Long?, creaNuova: Boolean, importoDestCent: Long?, elimina: List<Long>) =
+        viewModelScope.launch {
+            db.withTransaction {
+                val attuale = dao.operazione(op.id) ?: return@withTransaction
+                var o = attuale.copy(
+                    data = op.data,
+                    importoCent = op.importoCent,
+                    contoValutaDestId = op.contoValutaDestId,
+                    note = op.note,
+                    trasferimento = true,
+                    voceId = null
+                )
+                dao.aggiornaOperazione(o)
+
+                suspend fun collega(altra: Operazione) {
+                    o = o.copy(contoValutaDestId = altra.contoValutaId, collegataId = altra.id)
+                    dao.aggiornaOperazione(o)
+                    dao.aggiornaOperazione(altra.copy(trasferimento = true, voceId = null, contoValutaDestId = o.contoValutaId, collegataId = o.id))
+                }
+
+                val scelta = associaId?.let { dao.operazione(it) }
+                    ?.takeIf { it.contoValutaId != o.contoValutaId && (it.collegataId == null || it.collegataId == o.id) }
+                val dest = o.contoValutaDestId
+                when {
+                    o.collegataId != null -> Unit
+                    scelta != null -> collega(scelta)
+                    creaNuova && dest != null -> {
+                        val nuova = Operazione(
+                            contoValutaId = dest,
+                            data = o.data,
+                            importoCent = importoDestCent ?: -o.importoCent,
+                            trasferimento = true,
+                            contoValutaDestId = o.contoValutaId,
+                            note = o.note
+                        )
+                        collega(nuova.copy(id = dao.inserisciOperazione(nuova)))
+                    }
+                }
+
+                for (id in elimina) {
+                    if (id == o.id || id == scelta?.id) continue
+                    val x = dao.operazione(id) ?: continue
+                    val altra = x.collegataId?.let { dao.operazione(it) }?.takeIf { it.collegataId == x.id }
+                    dao.eliminaOperazioni(listOf(x.id))
+                    if (altra == null) continue
+                    if (o.collegataId == null && altra.contoValutaId != o.contoValutaId) collega(altra)
+                    else dao.aggiornaOperazione(altra.copy(collegataId = null))
                 }
             }
+            messaggio("Spostamento aggiornato")
         }
-        messaggio(if (elimina.size == 1) "Eliminato 1 doppione" else "Eliminati ${elimina.size} doppioni")
-    }
 
     /** Toglie il collegamento di [op] (e quello reciproco della riga collegata). */
     fun scollegaSpostamento(op: Operazione) = viewModelScope.launch {

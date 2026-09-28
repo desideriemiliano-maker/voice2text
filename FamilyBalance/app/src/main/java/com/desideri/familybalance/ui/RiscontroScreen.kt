@@ -70,10 +70,8 @@ fun RiscontroScreen(vm: SpeseViewModel, onIndietro: () -> Unit) {
     var espansi by remember { mutableStateOf(TipoProblema.entries.toSet()) }
     var inModifica by remember { mutableStateOf<Operazione?>(null) }
     var daScollegare by remember { mutableStateOf<Operazione?>(null) }
-    var daAssociare by remember { mutableStateOf<Operazione?>(null) }
-    // Spostamento di cui si mostrano i possibili doppioni (per id: il dettaglio segue i dati aggiornati).
-    var dettaglioSimiliId by remember { mutableStateOf<Long?>(null) }
-    var daEliminare by remember { mutableStateOf<Operazione?>(null) }
+    // Spostamento senza riga corrispondente aperto nella schermata Risolvi.
+    var daRisolvere by remember { mutableStateOf<Long?>(null) }
 
     val opzioniFiltro = listOf(FiltroConto(null, "Tutti i conti")) +
         dati.contiValutaOrdinati.map { FiltroConto(it.id, dati.etichetta(it.id)) }
@@ -133,9 +131,7 @@ fun RiscontroScreen(vm: SpeseViewModel, onIndietro: () -> Unit) {
                                 onModifica = { inModifica = it },
                                 onCollega = { vm.collegaSpostamenti(listOf(p.operazione to p.altra!!)) },
                                 onScollega = { daScollegare = p.operazione },
-                                onAssocia = { daAssociare = p.operazione },
-                                onSimili = { dettaglioSimiliId = p.operazione.id },
-                                onElimina = { daEliminare = p.operazione }
+                                onRisolvi = { daRisolvere = p.operazione.id }
                             )
                         }
                     }
@@ -147,44 +143,8 @@ fun RiscontroScreen(vm: SpeseViewModel, onIndietro: () -> Unit) {
     inModifica?.let { op ->
         OperazioneDialog(vm, dati, op.contoValutaId, op, onChiudi = { inModifica = null })
     }
-    daAssociare?.let { op ->
-        AssociaRigaDialog(
-            op, dati,
-            onAssocia = { riga ->
-                vm.collegaSpostamenti(listOf(op to riga))
-                daAssociare = null
-            },
-            onAnnulla = { daAssociare = null }
-        )
-    }
-    val dettaglioSimili = dettaglioSimiliId?.let { id ->
-        problemi?.firstOrNull { it.tipo == TipoProblema.SENZA_CONTROPARTE && it.operazione.id == id }
-    }
-    dettaglioSimili?.let { p ->
-        DoppioniDialog(
-            p, dati,
-            onApplica = { tieni, elimina ->
-                val collegataDopo = tieni.collegataId != null || elimina.any { it.collegataId != null }
-                if (elimina.isNotEmpty()) vm.risolviDoppioni(tieni, elimina)
-                dettaglioSimiliId = null
-                // Se la riga tenuta resta senza collegamento si propone subito di associarla.
-                if (!collegataDopo) daAssociare = tieni
-            },
-            onChiudi = { dettaglioSimiliId = null }
-        )
-    }
-    daEliminare?.let { op ->
-        DialogConferma(
-            titolo = "Elimina operazione",
-            testo = "Eliminare solo questa operazione del ${formattaData(op.data)} di ${importo(op, dati)} su ${dati.etichetta(op.contoValutaId)}?" +
-                if (op.collegataId != null) " La riga collegata sull'altro conto resta, senza collegamento." else "",
-            conferma = "Elimina",
-            onConferma = {
-                vm.eliminaSoloRiga(op)
-                daEliminare = null
-            },
-            onAnnulla = { daEliminare = null }
-        )
+    daRisolvere?.let { id ->
+        RisolviSpostamentoDialog(vm, dati, id, onChiudi = { daRisolvere = null })
     }
     daScollegare?.let { op ->
         DialogConferma(
@@ -210,25 +170,14 @@ private fun CardProblema(
     onModifica: (Operazione) -> Unit,
     onCollega: () -> Unit,
     onScollega: () -> Unit,
-    onAssocia: () -> Unit,
-    onSimili: () -> Unit,
-    onElimina: () -> Unit
+    onRisolvi: () -> Unit
 ) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            if (p.simili.isEmpty()) {
-                RigaOperazione(p.operazione, dati, onModifica)
-            } else {
-                // Possibile doppione: stesso importo su questo conto a pochi giorni.
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Column(modifier = Modifier.weight(1f)) { RigaOperazione(p.operazione, dati, onModifica) }
-                    IconButton(onClick = onSimili) {
-                        Icon(Icons.Filled.ContentCopy, contentDescription = "Possibili doppioni", tint = MaterialTheme.colorScheme.tertiary)
-                    }
-                    IconButton(onClick = onElimina) {
-                        Icon(Icons.Filled.Delete, contentDescription = "Elimina", tint = MaterialTheme.colorScheme.error)
-                    }
-                }
+            // Gli spostamenti senza riga corrispondente si aprono nella schermata Risolvi.
+            val apri: (Operazione) -> Unit = if (p.tipo == TipoProblema.SENZA_CONTROPARTE) ({ _ -> onRisolvi() }) else onModifica
+            RigaOperazione(p.operazione, dati, apri)
+            if (p.simili.isNotEmpty()) {
                 Text(
                     "Possibile doppione: ${p.simili.size} " + (if (p.simili.size == 1) "operazione" else "operazioni") +
                         " con lo stesso importo entro ${Riscontro.GIORNI_SIMILI} giorni",
@@ -241,10 +190,7 @@ private fun CardProblema(
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 when (p.tipo) {
                     TipoProblema.DA_COLLEGARE -> OutlinedButton(onClick = onCollega) { Text("Collega") }
-                    TipoProblema.SENZA_CONTROPARTE -> {
-                        OutlinedButton(onClick = onAssocia) { Text("Associa") }
-                        OutlinedButton(onClick = { onModifica(p.operazione) }) { Text("Modifica") }
-                    }
+                    TipoProblema.SENZA_CONTROPARTE -> OutlinedButton(onClick = onRisolvi) { Text("Risolvi") }
                     TipoProblema.COLLEGAMENTO_ERRATO -> {
                         OutlinedButton(onClick = { onModifica(p.operazione) }) { Text("Modifica") }
                         OutlinedButton(onClick = onScollega) { Text("Scollega") }
@@ -282,185 +228,5 @@ private fun RigaOperazione(op: Operazione, dati: DatiApp, onModifica: (Operazion
     }
 }
 
-/**
- * Scelta della riga del conto di destinazione da associare allo spostamento [op] senza riga
- * corrispondente: operazioni di segno opposto, non collegate ad altro, entro
- * [Spostamenti.GIORNI_CANDIDATE] giorni, dalla più vicina per data. Il conto si può cambiare.
- */
-@Composable
-private fun AssociaRigaDialog(op: Operazione, dati: DatiApp, onAssocia: (Operazione) -> Unit, onAnnulla: () -> Unit) {
-    val altriConti = dati.contiValutaOrdinati.filter { it.id != op.contoValutaId }
-    var conto by remember { mutableStateOf(op.contoValutaDestId ?: altriConti.firstOrNull()?.id) }
-    var scelta by remember { mutableStateOf<Operazione?>(null) }
-    val candidate = remember(conto, dati.operazioni) {
-        Spostamenti.candidate(op, null, conto, dati.operazioni).sortedWith(compareBy({ abs(it.data - op.data) }, { it.id }))
-    }
-    AlertDialog(
-        onDismissRequest = onAnnulla,
-        title = { Text("Associa riga") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(
-                    "${dati.etichetta(op.contoValutaId)} · ${formattaData(op.data)} · ${importo(op, dati)}",
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.Bold
-                )
-                CampoScelta(
-                    etichetta = "Conto dell'altra riga",
-                    selezionato = altriConti.firstOrNull { it.id == conto },
-                    opzioni = altriConti,
-                    testo = { dati.etichetta(it.id) },
-                    onScelta = {
-                        conto = it.id
-                        scelta = null
-                    }
-                )
-                if (candidate.isEmpty()) {
-                    Text(
-                        "Nessuna operazione di segno opposto e non collegata entro ${Spostamenti.GIORNI_CANDIDATE} giorni su questo conto.",
-                        style = MaterialTheme.typography.bodySmall
-                    )
-                } else {
-                    LazyColumn(modifier = Modifier.heightIn(max = 320.dp)) {
-                        items(candidate, key = { it.id }) { c ->
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.fillMaxWidth().clickable { scelta = c }
-                            ) {
-                                RadioButton(selected = scelta?.id == c.id, onClick = { scelta = c })
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Row {
-                                        Text(formattaData(c.data), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
-                                        Text(importo(c, dati), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
-                                    }
-                                    val giorni = abs(c.data - op.data)
-                                    val descrizione = c.note ?: c.voceId?.let { dati.vociPerId[it]?.descrizione }
-                                        ?: if (c.trasferimento) "Spostamento" else "Senza tipo"
-                                    Text(
-                                        (if (giorni == 0L) "stesso giorno" else "$giorni giorni di distanza") + " · " + descrizione,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        maxLines = 2
-                                    )
-                                }
-                            }
-                        }
-                    }
-                    Text(
-                        "La riga scelta diventa uno spostamento collegato a questo (se aveva un tipo di spesa, lo perde); importo e data restano i suoi.",
-                        style = MaterialTheme.typography.bodySmall
-                    )
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = { scelta?.let(onAssocia) }, enabled = scelta != null) { Text("Associa") }
-        },
-        dismissButton = { TextButton(onClick = onAnnulla) { Text("Annulla") } }
-    )
-}
 
-/** Dettaglio di un'operazione nel dialog dei possibili doppioni. */
-@Composable
-private fun DettaglioOperazione(op: Operazione, dati: DatiApp, giorni: Long? = null) {
-    val tipo = when {
-        op.trasferimento && op.contoValutaDestId != null ->
-            "Spostamento " + (if (op.importoCent < 0) "verso " else "da ") + dati.etichetta(op.contoValutaDestId)
-        op.trasferimento -> "Spostamento senza conto indicato"
-        else -> op.voceId?.let { dati.vociPerId[it]?.descrizione } ?: "Senza tipo"
-    }
-    Column {
-        Row {
-            Text(
-                "${dati.etichetta(op.contoValutaId)} · ${formattaData(op.data)}",
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.weight(1f)
-            )
-            Text(importo(op, dati), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
-        }
-        Text(
-            tipo + (if (op.collegataId != null) " · collegata" else "") +
-                (giorni?.let { if (it == 0L) " · stesso giorno" else " · $it giorni di distanza" } ?: ""),
-            style = MaterialTheme.typography.bodySmall
-        )
-        op.note?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
-        // Riga collegata sull'altro conto: aiuta a capire se due righe simili sono lo stesso movimento.
-        op.collegataId?.let { id -> dati.operazioni.firstOrNull { it.id == id } }?.let { c ->
-            Text(
-                "↔ ${dati.etichetta(c.contoValutaId)} · ${formattaData(c.data)} · ${importo(c, dati)}" + (c.note?.let { " · $it" } ?: ""),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.primary,
-                maxLines = 2
-            )
-        }
-    }
-}
 
-/**
- * Possibili doppioni di uno spostamento senza riga corrispondente: lo spostamento e le operazioni
- * dello stesso conto e importo a pochi giorni. Si sceglie quale tenere (e collegare: prende il
- * collegamento di un'eliminata, se c'è, altrimenti si propone "Associa") e quali eliminare.
- */
-@Composable
-private fun DoppioniDialog(
-    p: ProblemaSpostamento,
-    dati: DatiApp,
-    onApplica: (tieni: Operazione, elimina: List<Operazione>) -> Unit,
-    onChiudi: () -> Unit
-) {
-    val righe = listOf(p.operazione) + p.simili
-    val chiave = righe.map { it.id }
-    // Nessuna eliminazione preselezionata: le operazioni simili possono essere movimenti veri
-    // (es. più bonifici dello stesso importo), si spuntano solo quelle da eliminare.
-    var tieniId by remember(chiave) { mutableStateOf(p.operazione.id) }
-    val daEliminare = remember(chiave) { mutableStateListOf<Long>() }
-    val tieni = righe.first { it.id == tieniId }
-    val eliminate = righe.filter { it.id in daEliminare && it.id != tieniId }
-    AlertDialog(
-        onDismissRequest = onChiudi,
-        title = { Text("Possibili doppioni") },
-        text = {
-            Column(modifier = Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text(
-                    "Stesso conto e importo entro ${Riscontro.GIORNI_SIMILI} giorni. Scegli la riga da tenere e collegare " +
-                        "(Tieni) e quelle da eliminare.",
-                    style = MaterialTheme.typography.bodySmall
-                )
-                righe.forEachIndexed { i, r ->
-                    HorizontalDivider()
-                    if (i == 0) Text("Spostamento senza riga corrispondente", style = MaterialTheme.typography.labelMedium)
-                    DettaglioOperazione(r, dati, giorni = if (i == 0) null else abs(r.data - p.operazione.data))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        RadioButton(selected = tieniId == r.id, onClick = {
-                            tieniId = r.id
-                            daEliminare.remove(r.id)
-                        })
-                        Text("Tieni", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(end = 16.dp))
-                        Checkbox(
-                            checked = r.id in daEliminare && tieniId != r.id,
-                            enabled = tieniId != r.id,
-                            onCheckedChange = { if (it) daEliminare.add(r.id) else daEliminare.remove(r.id) }
-                        )
-                        Text("Elimina", style = MaterialTheme.typography.bodyMedium)
-                    }
-                }
-                HorizontalDivider()
-                val collegamento = when {
-                    tieni.collegataId != null -> "La riga tenuta è già collegata."
-                    eliminate.any { it.collegataId != null } -> "La riga tenuta prende il collegamento della riga eliminata."
-                    else -> "La riga tenuta non ha collegamento: dopo si apre \"Associa\" per scegliere la riga sull'altro conto."
-                }
-                Text(
-                    "Da eliminare: ${eliminate.size}. $collegamento Le righe sull'altro conto non vengono eliminate.",
-                    style = MaterialTheme.typography.bodySmall
-                )
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = { onApplica(tieni, eliminate) }) {
-                Text(if (eliminate.isEmpty()) "Tieni e associa" else "Elimina ${eliminate.size}", color = MaterialTheme.colorScheme.error)
-            }
-        },
-        dismissButton = { TextButton(onClick = onChiudi) { Text("Chiudi") } }
-    )
-}
