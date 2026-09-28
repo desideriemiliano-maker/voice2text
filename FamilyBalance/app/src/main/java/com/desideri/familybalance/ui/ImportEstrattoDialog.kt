@@ -139,7 +139,8 @@ fun ImportEstrattoDialog(vm: SpeseViewModel, dati: DatiApp, importazione: Import
         AggiornamentoData(esistente, nuovaData, r.ordine)
     }
     val senzaTipo = stati.count { it.includi && !valida(it) }
-    val conto = dati.conti.firstOrNull { it.id == importazione.contoId }?.nome ?: "conto"
+    val conto = importazione.righe.firstOrNull()?.let { dati.etichetta(it.contoValutaId) }
+        ?: dati.conti.firstOrNull { it.id == importazione.contoId }?.nome ?: "conto"
 
     Dialog(onDismissRequest = { vm.annullaImportEstratto() }, properties = DialogProperties(usePlatformDefaultWidth = false, dismissOnClickOutside = false)) {
         Surface(modifier = Modifier.fillMaxSize()) {
@@ -295,6 +296,7 @@ private fun CardMovimento(
     onNuovaAssociazione: () -> Unit
 ) {
     val m = riga.movimento
+    val valutaConto = dati.contiValutaPerId[riga.contoValutaId]?.valuta ?: m.valuta
     val tipoNoto = tipi.any { it.equals(stato.tipo.trim(), ignoreCase = true) }
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -315,7 +317,17 @@ private fun CardMovimento(
                     // Numero progressivo del movimento nel file, per il riscontro con l'Excel.
                     m.rigaFile?.let { Text("movimento n. $it del file", style = MaterialTheme.typography.labelSmall) }
                 }
-                TestoImporto(m.importoCent / 100.0, m.valuta, grassetto = true)
+                TestoImporto(m.importoCent / 100.0, valutaConto, grassetto = true)
+            }
+            // Gemini ha indicato una valuta diversa da quella del conto scelto: l'importo potrebbe
+            // essere quello in valuta estera citato nella descrizione.
+            if (!m.valuta.equals(valutaConto, ignoreCase = true)) {
+                Text(
+                    "⚠ Gemini indica la valuta ${m.valuta}, il conto è in $valutaConto: verifica l'importo",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.error
+                )
             }
             // Tutte le date del movimento; se manca quella scelta si usa la prima disponibile.
             Text(

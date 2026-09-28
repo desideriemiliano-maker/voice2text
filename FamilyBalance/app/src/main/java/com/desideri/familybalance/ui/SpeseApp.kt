@@ -9,7 +9,7 @@ import androidx.compose.material.icons.filled.Link
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.TextButton
-import com.desideri.familybalance.data.Conto
+import com.desideri.familybalance.DatiApp
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -211,10 +211,10 @@ private fun SchermataPrincipale(vm: SpeseViewModel, sezione: Sezione, onSezione:
 
     fileEstratto?.let { uri ->
         SceltaContoDialog(
-            conti = dati.conti,
-            onScelto = { contoId ->
+            dati = dati,
+            onScelto = { contoValutaId ->
                 fileEstratto = null
-                vm.importaEstratto(uri, contoId)
+                vm.importaEstratto(uri, contoValutaId)
             },
             onAnnulla = { fileEstratto = null }
         )
@@ -237,27 +237,32 @@ private fun SchermataPrincipale(vm: SpeseViewModel, sezione: Sezione, onSezione:
     }
 }
 
-/** Scelta del conto corrente su cui importare l'estratto conto. */
+/**
+ * Scelta del conto corrente E della valuta su cui importare l'estratto conto (es. "LGT CHF"): tutti
+ * i movimenti del file vanno lì, senza affidarsi alla valuta letta da Gemini.
+ */
 @Composable
-private fun SceltaContoDialog(conti: List<Conto>, onScelto: (Long) -> Unit, onAnnulla: () -> Unit) {
-    var scelto by remember { mutableStateOf(conti.singleOrNull()?.id) }
+private fun SceltaContoDialog(dati: DatiApp, onScelto: (Long) -> Unit, onAnnulla: () -> Unit) {
+    val contiValuta = dati.contiValutaOrdinati
+    var scelto by remember { mutableStateOf(contiValuta.singleOrNull()?.id) }
     AlertDialog(
         onDismissRequest = onAnnulla,
         title = { Text("Importa estratto conto nel conto") },
         text = {
             Column {
-                if (conti.isEmpty()) Text("Nessun conto configurato: crealo in Anagrafica conti.")
-                conti.forEach { conto ->
+                if (contiValuta.isEmpty()) Text("Nessun conto configurato: crealo in Anagrafica conti.")
+                contiValuta.forEach { cv ->
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.fillMaxWidth().clickable { scelto = conto.id }
+                        modifier = Modifier.fillMaxWidth().clickable { scelto = cv.id }
                     ) {
-                        RadioButton(selected = scelto == conto.id, onClick = { scelto = conto.id })
-                        Text(conto.nome)
+                        RadioButton(selected = scelto == cv.id, onClick = { scelto = cv.id })
+                        Text(dati.etichetta(cv.id))
                     }
                 }
                 Text(
-                    "Il file viene inviato a Gemini per leggerne i movimenti.",
+                    "Scegli anche la valuta: tutti i movimenti del file verranno registrati su quel conto/valuta. " +
+                        "Il file viene inviato a Gemini per leggerne i movimenti.",
                     style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier.padding(top = 8.dp)
                 )

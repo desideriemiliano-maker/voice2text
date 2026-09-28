@@ -185,6 +185,25 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
         dao.eliminaOperazioni(listOfNotNull(op.id, op.collegataId))
     }
 
+    /**
+     * Sposta le operazioni selezionate su un altro conto/valuta (es. movimenti CHF finiti per errore
+     * in LGT EUR). Importo, data e tipo restano invariati; gli spostamenti con destinazione proprio
+     * quel conto/valuta vengono saltati perché diventerebbero un trasferimento verso sé stesso.
+     */
+    fun spostaOperazioniConto(operazioni: List<Operazione>, contoValutaId: Long) = viewModelScope.launch {
+        var spostate = 0
+        db.withTransaction {
+            for (op in operazioni) {
+                if (op.contoValutaId == contoValutaId || op.contoValutaDestId == contoValutaId) continue
+                dao.aggiornaOperazione(op.copy(contoValutaId = contoValutaId))
+                // La contro-operazione collegata ora proviene dal nuovo conto.
+                op.collegataId?.let { dao.operazione(it) }?.let { dao.aggiornaOperazione(it.copy(contoValutaDestId = contoValutaId)) }
+                spostate++
+            }
+        }
+        messaggio("Spostate $spostate operazioni in ${dati.value.etichetta(contoValutaId)}")
+    }
+
     /** Eliminazione multipla (selezione nella lista operazioni), con le contro-operazioni collegate. */
     fun eliminaOperazioni(operazioni: List<Operazione>) = viewModelScope.launch {
         val ids = operazioni.flatMap { listOfNotNull(it.id, it.collegataId) }.distinct()
@@ -332,18 +351,20 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
     val testoAttesa: StateFlow<String> = _testoAttesa.asStateFlow()
 
     /**
-     * Manda l'estratto conto a Gemini e confronta i movimenti con le operazioni del [contoId]: tutti
-     * sono proposti all'utente con i tipi suggeriti dall'anagrafica associazioni, ma quelli già
-     * presenti (stesso importo nella stessa valuta, data valuta o contabile uguale) o simili (stesso
-     * importo entro [GIORNI_DOPPIONE] giorni) partono deselezionati.
+     * Manda l'estratto conto a Gemini e confronta i movimenti con le operazioni del conto/valuta
+     * [contoValutaId] scelto dall'utente: tutti i movimenti vanno su quel conto/valuta (la valuta letta
+     * da Gemini non sceglie più il conto: nelle descrizioni compaiono anche importi in valuta estera).
+     * Tutti sono proposti con i tipi suggeriti dall'anagrafica associazioni; quelli già presenti
+     * (stesso importo, data uguale) o simili (stesso importo entro [GIORNI_DOPPIONE] giorni) partono
+     * deselezionati.
      */
-    fun importaEstratto(uri: Uri, contoId: Long) = viewModelScope.launch {
-        val contiValuta = dati.value.contiValuta.filter { it.contoId == contoId }.sortedBy { if (it.valuta == Valute.EUR) 0 else 1 }
-        if (contiValuta.isEmpty()) return@launch messaggio("Il conto scelto non ha valute configurate")
+    fun importaEstratto(uri: Uri, contoValutaId: Long) = viewModelScope.launch {
+        val cvScelto = dati.value.contiValutaPerId[contoValutaId] ?: return@launch messaggio("Conto non trovato")
+        val contoId = cvScelto.contoId
         _testoAttesa.value = "Analisi dell'estratto conto con Gemini…"
         _importazioneInCorso.value = true
         try {
-            val esito = EstrattoGemini(BuildConfig.GEMINI_API_KEY, RegistroPromptStore(getApplication())).estrai(getApplication(), uri, contiValuta.first().valuta) { blocco, totale ->
+            val esito = EstrattoGemini(BuildConfig.GEMINI_API_KEY, RegistroPromptStore(getApplication())).estrai(getApplication(), uri, cvScelto.valuta) { blocco, totale ->
                 _testoAttesa.value = if (totale > 1) "Analisi con Gemini: blocco $blocco di $totale…" else "Analisi dell'estratto conto con Gemini…"
             }
             val movimenti = esito.movimenti
@@ -352,7 +373,7 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
             // Operazioni esistenti per conto/valuta e importo; ognuna è abbinata al più a un movimento,
             // prima quelle con data identica e poi quelle vicine (possibili doppioni).
             val esistenti = dati.value.operazioni.groupBy { it.contoValutaId to it.importoCent }
-            val contoDi = movimenti.map { m -> contiValuta.firstOrNull { it.valuta == m.valuta } ?: contiValuta.first() }
+            val contoDi = movimenti.map { cvScelto }
             val usate = HashSet<Long>()
             val abbinate = arrayOfNulls<Pair<Operazione, Long>>(movimenti.size)
             for (massimaDistanza in listOf(0L, GIORNI_DOPPIONE)) {

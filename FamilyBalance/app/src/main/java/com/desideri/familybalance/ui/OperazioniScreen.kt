@@ -3,7 +3,11 @@ package com.desideri.familybalance.ui
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.material.icons.filled.SwapHoriz
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.RadioButton
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Deselect
 import androidx.compose.material.icons.filled.SelectAll
@@ -78,6 +82,7 @@ fun OperazioniScreen(vm: SpeseViewModel, contoValutaId: Long, onIndietro: () -> 
     // Selezione multipla: si attiva tenendo premuta un'operazione; vuota = modalità normale.
     var selezione by remember { mutableStateOf(setOf<Long>()) }
     var confermaEliminazione by remember { mutableStateOf(false) }
+    var spostaInConto by remember { mutableStateOf(false) }
     BackHandler(enabled = selezione.isNotEmpty()) { selezione = emptySet() }
     var nuova by remember { mutableStateOf(false) }
 
@@ -115,6 +120,9 @@ fun OperazioniScreen(vm: SpeseViewModel, contoValutaId: Long, onIndietro: () -> 
                             if (tutteSelezionate) Icons.Filled.Deselect else Icons.Filled.SelectAll,
                             contentDescription = if (tutteSelezionate) "Deseleziona le mostrate" else "Seleziona tutte le mostrate"
                         )
+                    }
+                    IconButton(onClick = { spostaInConto = true }) {
+                        Icon(Icons.Filled.SwapHoriz, contentDescription = "Sposta in altro conto")
                     }
                     IconButton(onClick = { confermaEliminazione = true }) {
                         Icon(Icons.Filled.Delete, contentDescription = "Elimina selezionate")
@@ -179,6 +187,46 @@ fun OperazioniScreen(vm: SpeseViewModel, contoValutaId: Long, onIndietro: () -> 
                 HorizontalDivider()
             }
         }
+    }
+
+    if (spostaInConto) {
+        // Correzione di operazioni finite nel conto/valuta sbagliato (es. movimenti CHF in LGT EUR).
+        val altri = dati.contiValutaOrdinati.filter { it.id != contoValutaId }
+        var destinazione by remember { mutableStateOf(altri.firstOrNull()?.id) }
+        AlertDialog(
+            onDismissRequest = { spostaInConto = false },
+            title = { Text("Sposta in altro conto") },
+            text = {
+                Column {
+                    Text(
+                        "Le ${selezione.size} operazioni selezionate verranno spostate nel conto/valuta scelto, " +
+                            "con lo stesso importo, data e tipo.",
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    )
+                    altri.forEach { cv ->
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.fillMaxWidth().clickable { destinazione = cv.id }
+                        ) {
+                            RadioButton(selected = destinazione == cv.id, onClick = { destinazione = cv.id })
+                            Text(dati.etichetta(cv.id))
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        destinazione?.let { dest -> vm.spostaOperazioniConto(dati.operazioni.filter { it.id in selezione }, dest) }
+                        selezione = emptySet()
+                        spostaInConto = false
+                    },
+                    enabled = destinazione != null
+                ) { Text("Sposta") }
+            },
+            dismissButton = { TextButton(onClick = { spostaInConto = false }) { Text("Annulla") } }
+        )
     }
 
     if (confermaEliminazione) {

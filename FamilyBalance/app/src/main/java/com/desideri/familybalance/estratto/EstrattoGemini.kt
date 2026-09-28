@@ -30,8 +30,11 @@ private const val PROMPT_ESTRATTO =
         "dataContabile (YYYY-MM-DD: data contabile o di registrazione; stringa vuota se assente o se il " +
         "movimento è \"non contabilizzato\"), " +
         "dataValuta (YYYY-MM-DD: data valuta; se il file ha una sola data usa quella), " +
-        "valuta (codice ISO a 3 lettere, es. EUR o CHF; se non indicata usa la valuta del conto), " +
-        "importo (numero con segno: NEGATIVO per addebiti/uscite, POSITIVO per accrediti/entrate; se il file ha " +
+        "valuta (codice ISO a 3 lettere della valuta in cui il movimento è addebitato/accreditato SUL CONTO, " +
+        "cioè quella della colonna Valuta o del conto; NON la valuta estera eventualmente citata nella " +
+        "descrizione, es. \"EUR 28.17 / Corso CHF/EUR\" in un conto in CHF resta CHF), " +
+        "importo (sempre nella valuta del conto, mai l'importo in valuta estera citato nella descrizione; " +
+        "numero con segno: NEGATIVO per addebiti/uscite, POSITIVO per accrediti/entrate; se il file ha " +
         "colonne separate Dare/Avere o Addebiti/Accrediti applica tu il segno), " +
         "descrizione (breve, massimo 150 caratteri: il testo descrittivo del movimento così come appare, esercente, " +
         "beneficiario o causale; se ci " +
