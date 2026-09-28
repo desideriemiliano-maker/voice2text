@@ -238,16 +238,44 @@ fun OperazioneDialog(vm: SpeseViewModel, dati: DatiApp, contoValutaId: Long, esi
     )
 
     if (confermaElimina && esistente != null) {
-        DialogConferma(
-            titolo = "Elimina operazione",
-            testo = if (collegata != null) "Verrà eliminata anche l'operazione collegata sull'altro conto." else "Eliminare l'operazione?",
-            conferma = "Elimina",
-            onConferma = {
-                vm.eliminaOperazione(esistente)
-                onChiudi()
-            },
-            onAnnulla = { confermaElimina = false }
-        )
+        if (collegata == null) {
+            DialogConferma(
+                titolo = "Elimina operazione",
+                testo = "Eliminare l'operazione?",
+                conferma = "Elimina",
+                onConferma = {
+                    vm.eliminaOperazione(esistente)
+                    onChiudi()
+                },
+                onAnnulla = { confermaElimina = false }
+            )
+        } else {
+            // Spostamento collegato: si sceglie se eliminare anche la riga sull'altro conto.
+            AlertDialog(
+                onDismissRequest = { confermaElimina = false },
+                title = { Text("Elimina spostamento") },
+                text = {
+                    Text(
+                        "È collegato alla riga del ${formattaData(collegata.data)} su ${dati.etichetta(collegata.contoValutaId)}. " +
+                            "\"Solo questa\" lascia quella riga (senza collegamento) e il saldo di quel conto non cambia; " +
+                            "\"Entrambe\" la elimina."
+                    )
+                },
+                confirmButton = {
+                    Row {
+                        TextButton(onClick = {
+                            vm.eliminaSoloRiga(esistente)
+                            onChiudi()
+                        }) { Text("Solo questa", color = MaterialTheme.colorScheme.error) }
+                        TextButton(onClick = {
+                            vm.eliminaOperazione(esistente)
+                            onChiudi()
+                        }) { Text("Entrambe", color = MaterialTheme.colorScheme.error) }
+                    }
+                },
+                dismissButton = { TextButton(onClick = { confermaElimina = false }) { Text("Annulla") } }
+            )
+        }
     }
 }
 

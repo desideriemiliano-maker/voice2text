@@ -237,10 +237,12 @@ fun OperazioniScreen(vm: SpeseViewModel, contoValutaId: Long, onIndietro: () -> 
     }
 
     if (confermaEliminazione) {
+        val selezionate = dati.operazioni.filter { it.id in selezione }
         DialogEliminaSelezionate(
-            numero = selezione.size,
-            onConferma = {
-                vm.eliminaOperazioni(dati.operazioni.filter { it.id in selezione })
+            numero = selezionate.size,
+            collegate = selezionate.count { it.collegataId != null },
+            onConferma = { ancheCollegate ->
+                vm.eliminaOperazioni(selezionate, ancheCollegate)
                 selezione = emptySet()
             },
             onAnnulla = { confermaEliminazione = false }
@@ -261,15 +263,45 @@ fun OperazioniScreen(vm: SpeseViewModel, contoValutaId: Long, onIndietro: () -> 
     }
 }
 
+/**
+ * Conferma dell'eliminazione multipla: le righe collegate sugli altri conti si eliminano solo se
+ * richiesto (di default restano, per non cambiare il saldo degli altri conti).
+ */
 @Composable
-private fun DialogEliminaSelezionate(numero: Int, onConferma: () -> Unit, onAnnulla: () -> Unit) {
-    DialogConferma(
-        titolo = "Elimina operazioni",
-        testo = "Eliminare le $numero operazioni selezionate? Per gli spostamenti inseriti dall'app viene eliminata " +
-            "anche l'operazione collegata sull'altro conto.",
-        conferma = "Elimina",
-        onConferma = onConferma,
-        onAnnulla = onAnnulla
+private fun DialogEliminaSelezionate(numero: Int, collegate: Int, onConferma: (ancheCollegate: Boolean) -> Unit, onAnnulla: () -> Unit) {
+    var ancheCollegate by remember { mutableStateOf(false) }
+    AlertDialog(
+        onDismissRequest = onAnnulla,
+        title = { Text("Elimina operazioni") },
+        text = {
+            Column {
+                Text("Eliminare le $numero operazioni selezionate?")
+                if (collegate > 0) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(top = 8.dp).clickable { ancheCollegate = !ancheCollegate }
+                    ) {
+                        Checkbox(checked = ancheCollegate, onCheckedChange = { ancheCollegate = it })
+                        Text(
+                            "Elimina anche le righe collegate sugli altri conti ($collegate spostamenti)",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    }
+                    Text(
+                        if (ancheCollegate) "Cambierà anche il saldo degli altri conti."
+                        else "Le righe sugli altri conti restano, senza collegamento: il loro saldo non cambia.",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                onConferma(ancheCollegate)
+                onAnnulla()
+            }) { Text("Elimina", color = MaterialTheme.colorScheme.error) }
+        },
+        dismissButton = { TextButton(onClick = onAnnulla) { Text("Annulla") } }
     )
 }
 

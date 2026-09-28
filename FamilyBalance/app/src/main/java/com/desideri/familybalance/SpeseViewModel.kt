@@ -271,9 +271,24 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /** Eliminazione multipla (selezione nella lista operazioni), con le contro-operazioni collegate. */
-    fun eliminaOperazioni(operazioni: List<Operazione>) = viewModelScope.launch {
-        val ids = operazioni.flatMap { listOfNotNull(it.id, it.collegataId) }.distinct()
-        ids.chunked(500).forEach { dao.eliminaOperazioni(it) }
+    /**
+     * Elimina le [operazioni]; con [ancheCollegate] anche le righe collegate sugli altri conti,
+     * altrimenti quelle restano (senza collegamento) e il saldo degli altri conti non cambia.
+     */
+    fun eliminaOperazioni(operazioni: List<Operazione>, ancheCollegate: Boolean) = viewModelScope.launch {
+        db.withTransaction {
+            val ids = operazioni.map { it.id }.toHashSet()
+            if (ancheCollegate) {
+                ids += operazioni.mapNotNull { it.collegataId }
+            } else {
+                for (op in operazioni) {
+                    val idAltra = op.collegataId ?: continue
+                    if (idAltra in ids) continue
+                    dao.operazione(idAltra)?.takeIf { it.collegataId == op.id }?.let { dao.aggiornaOperazione(it.copy(collegataId = null)) }
+                }
+            }
+            ids.toList().chunked(500).forEach { dao.eliminaOperazioni(it) }
+        }
         messaggio("Eliminate ${operazioni.size} operazioni")
     }
 
