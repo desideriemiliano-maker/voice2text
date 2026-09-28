@@ -25,6 +25,8 @@ import com.desideri.familybalance.logica.RigaBilancio
 import com.desideri.familybalance.logica.StatoMese
 import com.desideri.familybalance.logica.formattaImporto
 import com.desideri.familybalance.logica.formattaMese
+import java.util.Locale
+import kotlin.math.abs
 
 /**
  * Bilancio: il mese corrente separato tra spese correnti, ricorrenti e stipendio/interessi; per i
@@ -88,6 +90,7 @@ private fun CardMeseCorrente(r: RigaBilancio) {
             HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
             RigaValore("Risparmio finora (entrate + correnti)", r.risparmio)
             RigaValore("Rispetto al target di ${formattaImporto(r.target)}", r.deltaTarget)
+            RigheCambio(r)
             r.saldoPrevisto?.let { RigaValore("Saldo previsto a fine mese", it, grassetto = true) }
         }
     }
@@ -118,6 +121,20 @@ private fun CardMesePassato(r: RigaBilancio) {
             RigaValore("Spese ricorrenti", r.ricorrentiPagati)
             RigaValore("Risparmio (entrate + correnti)", r.risparmio)
             RigaValore("Delta rispetto al target", r.deltaTarget, grassetto = true)
+            RigheCambio(r)
         }
     }
+}
+
+/** Effetto del cambio CHF/EUR sul saldo del mese (solo se c'è). */
+@Composable
+private fun RigheCambio(r: RigaBilancio) {
+    if (abs(r.effettoCambio) < 0.005 && abs(r.cambioSpostamenti) < 0.005) return
+    HorizontalDivider(modifier = Modifier.padding(vertical = 6.dp))
+    Text(
+        "Cambio del mese: 1 CHF = ${String.format(Locale.ITALY, "%.4f", r.cambioChfEur)} EUR",
+        style = MaterialTheme.typography.bodySmall
+    )
+    if (abs(r.effettoCambio) >= 0.005) RigaValore("Effetto cambio sui saldi CHF", r.effettoCambio)
+    if (abs(r.cambioSpostamenti) >= 0.005) RigaValore("Cambio applicato negli spostamenti", r.cambioSpostamenti)
 }

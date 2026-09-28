@@ -58,8 +58,13 @@ fun ImpostazioniScreen(vm: SpeseViewModel, onIndietro: () -> Unit) {
             OutlinedTextField(
                 value = cambio,
                 onValueChange = { cambio = it },
-                label = { Text("Cambio: 1 CHF = … EUR") },
-                supportingText = { Text("Per sommare i conti in CHF a quelli in EUR nel saldo totale e nel bilancio (1 = nessuna conversione, come nell'Excel).") },
+                label = { Text("Cambio attuale: 1 CHF = … EUR") },
+                supportingText = {
+                    Text(
+                        "Per sommare i conti in CHF a quelli in EUR nel saldo totale e nel bilancio del mese corrente e dei " +
+                            "futuri (1 = nessuna conversione). Per i mesi passati si usano i cambi mensili (menu ⋮ › Cambi CHF/EUR)."
+                    )
+                },
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                 modifier = Modifier.fillMaxWidth()

@@ -111,3 +111,13 @@ data class Associazione(
         const val TIPO_SPOSTAMENTO = "Spostamento"
     }
 }
+
+/**
+ * Cambio CHF→EUR inserito a mano per un mese ("yyyy-MM"): 1 CHF = [chfEur] EUR. Prevale su quello
+ * ricavato dagli spostamenti CHF↔EUR del mese (vedi [com.desideri.familybalance.logica.Cambi]).
+ */
+@Entity(tableName = "cambi")
+data class Cambio(
+    @PrimaryKey val mese: String,
+    val chfEur: Double
+)

@@ -31,6 +31,8 @@ import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.CurrencyExchange
+import androidx.compose.material.icons.automirrored.filled.CompareArrows
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -74,6 +76,8 @@ sealed interface Schermata {
     data object AnagraficaAssociazioni : Schermata
     data object Impostazioni : Schermata
     data object Backup : Schermata
+    data object Riscontro : Schermata
+    data object Cambi : Schermata
 }
 
 @Composable
@@ -100,6 +104,8 @@ fun SpeseApp(vm: SpeseViewModel = viewModel()) {
             Schermata.AnagraficaAssociazioni -> AnagraficaAssociazioniScreen(vm, onIndietro = ::chiudi)
             Schermata.Impostazioni -> ImpostazioniScreen(vm, onIndietro = ::chiudi)
             Schermata.Backup -> BackupScreen(vm, onIndietro = ::chiudi)
+            Schermata.Riscontro -> RiscontroScreen(vm, onIndietro = ::chiudi)
+            Schermata.Cambi -> CambiScreen(vm, onIndietro = ::chiudi)
         }
         SnackbarHost(snackbar, modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 80.dp))
     }
@@ -137,6 +143,8 @@ private fun SchermataPrincipale(vm: SpeseViewModel, sezione: Sezione, onSezione:
                         DropdownMenu(expanded = menuAperto, onDismissRequest = { menuAperto = false }) {
                             VoceMenu("Anagrafica spese", Icons.AutoMirrored.Filled.List) { menuAperto = false; onApri(Schermata.AnagraficaSpese) }
                             VoceMenu("Anagrafica conti", Icons.Filled.AccountBalanceWallet) { menuAperto = false; onApri(Schermata.AnagraficaConti) }
+                            VoceMenu("Riscontro spostamenti", Icons.AutoMirrored.Filled.CompareArrows) { menuAperto = false; onApri(Schermata.Riscontro) }
+                            VoceMenu("Cambi CHF/EUR", Icons.Filled.CurrencyExchange) { menuAperto = false; onApri(Schermata.Cambi) }
                             VoceMenu("Impostazioni", Icons.Filled.Settings) { menuAperto = false; onApri(Schermata.Impostazioni) }
                             VoceMenu("Backup Google Drive", Icons.Filled.CloudUpload) { menuAperto = false; onApri(Schermata.Backup) }
                             VoceMenu("Importa estratto conto", Icons.AutoMirrored.Filled.ReceiptLong) {

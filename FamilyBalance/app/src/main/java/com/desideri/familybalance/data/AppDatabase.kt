@@ -8,7 +8,7 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import java.io.File
 
-@Database(entities = [Conto::class, ContoValuta::class, Voce::class, Operazione::class, Associazione::class], version = 4, exportSchema = false)
+@Database(entities = [Conto::class, ContoValuta::class, Voce::class, Operazione::class, Associazione::class, Cambio::class], version = 5, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun dao(): SpeseDao
 
@@ -23,7 +23,7 @@ abstract class AppDatabase : RoomDatabase() {
                 // TRUNCATE invece di WAL: tutto il contenuto sta nel solo file .db, così il backup
                 // su Drive è una semplice copia del file senza dover gestire -wal/-shm.
                 .setJournalMode(JournalMode.TRUNCATE)
-                .addMigrations(MIGRAZIONE_1_2, MIGRAZIONE_2_3, MIGRAZIONE_3_4)
+                .addMigrations(MIGRAZIONE_1_2, MIGRAZIONE_2_3, MIGRAZIONE_3_4, MIGRAZIONE_4_5)
                 .build()
                 .also { istanza = it }
         }
@@ -49,6 +49,13 @@ abstract class AppDatabase : RoomDatabase() {
         private val MIGRAZIONE_3_4 = object : Migration(3, 4) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE `operazioni` ADD COLUMN `ordine` INTEGER")
+            }
+        }
+
+        /** Versione 5: cambi CHF/EUR mensili inseriti a mano. */
+        private val MIGRAZIONE_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("CREATE TABLE IF NOT EXISTS `cambi` (`mese` TEXT NOT NULL, `chfEur` REAL NOT NULL, PRIMARY KEY(`mese`))")
             }
         }
 

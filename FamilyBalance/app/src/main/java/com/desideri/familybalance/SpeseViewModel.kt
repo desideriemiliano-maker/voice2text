@@ -12,6 +12,7 @@ import com.desideri.familybalance.backup.InfoBackup
 import com.desideri.familybalance.backup.LetturaBackup
 import com.desideri.familybalance.backup.RipristinoParziale
 import com.desideri.familybalance.data.AppDatabase
+import com.desideri.familybalance.data.Cambio
 import com.desideri.familybalance.data.Associazione
 import com.desideri.familybalance.data.Conto
 import com.desideri.familybalance.data.ContoValuta
@@ -33,6 +34,11 @@ import com.desideri.familybalance.estratto.SceltaEstratto
 import com.desideri.familybalance.estratto.TipoData
 import com.desideri.familybalance.logica.Associazioni
 import com.desideri.familybalance.logica.Calcoli
+import com.desideri.familybalance.logica.Cambi
+import com.desideri.familybalance.logica.ProblemaSpostamento
+import com.desideri.familybalance.logica.Riscontro
+import com.desideri.familybalance.logica.meseInTesto
+import com.desideri.familybalance.logica.testoInMese
 import com.desideri.familybalance.logica.MeseRicorrenti
 import com.desideri.familybalance.logica.RigaBilancio
 import com.desideri.familybalance.logica.formattaCent
@@ -111,16 +117,34 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
         .flowOn(Dispatchers.Default)
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
 
-    val bilancio: StateFlow<List<RigaBilancio>> = combine(dati, _impostazioni) { d, imp ->
-        Calcoli.bilancio(d.contiValuta, d.voci, d.operazioni, imp.cambioChfEur, imp.targetRisparmioCent / 100.0, YearMonth.now())
+    /** Cambi CHF/EUR mensili inseriti a mano. */
+    val cambiInseriti: StateFlow<List<Cambio>> = dao.cambiFlow().stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    /** Cambio CHF/EUR di ogni mese: inserito, ricavato dagli spostamenti o quello attuale. */
+    val cambi: StateFlow<Cambi> = combine(dati, _impostazioni, cambiInseriti) { d, imp, inseriti ->
+        Cambi(
+            inseriti.mapNotNull { c -> testoInMese(c.mese)?.let { it to c.chfEur } }.toMap(),
+            Cambi.daSpostamenti(d.operazioni) { d.contiValutaPerId[it]?.valuta },
+            imp.cambioChfEur,
+            YearMonth.now()
+        )
+    }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.Eagerly, Cambi.fisso(_impostazioni.value.cambioChfEur))
+
+    val bilancio: StateFlow<List<RigaBilancio>> = combine(dati, _impostazioni, cambi) { d, imp, cambi ->
+        Calcoli.bilancio(d.contiValuta, d.voci, d.operazioni, cambi, imp.targetRisparmioCent / 100.0, YearMonth.now())
     }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     /** Spese ricorrenti da 12 mesi fa a 12 mesi avanti. */
-    val ricorrenti: StateFlow<List<MeseRicorrenti>> = combine(dati, _impostazioni) { d, imp ->
+    val ricorrenti: StateFlow<List<MeseRicorrenti>> = combine(dati, cambi) { d, cambi ->
         val oggi = YearMonth.now()
         val mesi = (-12L..12L).map { oggi.plusMonths(it) }
-        Calcoli.ricorrenti(mesi, d.voci, d.contiValuta, d.operazioni, imp.cambioChfEur, oggi)
+        Calcoli.ricorrenti(mesi, d.voci, d.contiValuta, d.operazioni, cambi, oggi)
     }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    /** Problemi del riscontro spostamenti (null finché non calcolati), solo mentre la schermata è aperta. */
+    val riscontro: StateFlow<List<ProblemaSpostamento>?> = dati.map { d ->
+        if (!d.caricati) null else Riscontro.analizza(d.operazioni) { d.contiValutaPerId[it]?.valuta }
+    }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     private fun messaggio(testo: String) {
         _messaggi.tryEmit(testo)
@@ -233,6 +257,62 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
         val ids = operazioni.flatMap { listOfNotNull(it.id, it.collegataId) }.distinct()
         ids.chunked(500).forEach { dao.eliminaOperazioni(it) }
         messaggio("Eliminate ${operazioni.size} operazioni")
+    }
+
+    // --- Riscontro spostamenti ---
+
+    /** Collega le coppie di spostamenti (righe speculari su due conti) ancora non collegate. */
+    fun collegaSpostamenti(coppie: List<Pair<Operazione, Operazione>>) = viewModelScope.launch {
+        var collegati = 0
+        db.withTransaction {
+            for ((a, b) in coppie) {
+                val x = dao.operazione(a.id) ?: continue
+                val y = dao.operazione(b.id) ?: continue
+                if (x.collegataId != null || y.collegataId != null || x.contoValutaId == y.contoValutaId) continue
+                dao.aggiornaOperazione(x.copy(trasferimento = true, voceId = null, contoValutaDestId = y.contoValutaId, collegataId = y.id))
+                dao.aggiornaOperazione(y.copy(trasferimento = true, voceId = null, contoValutaDestId = x.contoValutaId, collegataId = x.id))
+                collegati++
+            }
+        }
+        messaggio(if (collegati == 1) "Spostamento collegato" else "Collegati $collegati spostamenti")
+    }
+
+    /** Toglie il collegamento di [op] (e quello reciproco della riga collegata). */
+    fun scollegaSpostamento(op: Operazione) = viewModelScope.launch {
+        db.withTransaction {
+            val x = dao.operazione(op.id) ?: return@withTransaction
+            x.collegataId?.let { dao.operazione(it) }?.takeIf { it.collegataId == x.id }?.let { dao.aggiornaOperazione(it.copy(collegataId = null)) }
+            dao.aggiornaOperazione(x.copy(collegataId = null))
+        }
+    }
+
+    /**
+     * Elimina [elimina], doppione di [tieni]: se [elimina] era collegata a una riga sull'altro conto,
+     * il collegamento passa a [tieni] (se non è già collegata), altrimenti quella riga resta scollegata.
+     * Non elimina mai la riga collegata sull'altro conto.
+     */
+    fun eliminaDoppione(elimina: Operazione, tieni: Operazione) = viewModelScope.launch {
+        db.withTransaction {
+            val x = dao.operazione(elimina.id) ?: return@withTransaction
+            val altra = x.collegataId?.let { dao.operazione(it) }?.takeIf { it.collegataId == x.id }
+            dao.eliminaOperazioni(listOf(x.id))
+            if (altra == null) return@withTransaction
+            val t = dao.operazione(tieni.id)
+            if (t != null && t.collegataId == null && t.contoValutaId != altra.contoValutaId) {
+                dao.aggiornaOperazione(t.copy(trasferimento = true, voceId = null, contoValutaDestId = altra.contoValutaId, collegataId = altra.id))
+                dao.aggiornaOperazione(altra.copy(contoValutaDestId = t.contoValutaId, collegataId = t.id))
+            } else {
+                dao.aggiornaOperazione(altra.copy(collegataId = null))
+            }
+        }
+        messaggio("Doppione eliminato")
+    }
+
+    // --- Cambi mensili ---
+
+    /** Imposta il cambio CHF/EUR del [mese] ([chfEur] null: torna a quello calcolato). */
+    fun salvaCambio(mese: YearMonth, chfEur: Double?) = viewModelScope.launch {
+        if (chfEur == null) dao.eliminaCambio(meseInTesto(mese)) else dao.salvaCambio(Cambio(meseInTesto(mese), chfEur))
     }
 
     // --- Anagrafica conti ---

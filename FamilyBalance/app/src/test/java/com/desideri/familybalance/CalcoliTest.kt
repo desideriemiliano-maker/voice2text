@@ -4,6 +4,7 @@ import com.desideri.familybalance.data.ContoValuta
 import com.desideri.familybalance.data.Operazione
 import com.desideri.familybalance.data.Voce
 import com.desideri.familybalance.logica.Calcoli
+import com.desideri.familybalance.logica.Cambi
 import com.desideri.familybalance.logica.StatoMese
 import com.desideri.familybalance.logica.testoInCent
 import org.junit.Assert.assertEquals
@@ -60,7 +61,7 @@ class CalcoliTest {
             Operazione(id = 2, contoValutaId = 1, data = giorno(2026, 8, 5), importoCent = -50_000, voceId = 2),
             Operazione(id = 3, contoValutaId = 1, data = giorno(2026, 8, 10), importoCent = -10_000, voceId = 3)
         )
-        val righe = Calcoli.bilancio(conti, listOf(stipendio, spesa, bolletta), ops, 1.0, 2000.0, YearMonth.of(2026, 9), mesiFuturi = 1)
+        val righe = Calcoli.bilancio(conti, listOf(stipendio, spesa, bolletta), ops, Cambi.fisso(1.0), 2000.0, YearMonth.of(2026, 9), mesiFuturi = 1)
 
         assertEquals(3, righe.size)
         val agosto = righe[0]
@@ -87,7 +88,7 @@ class CalcoliTest {
         val voce = Voce(id = 1, tipo = "Bollette", sottotipo = "Affitto", ricorrente = true, mesiRicorrenza = 1, meseInizio = "2026-01", importoPrevistoCent = 70_000)
         val ops = listOf(Operazione(id = 1, contoValutaId = 1, data = giorno(2026, 9, 3), importoCent = -70_000, voceId = 1))
         val mesi = listOf(YearMonth.of(2026, 9), YearMonth.of(2026, 10))
-        val risultato = Calcoli.ricorrenti(mesi, listOf(voce), conti, ops, cambioChfEur = 1.1, oggi = YearMonth.of(2026, 9))
+        val risultato = Calcoli.ricorrenti(mesi, listOf(voce), conti, ops, cambi = Cambi.fisso(1.1), oggi = YearMonth.of(2026, 9))
 
         val settembre = risultato[0].righe.single()
         assertEquals(-770.0, settembre.pagato, 0.001)

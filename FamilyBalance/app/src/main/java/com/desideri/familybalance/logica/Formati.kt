@@ -60,3 +60,6 @@ fun testoInMese(testo: String): YearMonth? {
         null
     }
 }
+
+/** YearMonth in "yyyy-MM" (formato salvato nel database). */
+fun meseInTesto(mese: YearMonth): String = mese.toString()

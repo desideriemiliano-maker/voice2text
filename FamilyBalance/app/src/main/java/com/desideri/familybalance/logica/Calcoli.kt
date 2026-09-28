@@ -37,6 +37,12 @@ data class MeseRicorrenti(
  * - [saldoFine]: saldo reale complessivo a fine mese (per il mese corrente: ad oggi).
  * - [saldoPrevisto]: per mese corrente e futuri, saldo del mese precedente + target di risparmio
  *   + spese ricorrenti (pagate e previste) del mese.
+ * - [cambioChfEur]: cambio usato per il mese; le operazioni in CHF del mese sono convertite con questo
+ *   e i saldi CHF a fine mese sono valutati con questo.
+ * - [effettoCambio]: variazione del saldo dovuta solo al cambio: saldi CHF di inizio mese per la
+ *   differenza di cambio rispetto al mese precedente.
+ * - [cambioSpostamenti]: differenza tra EUR e CHF (al cambio del mese) negli spostamenti CHF↔EUR
+ *   collegati: il costo (o guadagno) del cambio applicato dalla banca.
  */
 data class RigaBilancio(
     val mese: YearMonth,
@@ -47,7 +53,10 @@ data class RigaBilancio(
     val ricorrentiPrevisti: Double,
     val saldoFine: Double?,
     val saldoPrevisto: Double?,
-    val target: Double
+    val target: Double,
+    val cambioChfEur: Double = 1.0,
+    val effettoCambio: Double = 0.0,
+    val cambioSpostamenti: Double = 0.0
 ) {
     val risparmio: Double get() = entrate + correnti
     val deltaTarget: Double get() = risparmio - target
@@ -89,7 +98,7 @@ object Calcoli {
         vociRicorrenti: Collection<Voce>,
         operazioni: List<Operazione>,
         valutaDi: Map<Long, String>,
-        cambioChfEur: Double
+        cambi: Cambi
     ): Map<Long, Map<YearMonth, Double>> {
         val ids = vociRicorrenti.map { it.id }.toHashSet()
         val storico = HashMap<Long, HashMap<YearMonth, Double>>()
@@ -98,7 +107,7 @@ object Calcoli {
             if (op.trasferimento || voceId !in ids) continue
             val perMese = storico.getOrPut(voceId) { HashMap() }
             val m = mese(op.data)
-            perMese[m] = (perMese[m] ?: 0.0) + inEuro(op.importoCent, valutaDi[op.contoValutaId] ?: Valute.EUR, cambioChfEur)
+            perMese[m] = (perMese[m] ?: 0.0) + cambi.inEuro(op.importoCent, valutaDi[op.contoValutaId] ?: Valute.EUR, m)
         }
         return storico
     }
@@ -123,12 +132,12 @@ object Calcoli {
         voci: List<Voce>,
         contiValuta: List<ContoValuta>,
         operazioni: List<Operazione>,
-        cambioChfEur: Double,
+        cambi: Cambi,
         oggi: YearMonth
     ): List<MeseRicorrenti> {
         val vociRicorrenti = voci.filter { it.ricorrente && !it.entrata }
         val valutaDi = contiValuta.associate { it.id to it.valuta }
-        val storico = storicoRicorrenti(vociRicorrenti, operazioni, valutaDi, cambioChfEur)
+        val storico = storicoRicorrenti(vociRicorrenti, operazioni, valutaDi, cambi)
         val previsioni = vociRicorrenti.associate { it.id to previsione(it, storico[it.id], oggi) }
         return mesi.map { m ->
             val righe = vociRicorrenti.mapNotNull { voce ->
@@ -144,43 +153,60 @@ object Calcoli {
         contiValuta: List<ContoValuta>,
         voci: List<Voce>,
         operazioni: List<Operazione>,
-        cambioChfEur: Double,
+        cambi: Cambi,
         targetEuro: Double,
         oggi: YearMonth,
         mesiFuturi: Int = 12
     ): List<RigaBilancio> {
         val valutaDi = contiValuta.associate { it.id to it.valuta }
         val vociPerId = voci.associateBy { it.id }
-        val movimento = HashMap<YearMonth, Double>()
+        val operazioniPerId = operazioni.associateBy { it.id }
+        // Movimenti del mese per valuta (centesimi): i saldi CHF si valutano al cambio di ogni mese.
+        val movimentoEur = HashMap<YearMonth, Long>()
+        val movimentoChf = HashMap<YearMonth, Long>()
         val entrate = HashMap<YearMonth, Double>()
         val correnti = HashMap<YearMonth, Double>()
         val ricorrentiPagati = HashMap<YearMonth, Double>()
+        val cambioSpostamenti = HashMap<YearMonth, Double>()
         var primoMese = oggi
 
         for (op in operazioni) {
             val m = mese(op.data)
             if (m < primoMese) primoMese = m
-            val eur = inEuro(op.importoCent, valutaDi[op.contoValutaId] ?: Valute.EUR, cambioChfEur)
-            movimento[m] = (movimento[m] ?: 0.0) + eur
+            val valuta = valutaDi[op.contoValutaId] ?: Valute.EUR
+            val movimento = if (valuta == Valute.CHF) movimentoChf else movimentoEur
+            movimento[m] = (movimento[m] ?: 0L) + op.importoCent
+            val eur = cambi.inEuro(op.importoCent, valuta, m)
             val destinazione = when (classifica(op, op.voceId?.let { vociPerId[it] })) {
                 Classe.ENTRATA -> entrate
                 Classe.CORRENTE -> correnti
                 Classe.RICORRENTE -> ricorrentiPagati
-                Classe.TRASFERIMENTO -> null
+                Classe.TRASFERIMENTO -> {
+                    val altra = op.collegataId?.let { operazioniPerId[it] }
+                    if (altra != null && valutaDi[altra.contoValutaId] != valuta) cambioSpostamenti else null
+                }
             }
             if (destinazione != null) destinazione[m] = (destinazione[m] ?: 0.0) + eur
         }
 
         val ultimoMese = oggi.plusMonths(mesiFuturi.toLong())
         val mesi = generateSequence(primoMese) { it.plusMonths(1) }.takeWhile { it <= ultimoMese }.toList()
-        val previsti = ricorrenti(mesi.filter { it >= oggi }, voci, contiValuta, operazioni, cambioChfEur, oggi)
+        val previsti = ricorrenti(mesi.filter { it >= oggi }, voci, contiValuta, operazioni, cambi, oggi)
             .associate { it.mese to it.totalePrevisto }
 
-        var saldo = contiValuta.sumOf { inEuro(it.saldoInizialeCent, it.valuta, cambioChfEur) }
+        var saldoEurCent = contiValuta.filter { it.valuta != Valute.CHF }.sumOf { it.saldoInizialeCent }
+        var saldoChfCent = contiValuta.filter { it.valuta == Valute.CHF }.sumOf { it.saldoInizialeCent }
+        var cambioPrecedente = cambi.chfEur(primoMese)
+        var saldo = saldoEurCent / 100.0 + saldoChfCent / 100.0 * cambioPrecedente
         var saldoPrecedente = saldo
         var saldoPrevistoPrecedente = saldo
         val righe = mesi.map { m ->
-            saldo += movimento[m] ?: 0.0
+            val cambio = cambi.chfEur(m)
+            val effettoCambio = saldoChfCent / 100.0 * (cambio - cambioPrecedente)
+            saldoEurCent += movimentoEur[m] ?: 0L
+            saldoChfCent += movimentoChf[m] ?: 0L
+            saldo = saldoEurCent / 100.0 + saldoChfCent / 100.0 * cambio
+            cambioPrecedente = cambio
             val stato = when {
                 m < oggi -> StatoMese.PASSATO
                 m == oggi -> StatoMese.CORRENTE
@@ -202,7 +228,10 @@ object Calcoli {
                 ricorrentiPrevisti = previstiMese,
                 saldoFine = if (stato == StatoMese.FUTURO) null else saldo,
                 saldoPrevisto = saldoPrevisto,
-                target = targetEuro
+                target = targetEuro,
+                cambioChfEur = cambio,
+                effettoCambio = if (stato == StatoMese.FUTURO) 0.0 else effettoCambio,
+                cambioSpostamenti = cambioSpostamenti[m] ?: 0.0
             )
             saldoPrecedente = saldo
             if (saldoPrevisto != null) saldoPrevistoPrecedente = saldoPrevisto
@@ -210,6 +239,6 @@ object Calcoli {
         }
         // I mesi passati senza alcuna operazione non si mostrano: una data errata molto indietro nel
         // tempo produrrebbe altrimenti anni di righe vuote.
-        return righe.filter { it.stato != StatoMese.PASSATO || movimento.containsKey(it.mese) }
+        return righe.filter { it.stato != StatoMese.PASSATO || movimentoEur.containsKey(it.mese) || movimentoChf.containsKey(it.mese) }
     }
 }
