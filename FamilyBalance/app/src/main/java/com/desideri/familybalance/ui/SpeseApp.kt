@@ -154,6 +154,7 @@ private fun SchermataPrincipale(vm: SpeseViewModel, sezione: Sezione, onSezione:
                             HorizontalDivider()
                             VoceMenu("Riscontro spostamenti", Icons.AutoMirrored.Filled.CompareArrows) { menuAperto = false; onApri(Schermata.Riscontro) }
                             VoceMenu("Cambi CHF/EUR", Icons.Filled.CurrencyExchange) { menuAperto = false; onApri(Schermata.Cambi) }
+                            HorizontalDivider()
                             VoceMenu("Backup Google Drive", Icons.Filled.CloudUpload) { menuAperto = false; onApri(Schermata.Backup) }
                             VoceMenu("Impostazioni", Icons.Filled.Settings) { menuAperto = false; onApri(Schermata.Impostazioni) }
                             VoceMenu("Registro Gemini", Icons.Filled.History) { menuAperto = false; mostraRegistro = true }
