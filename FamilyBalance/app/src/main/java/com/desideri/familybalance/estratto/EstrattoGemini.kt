@@ -36,6 +36,8 @@ private const val PROMPT_ESTRATTO =
         "descrizione (breve, massimo 150 caratteri: il testo descrittivo del movimento così come appare, esercente, " +
         "beneficiario o causale; se ci " +
         "sono più colonne descrittive, es. Descrizione e Dettaglio, uniscile nell'ordine separate da \" · \"). " +
+        "riga (numero intero: il numero tra parentesi quadre all'inizio della riga da cui proviene il movimento, " +
+        "0 se le righe non sono numerate). " +
         "Le date nei fogli di calcolo sono già convertite in formato YYYY-MM-DD."
 
 /** Movimenti letti da un estratto conto, con gli eventuali problemi (blocchi non letti o incompleti). */
@@ -59,7 +61,9 @@ data class MovimentoEstratto(
     val descrizione: String,
     val dataOperazione: LocalDate? = null,
     val dataContabile: LocalDate? = null,
-    val dataValuta: LocalDate? = null
+    val dataValuta: LocalDate? = null,
+    /** Numero della riga del file da cui proviene (per mantenere l'ordine dell'estratto conto). */
+    val rigaFile: Int? = null
 ) {
     fun dataDi(tipo: TipoData): LocalDate? = when (tipo) {
         TipoData.OPERAZIONE -> dataOperazione
@@ -83,10 +87,11 @@ private fun schemaMovimenti(): Schema {
                 "dataContabile" to Schema.builder().type(Type.Known.STRING).description("data contabile, YYYY-MM-DD, o vuota").build(),
                 "valuta" to Schema.builder().type(Type.Known.STRING).description("codice valuta ISO, es. EUR").build(),
                 "importo" to Schema.builder().type(Type.Known.NUMBER).description("importo con segno, negativo per le uscite").build(),
-                "descrizione" to Schema.builder().type(Type.Known.STRING).description("descrizione del movimento").build()
+                "descrizione" to Schema.builder().type(Type.Known.STRING).description("descrizione del movimento").build(),
+                "riga" to Schema.builder().type(Type.Known.INTEGER).description("numero tra [ ] della riga di origine, 0 se assente").build()
             )
         )
-        .required("dataOperazione", "dataContabile", "dataValuta", "valuta", "importo", "descrizione")
+        .required("dataOperazione", "dataContabile", "dataValuta", "valuta", "importo", "descrizione", "riga")
         .build()
     return Schema.builder()
         .type(Type.Known.OBJECT)
@@ -167,7 +172,12 @@ class EstrattoGemini(private val apiKey: String, private val registro: RegistroP
             !it.startsWith("Nota:") && RIGA_INTESTAZIONE.containsMatchIn(it) && !DATA_NEL_TESTO.containsMatchIn(it)
         }
         val intestazione = if (indiceIntestazione >= 0) righe.take(indiceIntestazione + 1) else emptyList()
-        val blocchi = righe.drop(intestazione.size).chunked(RIGHE_PER_BLOCCO).ifEmpty { listOf(emptyList()) }
+        // Ogni riga di movimenti è numerata ("[N] ..."): Gemini restituisce il numero e l'elenco viene
+        // riportato all'ordine del file, anche per più movimenti con la stessa data.
+        val blocchi = righe.drop(intestazione.size)
+            .mapIndexed { i, riga -> "[${i + 1}] $riga" }
+            .chunked(RIGHE_PER_BLOCCO)
+            .ifEmpty { listOf(emptyList()) }
 
         /** Un blocco (o parte di blocco): se la risposta è interrotta lo si divide a metà e si riprova. */
         suspend fun elaboraBlocco(blocco: List<String>, etichetta: String): List<MovimentoEstratto> {
@@ -211,7 +221,8 @@ class EstrattoGemini(private val apiKey: String, private val registro: RegistroP
             }
         }
         if (riusciti == 0) throw ultimoErrore ?: IllegalStateException("Nessun movimento letto")
-        return EsitoEstrazione(movimenti, avvisi)
+        // Ordine delle righe del file (ordinamento stabile: senza numero restano nell'ordine di arrivo).
+        return EsitoEstrazione(movimenti.sortedWith(compareBy(nullsLast<Int>()) { it.rigaFile }), avvisi)
     }
 
     /** [chiama] con fino a 2 nuovi tentativi (attese crescenti) per gli errori temporanei di Gemini. */
@@ -297,7 +308,8 @@ class EstrattoGemini(private val apiKey: String, private val registro: RegistroP
                 descrizione = o.optString("descrizione").trim().replace(Regex("\\s+"), " ").take(MAX_DESCRIZIONE),
                 dataOperazione = dataOperazione,
                 dataContabile = dataContabile,
-                dataValuta = dataValuta
+                dataValuta = dataValuta,
+                rigaFile = o.optInt("riga", 0).takeIf { it > 0 }
             )
         }.filter { it.importoCent != 0L }
         return movimenti to completa
@@ -342,7 +354,9 @@ data class RigaEstratto(
     /** Per [Presenza.SIMILE]: giorni di distanza dell'operazione più vicina. */
     val giorniDistanza: Int = 0,
     /** Operazione del database che corrisponde al movimento (per aggiornarne la data), se presente. */
-    val esistente: com.desideri.familybalance.data.Operazione? = null
+    val esistente: com.desideri.familybalance.data.Operazione? = null,
+    /** Ordine nella giornata dalla posizione nel file (crescente = più vecchia). */
+    val ordine: Long = 0
 ) {
     /** Più associazioni corrispondono alla descrizione: l'utente deve scegliere. */
     val piuCandidati: Boolean get() = candidate.size > 1
@@ -368,8 +382,15 @@ data class ImportEstratto(
     val simili: Int get() = righe.count { it.presenza == Presenza.SIMILE }
 }
 
-/** Nuova data per un'operazione già presente (l'import aggiorna solo la data). */
-data class AggiornamentoData(val operazione: com.desideri.familybalance.data.Operazione, val nuovaData: LocalDate)
+/**
+ * Aggiornamento di un'operazione già presente: [nuovaData] se l'utente ha scelto di cambiarla (null =
+ * data invariata) e [ordine] dell'estratto conto, per rispettarne l'ordine nella giornata.
+ */
+data class AggiornamentoData(
+    val operazione: com.desideri.familybalance.data.Operazione,
+    val nuovaData: LocalDate?,
+    val ordine: Long?
+)
 
 /** Scelta dell'utente per un movimento: data, tipo/sottotipo, o "Spostamento" verso [destinazioneId]. */
 data class SceltaEstratto(

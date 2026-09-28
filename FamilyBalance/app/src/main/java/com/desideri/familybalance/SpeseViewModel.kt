@@ -367,8 +367,13 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
                         ?.also { usate += it.first.id }
                 }
             }
+            // Ordine nella giornata dalla posizione nel file: se l'estratto è dal più recente al più
+            // vecchio (caso tipico) l'ordine è invertito, così "crescente" resta "più vecchia prima".
+            val discendente = movimenti.size > 1 &&
+                movimenti.first().tutteLeDate.min() > movimenti.last().tutteLeDate.min()
             val righe = movimenti.mapIndexed { indice, m ->
                 val abbinata = abbinate[indice]
+                val ordine = if (discendente) (movimenti.size - indice).toLong() else (indice + 1).toLong()
                 val presenza = when {
                     abbinata == null -> Presenza.NUOVA
                     abbinata.second == 0L -> Presenza.PRESENTE
@@ -376,7 +381,7 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
                 }
                 RigaEstratto(
                     indice, m, contoDi[indice].id, Associazioni.candidate(m.descrizione, elencoAssociazioni),
-                    presenza, (abbinata?.second ?: 0L).toInt(), abbinata?.first
+                    presenza, (abbinata?.second ?: 0L).toInt(), abbinata?.first, ordine
                 )
             }
             if (righe.isEmpty()) {
@@ -407,12 +412,15 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
         var importate = 0
         var nuoveVoci = 0
         db.withTransaction {
-            // Operazioni già presenti: si aggiorna solo la data (e quella della contro-operazione collegata).
+            // Operazioni già presenti: si aggiornano solo la data (se scelto) e l'ordine dell'estratto conto,
+            // anche sulla contro-operazione collegata di uno spostamento.
             for (a in aggiornamenti) {
                 val op = dao.operazione(a.operazione.id) ?: continue
-                val giorno = a.nuovaData.toEpochDay()
-                dao.aggiornaOperazione(op.copy(data = giorno))
-                op.collegataId?.let { dao.operazione(it) }?.let { dao.aggiornaOperazione(it.copy(data = giorno)) }
+                val giorno = a.nuovaData?.toEpochDay() ?: op.data
+                dao.aggiornaOperazione(op.copy(data = giorno, ordine = a.ordine ?: op.ordine))
+                op.collegataId?.let { dao.operazione(it) }?.let {
+                    dao.aggiornaOperazione(it.copy(data = giorno, ordine = a.ordine ?: it.ordine))
+                }
             }
             val voci = dao.voci().toMutableList()
             suspend fun voceId(tipo: String, sottotipo: String?): Long {
@@ -442,7 +450,8 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
                         importoCent = m.importoCent,
                         trasferimento = true,
                         contoValutaDestId = dest,
-                        note = note
+                        note = note,
+                        ordine = scelta.riga.ordine
                     )
                     val id = dao.inserisciOperazione(op)
                     // Contro-operazione solo nella stessa valuta: con un cambio l'importo accreditato non è noto.
@@ -459,7 +468,8 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
                             data = scelta.data.toEpochDay(),
                             importoCent = m.importoCent,
                             voceId = voceId(scelta.tipo.trim(), scelta.sottotipo?.trim()?.ifEmpty { null }),
-                            note = note
+                            note = note,
+                            ordine = scelta.riga.ordine
                         )
                     )
                 }
@@ -468,7 +478,8 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
         }
         messaggio(
             "Importate $importate operazioni dall'estratto conto" +
-                (if (aggiornamenti.isNotEmpty()) ", aggiornate le date di ${aggiornamenti.size}" else "") +
+                aggiornamenti.count { it.nuovaData != null }.let { if (it > 0) ", aggiornate le date di $it" else "" } +
+                (if (aggiornamenti.isNotEmpty()) ", ordine aggiornato per ${aggiornamenti.size} già presenti" else "") +
                 (if (nuoveVoci > 0) " ($nuoveVoci nuove voci in anagrafica)" else "")
         )
     }

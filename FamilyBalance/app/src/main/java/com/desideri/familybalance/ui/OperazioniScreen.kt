@@ -92,7 +92,8 @@ fun OperazioniScreen(vm: SpeseViewModel, contoValutaId: Long, onIndietro: () -> 
     val righe = remember(dati.operazioni, cv) {
         var saldo = cv.saldoInizialeCent
         dati.operazioni.filter { it.contoValutaId == contoValutaId }
-            .sortedWith(compareBy({ it.data }, { it.id }))
+            // A parità di data: ordine dell'estratto conto (le operazioni senza ordine in coda), poi id.
+            .sortedWith(compareBy({ it.data }, { it.ordine ?: Long.MAX_VALUE }, { it.id }))
             .map { op ->
                 saldo += op.importoCent
                 RigaOperazione(op, saldo)

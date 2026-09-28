@@ -84,7 +84,12 @@ data class Operazione(
     val trasferimento: Boolean = false,
     val contoValutaDestId: Long? = null,
     val collegataId: Long? = null,
-    val note: String? = null
+    val note: String? = null,
+    /**
+     * Ordine tra le operazioni dello stesso giorno (crescente = più vecchia), dalla posizione della
+     * riga nell'estratto conto o nell'Excel importato; null per quelle inserite a mano.
+     */
+    val ordine: Long? = null
 )
 
 /**

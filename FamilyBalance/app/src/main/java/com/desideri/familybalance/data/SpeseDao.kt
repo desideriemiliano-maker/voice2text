@@ -64,7 +64,7 @@ interface SpeseDao {
     suspend fun contaOperazioniVoce(voceId: Long): Int
 
     // --- Operazioni ---
-    @Query("SELECT * FROM operazioni ORDER BY data DESC, id DESC")
+    @Query("SELECT * FROM operazioni ORDER BY data DESC, ordine IS NULL, ordine DESC, id DESC")
     fun operazioniFlow(): Flow<List<Operazione>>
 
     @Query("SELECT * FROM operazioni WHERE id = :id")

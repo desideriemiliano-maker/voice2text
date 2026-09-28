@@ -249,14 +249,17 @@ class ImportatoreExcel(private val db: AppDatabase) {
                         data = r.data.toEpochDay(),
                         importoCent = r.importoCent,
                         trasferimento = true,
-                        contoValutaDestId = dest?.let { idContoValuta[it] }
+                        contoValutaDestId = dest?.let { idContoValuta[it] },
+                        ordine = indice.toLong()
                     )
                 } else {
                     Operazione(
                         contoValutaId = idContoValuta.getValue(propria),
                         data = r.data.toEpochDay(),
                         importoCent = r.importoCent,
-                        voceId = chiaviRighe[indice]?.let { idVoce[it] }
+                        voceId = chiaviRighe[indice]?.let { idVoce[it] },
+                        // Ordine delle righe nei fogli (inserite in ordine cronologico).
+                        ordine = indice.toLong()
                     )
                 }
             }

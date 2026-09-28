@@ -126,6 +126,18 @@ fun ImportEstrattoDialog(vm: SpeseViewModel, dati: DatiApp, importazione: Import
     fun valida(stato: StatoRiga) = stato.includi && stato.tipo.isNotBlank() && (!stato.spostamento || stato.destinazione != null)
     val daImportare = stati.count { valida(it) }
     val dateDaAggiornare = importazione.righe.indices.filter { stati[it].aggiornaData && dataDiversa(importazione.righe[it], tipoData) }
+
+    /**
+     * Operazioni esistenti da aggiornare: i già presenti (e i possibili doppioni confermati con la
+     * casella) ricevono l'ordine dell'estratto conto e, se richiesto, la nuova data.
+     */
+    fun aggiornamenti(): List<AggiornamentoData> = importazione.righe.indices.mapNotNull { i ->
+        val r = importazione.righe[i]
+        val esistente = r.esistente ?: return@mapNotNull null
+        if (r.presenza != Presenza.PRESENTE && !stati[i].aggiornaData) return@mapNotNull null
+        val nuovaData = if (i in dateDaAggiornare) r.movimento.data(tipoData) else null
+        AggiornamentoData(esistente, nuovaData, r.ordine)
+    }
     val senzaTipo = stati.count { it.includi && !valida(it) }
     val conto = dati.conti.firstOrNull { it.id == importazione.contoId }?.nome ?: "conto"
 
@@ -174,13 +186,10 @@ fun ImportEstrattoDialog(vm: SpeseViewModel, dati: DatiApp, importazione: Import
                                         destinazioneId = if (s.spostamento) s.destinazione else null
                                     )
                                 },
-                                dateDaAggiornare.map { i ->
-                                    val r = importazione.righe[i]
-                                    AggiornamentoData(r.esistente!!, r.movimento.data(tipoData))
-                                }
+                                aggiornamenti()
                             )
                         },
-                        enabled = daImportare > 0 || dateDaAggiornare.isNotEmpty()
+                        enabled = daImportare > 0 || aggiornamenti().isNotEmpty()
                     ) { Text("Importa") }
                 }
                 Row(
@@ -301,7 +310,11 @@ private fun CardMovimento(
         Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Checkbox(checked = stato.includi, onCheckedChange = { onStato(stato.copy(includi = it)) })
-                Text(formattaData(m.data(tipoData).toEpochDay()), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(formattaData(m.data(tipoData).toEpochDay()), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                    // Numero progressivo del movimento nel file, per il riscontro con l'Excel.
+                    m.rigaFile?.let { Text("movimento n. $it del file", style = MaterialTheme.typography.labelSmall) }
+                }
                 TestoImporto(m.importoCent / 100.0, m.valuta, grassetto = true)
             }
             // Tutte le date del movimento; se manca quella scelta si usa la prima disponibile.
