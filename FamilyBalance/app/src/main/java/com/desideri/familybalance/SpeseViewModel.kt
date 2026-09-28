@@ -136,13 +136,16 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
     // --- Operazioni ---
 
     /**
-     * Salva un'operazione. Per uno spostamento inserito dall'app crea (o aggiorna) la
-     * contro-operazione sul conto di destinazione con importo [importoDestinazioneCent] (o l'opposto
-     * dell'importo, se nella stessa valuta). Per gli spostamenti importati senza contro-operazione
-     * collegata si cerca la riga speculare (vedi [Spostamenti.trovaControparte]) e la si collega,
-     * spostandola sul nuovo conto di destinazione se è cambiato.
+     * Salva un'operazione. Per uno spostamento la contro-operazione sul conto di destinazione è:
+     * - la riga esistente [controparteId] scelta dall'utente: se è già quella collegata viene
+     *   aggiornata con l'importo [importoDestinazioneCent], altrimenti viene collegata così com'è (il
+     *   suo importo fa fede) e l'eventuale vecchia contro-operazione collegata viene eliminata;
+     * - senza scelta: la contro-operazione collegata, o la riga speculare di uno spostamento importato
+     *   (vedi [Spostamenti.trovaControparte]) sul vecchio conto di destinazione, spostata sul nuovo;
+     *   se non ce n'è una viene creata con importo [importoDestinazioneCent] (o l'opposto dell'importo,
+     *   se nella stessa valuta).
      */
-    fun salvaOperazione(op: Operazione, importoDestinazioneCent: Long?) = viewModelScope.launch {
+    fun salvaOperazione(op: Operazione, importoDestinazioneCent: Long?, controparteId: Long? = null) = viewModelScope.launch {
         db.withTransaction {
             val precedente = if (op.id != 0L) dao.operazione(op.id) else null
             val collegata = precedente?.collegataId?.let { dao.operazione(it) }
@@ -157,46 +160,38 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
                     contoValutaDestId = op.contoValutaId,
                     note = op.note
                 )
-                when {
-                    precedente == null -> {
-                        val id = dao.inserisciOperazione(op.copy(id = 0, voceId = null, collegataId = null))
-                        val idControparte = dao.inserisciOperazione(controparte.copy(collegataId = id))
-                        dao.aggiornaOperazione(op.copy(id = id, voceId = null, collegataId = idControparte))
-                    }
-                    collegata != null -> {
-                        dao.aggiornaOperazione(controparte.copy(id = collegata.id, collegataId = op.id))
-                        dao.aggiornaOperazione(op.copy(voceId = null, collegataId = collegata.id))
-                    }
-                    precedente?.trasferimento == false -> {
-                        val idControparte = dao.inserisciOperazione(controparte.copy(collegataId = op.id))
-                        dao.aggiornaOperazione(op.copy(voceId = null, collegataId = idControparte))
-                    }
-                    else -> {
-                        // Spostamento non collegato (importato): la riga corrispondente sul vecchio conto
-                        // di destinazione viene spostata sul nuovo e aggiornata; se non c'è ma ne esiste già
-                        // una sul nuovo conto la si collega; altrimenti la contro-operazione viene creata.
-                        val prec = requireNotNull(precedente)
-                        val tutte = dao.operazioni()
-                        val valute = dao.contiValuta().associate { it.id to it.valuta }
-                        val valutaDi = { id: Long -> valute[id] }
-                        val sulVecchio = Spostamenti.trovaControparte(prec, prec.contoValutaDestId, tutte, valutaDi)
-                        val sulNuovo = if (sulVecchio == null && prec.contoValutaDestId != dest) {
-                            Spostamenti.trovaControparte(op, dest, tutte, valutaDi)
-                        } else null
-                        val idControparte = when {
-                            sulVecchio != null -> sulVecchio.id.also {
-                                dao.aggiornaOperazione(
-                                    controparte.copy(id = it, collegataId = op.id, note = sulVecchio.note ?: op.note, ordine = sulVecchio.ordine)
-                                )
-                            }
-                            sulNuovo != null -> sulNuovo.id.also {
-                                dao.aggiornaOperazione(sulNuovo.copy(collegataId = op.id, contoValutaDestId = op.contoValutaId))
-                            }
-                            else -> dao.inserisciOperazione(controparte.copy(collegataId = op.id))
-                        }
-                        dao.aggiornaOperazione(op.copy(voceId = null, collegataId = idControparte))
-                    }
+                val scelta = controparteId?.let { dao.operazione(it) }?.takeIf { it.contoValutaId == dest && it.id != op.id }
+                val id = if (precedente == null) dao.inserisciOperazione(op.copy(id = 0, voceId = null, collegataId = null)) else op.id
+
+                /** La riga [x] diventa la contro-operazione: data propria, se quella dello spostamento non è cambiata. */
+                suspend fun aggiornaControparte(x: Operazione): Long {
+                    val data = if (op.data == precedente?.data) x.data else op.data
+                    dao.aggiornaOperazione(
+                        controparte.copy(id = x.id, data = data, collegataId = id, note = x.note ?: op.note, ordine = x.ordine)
+                    )
+                    return x.id
                 }
+
+                val destPrecedente = precedente?.takeIf { it.trasferimento }?.contoValutaDestId
+                val idControparte = when {
+                    scelta != null && scelta.id == collegata?.id -> aggiornaControparte(scelta)
+                    scelta != null -> {
+                        collegata?.let { dao.eliminaOperazioni(listOf(it.id)) }
+                        dao.aggiornaOperazione(
+                            scelta.copy(trasferimento = true, voceId = null, contoValutaDestId = op.contoValutaId, collegataId = id)
+                        )
+                        scelta.id
+                    }
+                    collegata != null -> aggiornaControparte(collegata)
+                    precedente != null && destPrecedente != null && destPrecedente != dest -> {
+                        val valute = dao.contiValuta().associate { it.id to it.valuta }
+                        Spostamenti.trovaControparte(precedente, destPrecedente, dao.operazioni()) { valute[it] }
+                            ?.let { aggiornaControparte(it) }
+                            ?: dao.inserisciOperazione(controparte.copy(collegataId = id))
+                    }
+                    else -> dao.inserisciOperazione(controparte.copy(collegataId = id))
+                }
+                dao.aggiornaOperazione(op.copy(id = id, voceId = null, collegataId = idControparte))
             } else {
                 val semplice = op.copy(trasferimento = false, contoValutaDestId = null, collegataId = null)
                 if (precedente == null) {

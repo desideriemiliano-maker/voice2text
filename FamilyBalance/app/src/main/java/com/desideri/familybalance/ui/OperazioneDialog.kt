@@ -18,6 +18,7 @@ import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -32,6 +33,8 @@ import com.desideri.familybalance.SpeseViewModel
 import com.desideri.familybalance.data.Operazione
 import com.desideri.familybalance.logica.Spostamenti
 import com.desideri.familybalance.logica.centInTesto
+import com.desideri.familybalance.logica.formattaCent
+import com.desideri.familybalance.logica.formattaData
 import com.desideri.familybalance.logica.testoInCent
 import kotlinx.coroutines.launch
 import java.time.LocalDate
@@ -75,6 +78,34 @@ fun OperazioneDialog(vm: SpeseViewModel, dati: DatiApp, contoValutaId: Long, esi
     val altriConti = dati.contiValutaOrdinati.filter { it.id != contoValutaId }
     val valutaDest = destinazione?.let { dati.contiValutaPerId[it]?.valuta }
     val cambioValuta = spostamento && valutaDest != null && valutaDest != valutaPropria
+    val valutaDi = { id: Long -> dati.contiValutaPerId[id]?.valuta }
+
+    // Riga sul conto di destinazione che fa da contro-operazione: proposte quelle compatibili,
+    // preselezionata la collegata o la speculare; senza scelta si sposta la vecchia o se ne crea una.
+    val centForm = testoInCent(importo)?.let { abs(it) } ?: 0L
+    val opForm = Operazione(
+        id = esistente?.id ?: -1L,
+        contoValutaId = contoValutaId,
+        data = data,
+        importoCent = if (entrata) centForm else -centForm,
+        trasferimento = true,
+        contoValutaDestId = destinazione
+    )
+    val candidate = remember(destinazione, data, entrata, dati.operazioni) {
+        Spostamenti.candidate(opForm, collegata, destinazione, dati.operazioni)
+    }
+    var sceltaId by remember(destinazione) {
+        mutableStateOf(Spostamenti.controparteSu(opForm, collegata, destinazione, dati.operazioni, valutaDi)?.id)
+    }
+    val scelta = candidate.firstOrNull { it.id == sceltaId }
+    // Riga che, senza scelta, viene spostata sul nuovo conto (la collegata o la speculare importata).
+    val daSpostare = (collegata ?: speculare)?.takeIf { it.contoValutaId != destinazione }
+    // L'importo nell'altra valuta si chiede solo se la riga non esiste già (o è quella collegata).
+    val chiediImportoDest = cambioValuta && (scelta == null || scelta.id == collegata?.id)
+    LaunchedEffect(sceltaId, destinazione) {
+        val riga = scelta ?: daSpostare?.takeIf { valutaDi(it.contoValutaId) == valutaDest }
+        riga?.let { importoDest = centInTesto(abs(it.importoCent)) }
+    }
 
     fun salva() {
         val cent = testoInCent(importo)?.let { abs(it) }
@@ -83,7 +114,7 @@ fun OperazioneDialog(vm: SpeseViewModel, dati: DatiApp, contoValutaId: Long, esi
         scope.launch {
             if (spostamento) {
                 val dest = destinazione ?: return@launch run { errore = "Scegli il conto di destinazione" }
-                val centDest = if (cambioValuta) {
+                val centDest = if (chiediImportoDest) {
                     testoInCent(importoDest)?.let { abs(it) }?.takeIf { it > 0 } ?: return@launch run { errore = "Importo sul conto di destinazione non valido" }
                 } else {
                     cent
@@ -98,7 +129,7 @@ fun OperazioneDialog(vm: SpeseViewModel, dati: DatiApp, contoValutaId: Long, esi
                     collegataId = esistente?.collegataId,
                     note = note.trim().ifEmpty { null }
                 )
-                vm.salvaOperazione(op, if (entrata) -centDest else centDest)
+                vm.salvaOperazione(op, if (entrata) -centDest else centDest, scelta?.id)
             } else {
                 if (tipo.isBlank()) return@launch run { errore = "Scegli il tipo di spesa" }
                 val voceId = vm.voceId(tipo, sottotipo)
@@ -148,7 +179,32 @@ fun OperazioneDialog(vm: SpeseViewModel, dati: DatiApp, contoValutaId: Long, esi
                         testo = { dati.etichetta(it.id) },
                         onScelta = { destinazione = it.id }
                     )
-                    if (cambioValuta) {
+                    if (destinazione != null && (candidate.isNotEmpty() || daSpostare != null)) {
+                        val nessuna = OpzioneRiga(
+                            null,
+                            when {
+                                daSpostare != null -> "Sposta qui la riga di ${dati.etichetta(daSpostare.contoValutaId)}"
+                                else -> "Crea una nuova riga"
+                            }
+                        )
+                        val opzioni = candidate.map { OpzioneRiga(it, descriviRiga(it, dati, collegata)) } +
+                            listOfNotNull(nessuna.takeIf { collegata == null || collegata.contoValutaId != destinazione })
+                        CampoScelta(
+                            etichetta = "Riga su ${dati.etichetta(destinazione)}",
+                            selezionato = opzioni.firstOrNull { it.op?.id == sceltaId } ?: nessuna,
+                            opzioni = opzioni,
+                            testo = { it.testo },
+                            onScelta = { sceltaId = it.op?.id }
+                        )
+                    }
+                    if (scelta != null && scelta.id != collegata?.id) {
+                        Text(
+                            "La riga scelta viene collegata così com'è: l'importo sull'altro conto è il suo." +
+                                if (collegata != null) " La riga collegata finora su ${dati.etichetta(collegata.contoValutaId)} verrà eliminata." else "",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                    if (chiediImportoDest) {
                         OutlinedTextField(
                             value = importoDest,
                             onValueChange = { importoDest = it },
@@ -156,17 +212,6 @@ fun OperazioneDialog(vm: SpeseViewModel, dati: DatiApp, contoValutaId: Long, esi
                             singleLine = true,
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                             modifier = Modifier.fillMaxWidth()
-                        )
-                    }
-                    if (esistente?.trasferimento == true && collegata == null) {
-                        Text(
-                            if (speculare != null) {
-                                "Riga corrispondente trovata su ${dati.etichetta(speculare.contoValutaId)}: al salvataggio verrà " +
-                                    "collegata e, se cambi conto, spostata sul nuovo."
-                            } else {
-                                "Nessuna riga corrispondente trovata: al salvataggio verrà collegata quella sul conto scelto, se c'è, altrimenti creata."
-                            },
-                            style = MaterialTheme.typography.bodySmall
                         )
                     }
                 } else {
@@ -204,4 +249,15 @@ fun OperazioneDialog(vm: SpeseViewModel, dati: DatiApp, contoValutaId: Long, esi
             onAnnulla = { confermaElimina = false }
         )
     }
+}
+
+/** Opzione della scelta della riga sull'altro conto ([op] null: nessuna riga esistente). */
+private data class OpzioneRiga(val op: Operazione?, val testo: String)
+
+private fun descriviRiga(op: Operazione, dati: DatiApp, collegata: Operazione?): String {
+    val valuta = dati.contiValutaPerId[op.contoValutaId]?.valuta ?: "EUR"
+    val descrizione = op.note ?: op.voceId?.let { dati.vociPerId[it]?.tipo } ?: if (op.trasferimento) "Spostamento" else ""
+    return listOf(formattaData(op.data), formattaCent(op.importoCent, valuta), descrizione)
+        .filter { it.isNotBlank() }
+        .joinToString(" · ") + if (op.id == collegata?.id) " (collegata)" else ""
 }

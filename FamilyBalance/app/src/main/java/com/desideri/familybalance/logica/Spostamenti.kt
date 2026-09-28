@@ -34,4 +34,39 @@ object Spostamenti {
             }
             .minWithOrNull(compareBy({ abs(it.data - op.data) }, { abs(abs(it.importoCent) - abs(op.importoCent)) }))
     }
+
+    /**
+     * La riga sul conto/valuta [destinazioneId] che fa da contro-operazione di [op]: quella già
+     * [collegata] se sta su quel conto, altrimenti la speculare trovata con [trovaControparte].
+     */
+    fun controparteSu(
+        op: Operazione,
+        collegata: Operazione?,
+        destinazioneId: Long?,
+        operazioni: List<Operazione>,
+        valutaDi: (Long) -> String?
+    ): Operazione? =
+        if (collegata != null && collegata.contoValutaId == destinazioneId) collegata
+        else trovaControparte(op, destinazioneId, operazioni, valutaDi)
+
+    /** Distanza massima in giorni delle righe proposte come contro-operazione da scegliere a mano. */
+    const val GIORNI_CANDIDATE = 15L
+
+    /**
+     * Le righe del conto/valuta [destinazioneId] che l'utente può scegliere come contro-operazione di
+     * [op]: segno opposto, non collegate ad altro, entro [GIORNI_CANDIDATE] giorni (più la riga già
+     * [collegata], se sta su quel conto). Prima gli spostamenti, poi per vicinanza di data.
+     */
+    fun candidate(op: Operazione, collegata: Operazione?, destinazioneId: Long?, operazioni: List<Operazione>): List<Operazione> {
+        if (destinazioneId == null) return emptyList()
+        val trovate = operazioni.filter {
+            it.id != op.id && it.contoValutaId == destinazioneId &&
+                (it.id == collegata?.id || (
+                    (it.collegataId == null || it.collegataId == op.id) &&
+                        (it.importoCent > 0) != (op.importoCent > 0) &&
+                        abs(it.data - op.data) <= GIORNI_CANDIDATE
+                    ))
+        }
+        return trovate.sortedWith(compareBy({ it.id != collegata?.id }, { !it.trasferimento }, { abs(it.data - op.data) }))
+    }
 }
