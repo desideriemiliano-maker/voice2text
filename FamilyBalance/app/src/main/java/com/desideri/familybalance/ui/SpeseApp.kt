@@ -37,6 +37,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -143,16 +144,18 @@ private fun SchermataPrincipale(vm: SpeseViewModel, sezione: Sezione, onSezione:
                         DropdownMenu(expanded = menuAperto, onDismissRequest = { menuAperto = false }) {
                             VoceMenu("Anagrafica spese", Icons.AutoMirrored.Filled.List) { menuAperto = false; onApri(Schermata.AnagraficaSpese) }
                             VoceMenu("Anagrafica conti", Icons.Filled.AccountBalanceWallet) { menuAperto = false; onApri(Schermata.AnagraficaConti) }
-                            VoceMenu("Riscontro spostamenti", Icons.AutoMirrored.Filled.CompareArrows) { menuAperto = false; onApri(Schermata.Riscontro) }
-                            VoceMenu("Cambi CHF/EUR", Icons.Filled.CurrencyExchange) { menuAperto = false; onApri(Schermata.Cambi) }
-                            VoceMenu("Impostazioni", Icons.Filled.Settings) { menuAperto = false; onApri(Schermata.Impostazioni) }
-                            VoceMenu("Backup Google Drive", Icons.Filled.CloudUpload) { menuAperto = false; onApri(Schermata.Backup) }
+                            VoceMenu("Anagrafica associazioni", Icons.Filled.Link) { menuAperto = false; onApri(Schermata.AnagraficaAssociazioni) }
+                            HorizontalDivider()
                             VoceMenu("Importa estratto conto", Icons.AutoMirrored.Filled.ReceiptLong) {
                                 menuAperto = false
                                 sceltaEstratto.launch(arrayOf("*/*"))
                             }
-                            VoceMenu("Anagrafica associazioni", Icons.Filled.Link) { menuAperto = false; onApri(Schermata.AnagraficaAssociazioni) }
                             VoceMenu("Importa da Excel", Icons.Filled.FileOpen) { menuAperto = false; confermaImport = true }
+                            HorizontalDivider()
+                            VoceMenu("Riscontro spostamenti", Icons.AutoMirrored.Filled.CompareArrows) { menuAperto = false; onApri(Schermata.Riscontro) }
+                            VoceMenu("Cambi CHF/EUR", Icons.Filled.CurrencyExchange) { menuAperto = false; onApri(Schermata.Cambi) }
+                            VoceMenu("Backup Google Drive", Icons.Filled.CloudUpload) { menuAperto = false; onApri(Schermata.Backup) }
+                            VoceMenu("Impostazioni", Icons.Filled.Settings) { menuAperto = false; onApri(Schermata.Impostazioni) }
                             VoceMenu("Registro Gemini", Icons.Filled.History) { menuAperto = false; mostraRegistro = true }
                             VoceMenu("Versioni", Icons.Filled.Info) { menuAperto = false; mostraVersioni = true }
                         }
