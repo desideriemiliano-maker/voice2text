@@ -308,6 +308,32 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
         messaggio("Operazione eliminata")
     }
 
+    /**
+     * Risolve un gruppo di doppioni tenendo [tieni] ed eliminando [elimina]. Se [tieni] non è
+     * collegata e una delle eliminate lo era a una riga sull'altro conto, il collegamento passa a
+     * [tieni] (che diventa uno spostamento); le altre righe collegate alle eliminate restano, scollegate.
+     */
+    fun risolviDoppioni(tieni: Operazione, elimina: List<Operazione>) = viewModelScope.launch {
+        db.withTransaction {
+            var t = dao.operazione(tieni.id) ?: return@withTransaction
+            for (e in elimina) {
+                if (e.id == t.id) continue
+                val x = dao.operazione(e.id) ?: continue
+                val altra = x.collegataId?.let { dao.operazione(it) }?.takeIf { it.collegataId == x.id }
+                dao.eliminaOperazioni(listOf(x.id))
+                if (altra == null) continue
+                if (t.collegataId == null && altra.contoValutaId != t.contoValutaId) {
+                    t = t.copy(trasferimento = true, voceId = null, contoValutaDestId = altra.contoValutaId, collegataId = altra.id)
+                    dao.aggiornaOperazione(t)
+                    dao.aggiornaOperazione(altra.copy(contoValutaDestId = t.contoValutaId, collegataId = t.id))
+                } else {
+                    dao.aggiornaOperazione(altra.copy(collegataId = null))
+                }
+            }
+        }
+        messaggio(if (elimina.size == 1) "Eliminato 1 doppione" else "Eliminati ${elimina.size} doppioni")
+    }
+
     /** Toglie il collegamento di [op] (e quello reciproco della riga collegata). */
     fun scollegaSpostamento(op: Operazione) = viewModelScope.launch {
         db.withTransaction {

@@ -1,6 +1,8 @@
 package com.desideri.familybalance.ui
 
 import androidx.compose.foundation.clickable
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.material3.Checkbox
 import com.desideri.familybalance.logica.Riscontro
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.rememberScrollState
@@ -159,39 +161,16 @@ fun RiscontroScreen(vm: SpeseViewModel, onIndietro: () -> Unit) {
         problemi?.firstOrNull { it.tipo == TipoProblema.SENZA_CONTROPARTE && it.operazione.id == id }
     }
     dettaglioSimili?.let { p ->
-        AlertDialog(
-            onDismissRequest = { dettaglioSimiliId = null },
-            title = { Text("Possibili doppioni") },
-            text = {
-                Column(modifier = Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Spostamento senza riga corrispondente:", style = MaterialTheme.typography.labelLarge)
-                    DettaglioOperazione(p.operazione, dati)
-                    Text(
-                        "Operazioni dello stesso conto con lo stesso importo entro ${Riscontro.GIORNI_SIMILI} giorni:",
-                        style = MaterialTheme.typography.labelLarge,
-                        modifier = Modifier.padding(top = 8.dp)
-                    )
-                    if (p.simili.isEmpty()) Text("Nessuna (già eliminate).", style = MaterialTheme.typography.bodySmall)
-                    p.simili.forEach { s ->
-                        HorizontalDivider()
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                DettaglioOperazione(s, dati, giorni = abs(s.data - p.operazione.data))
-                            }
-                            IconButton(onClick = { daEliminare = s }) {
-                                Icon(Icons.Filled.Delete, contentDescription = "Elimina questo doppione", tint = MaterialTheme.colorScheme.error)
-                            }
-                        }
-                    }
-                }
+        DoppioniDialog(
+            p, dati,
+            onApplica = { tieni, elimina ->
+                val collegataDopo = tieni.collegataId != null || elimina.any { it.collegataId != null }
+                if (elimina.isNotEmpty()) vm.risolviDoppioni(tieni, elimina)
+                dettaglioSimiliId = null
+                // Se la riga tenuta resta senza collegamento si propone subito di associarla.
+                if (!collegataDopo) daAssociare = tieni
             },
-            confirmButton = {
-                TextButton(onClick = {
-                    daEliminare = p.operazione
-                    dettaglioSimiliId = null
-                }) { Text("Elimina lo spostamento", color = MaterialTheme.colorScheme.error) }
-            },
-            dismissButton = { TextButton(onClick = { dettaglioSimiliId = null }) { Text("Chiudi") } }
+            onChiudi = { dettaglioSimiliId = null }
         )
     }
     daEliminare?.let { op ->
@@ -406,4 +385,72 @@ private fun DettaglioOperazione(op: Operazione, dati: DatiApp, giorni: Long? = n
         )
         op.note?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
     }
+}
+
+/**
+ * Possibili doppioni di uno spostamento senza riga corrispondente: lo spostamento e le operazioni
+ * dello stesso conto e importo a pochi giorni. Si sceglie quale tenere (e collegare: prende il
+ * collegamento di un'eliminata, se c'è, altrimenti si propone "Associa") e quali eliminare.
+ */
+@Composable
+private fun DoppioniDialog(
+    p: ProblemaSpostamento,
+    dati: DatiApp,
+    onApplica: (tieni: Operazione, elimina: List<Operazione>) -> Unit,
+    onChiudi: () -> Unit
+) {
+    val righe = listOf(p.operazione) + p.simili
+    val chiave = righe.map { it.id }
+    // Di default si tiene la riga già collegata (se c'è), altrimenti lo spostamento; le altre si eliminano.
+    var tieniId by remember(chiave) { mutableStateOf((righe.firstOrNull { it.collegataId != null } ?: p.operazione).id) }
+    val daEliminare = remember(chiave) { mutableStateListOf<Long>().apply { addAll(righe.map { it.id }.filter { it != tieniId }) } }
+    val tieni = righe.first { it.id == tieniId }
+    val eliminate = righe.filter { it.id in daEliminare && it.id != tieniId }
+    AlertDialog(
+        onDismissRequest = onChiudi,
+        title = { Text("Possibili doppioni") },
+        text = {
+            Column(modifier = Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(
+                    "Stesso conto e importo entro ${Riscontro.GIORNI_SIMILI} giorni. Scegli la riga da tenere e collegare " +
+                        "(Tieni) e quelle da eliminare.",
+                    style = MaterialTheme.typography.bodySmall
+                )
+                righe.forEachIndexed { i, r ->
+                    HorizontalDivider()
+                    if (i == 0) Text("Spostamento senza riga corrispondente", style = MaterialTheme.typography.labelMedium)
+                    DettaglioOperazione(r, dati, giorni = if (i == 0) null else abs(r.data - p.operazione.data))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        RadioButton(selected = tieniId == r.id, onClick = {
+                            tieniId = r.id
+                            daEliminare.remove(r.id)
+                        })
+                        Text("Tieni", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(end = 16.dp))
+                        Checkbox(
+                            checked = r.id in daEliminare && tieniId != r.id,
+                            enabled = tieniId != r.id,
+                            onCheckedChange = { if (it) daEliminare.add(r.id) else daEliminare.remove(r.id) }
+                        )
+                        Text("Elimina", style = MaterialTheme.typography.bodyMedium)
+                    }
+                }
+                HorizontalDivider()
+                val collegamento = when {
+                    tieni.collegataId != null -> "La riga tenuta è già collegata."
+                    eliminate.any { it.collegataId != null } -> "La riga tenuta prende il collegamento della riga eliminata."
+                    else -> "La riga tenuta non ha collegamento: dopo si apre \"Associa\" per scegliere la riga sull'altro conto."
+                }
+                Text(
+                    "Da eliminare: ${eliminate.size}. $collegamento Le righe sull'altro conto non vengono eliminate.",
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onApplica(tieni, eliminate) }) {
+                Text(if (eliminate.isEmpty()) "Tieni e associa" else "Applica", color = MaterialTheme.colorScheme.error)
+            }
+        },
+        dismissButton = { TextButton(onClick = onChiudi) { Text("Chiudi") } }
+    )
 }
