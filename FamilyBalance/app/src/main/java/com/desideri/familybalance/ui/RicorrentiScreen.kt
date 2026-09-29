@@ -305,13 +305,16 @@ private fun SceltaVociDialog(voci: List<Voce>, selezionate: Set<Long>, onConferm
  * o di spostare la scadenza in un altro mese (solo questa volta o facendo ripartire la ricorrenza).
  */
 @Composable
-private fun DettaglioRicorrenteDialog(vm: SpeseViewModel, dati: DatiApp, riga: RigaRicorrente, mese: YearMonth, onChiudi: () -> Unit) {
+internal fun DettaglioRicorrenteDialog(vm: SpeseViewModel, dati: DatiApp, riga: RigaRicorrente, mese: YearMonth, onChiudi: () -> Unit) {
     val voce = riga.voce
     val pagate = remember(dati.operazioni, voce.id, mese) {
         dati.operazioni.filter { it.voceId == voce.id && Calcoli.mese(it.dataPerRicorrente) == mese }.sortedBy { it.data }
     }
     val meseScadenza = riga.meseScadenza ?: mese
     var inModifica by remember { mutableStateOf<Operazione?>(null) }
+    // Nuova operazione della spesa nel mese: conto scelto (null = nessuna in corso).
+    var nuovaSuConto by remember { mutableStateOf<Long?>(null) }
+    var contoNuova by remember { mutableStateOf(dati.contiValutaOrdinati.firstOrNull()?.id) }
     var importo by remember(riga) { mutableStateOf(riga.previsto?.let { centInTesto(Math.round(abs(it) * 100)) } ?: "") }
     var data by remember(riga) { mutableStateOf(riga.dataPrevista) }
     var nuovoMese by remember(riga) { mutableStateOf(mese.plusMonths(1)) }
@@ -350,6 +353,18 @@ private fun DettaglioRicorrenteDialog(vm: SpeseViewModel, dati: DatiApp, riga: R
                         }
                     }
                     Text("Tocca un'operazione per modificarla o eliminarla.", style = MaterialTheme.typography.bodySmall)
+                }
+                Text("Aggiungi operazione", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    CampoScelta(
+                        etichetta = "Conto",
+                        selezionato = dati.contiValutaOrdinati.firstOrNull { it.id == contoNuova },
+                        opzioni = dati.contiValutaOrdinati,
+                        testo = { dati.etichetta(it.id) },
+                        onScelta = { contoNuova = it.id },
+                        modifier = Modifier.weight(1f)
+                    )
+                    OutlinedButton(onClick = { nuovaSuConto = contoNuova }, enabled = contoNuova != null) { Text("Aggiungi") }
                 }
 
                 riga.previsto?.let { previsto ->
@@ -451,5 +466,14 @@ private fun DettaglioRicorrenteDialog(vm: SpeseViewModel, dati: DatiApp, riga: R
 
     inModifica?.let { op ->
         OperazioneDialog(vm, dati, op.contoValutaId, op, onChiudi = { inModifica = null })
+    }
+    nuovaSuConto?.let { cv ->
+        // Data proposta: oggi se nel mese, altrimenti il primo del mese (l'importo previsto va inserito a mano).
+        val oggi = java.time.LocalDate.now()
+        val giorno = if (YearMonth.from(oggi) == mese) oggi else mese.atDay(1)
+        OperazioneDialog(
+            vm, dati, cv, null, onChiudi = { nuovaSuConto = null },
+            tipoIniziale = voce.tipo, sottotipoIniziale = voce.sottotipo, dataIniziale = giorno.toEpochDay()
+        )
     }
 }

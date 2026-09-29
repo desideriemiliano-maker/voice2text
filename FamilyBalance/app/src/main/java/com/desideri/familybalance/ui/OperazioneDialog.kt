@@ -47,7 +47,17 @@ import kotlin.math.abs
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun OperazioneDialog(vm: SpeseViewModel, dati: DatiApp, contoValutaId: Long, esistente: Operazione?, onChiudi: () -> Unit) {
+fun OperazioneDialog(
+    vm: SpeseViewModel,
+    dati: DatiApp,
+    contoValutaId: Long,
+    esistente: Operazione?,
+    onChiudi: () -> Unit,
+    // Valori iniziali per una nuova operazione (es. dal calendario delle ricorrenti).
+    tipoIniziale: String? = null,
+    sottotipoIniziale: String? = null,
+    dataIniziale: Long? = null
+) {
     val scope = rememberCoroutineScope()
     val voceIniziale = esistente?.voceId?.let { dati.vociPerId[it] }
     val collegata = esistente?.collegataId?.let { id -> dati.operazioni.firstOrNull { it.id == id } }
@@ -59,14 +69,14 @@ fun OperazioneDialog(vm: SpeseViewModel, dati: DatiApp, contoValutaId: Long, esi
     }
     val valutaPropria = dati.contiValutaPerId[contoValutaId]?.valuta
 
-    var data by remember { mutableStateOf(esistente?.data ?: LocalDate.now().toEpochDay()) }
+    var data by remember { mutableStateOf(esistente?.data ?: dataIniziale ?: LocalDate.now().toEpochDay()) }
     var importo by remember { mutableStateOf(esistente?.let { centInTesto(abs(it.importoCent)) } ?: "") }
     var entrata by remember { mutableStateOf((esistente?.importoCent ?: -1L) > 0) }
     var spostamento by remember { mutableStateOf(esistente?.trasferimento ?: false) }
     var destinazione by remember { mutableStateOf(esistente?.contoValutaDestId) }
     var importoDest by remember { mutableStateOf((collegata ?: speculare)?.let { centInTesto(abs(it.importoCent)) } ?: "") }
-    var tipo by remember { mutableStateOf(voceIniziale?.tipo ?: "") }
-    var sottotipo by remember { mutableStateOf(voceIniziale?.sottotipo ?: "") }
+    var tipo by remember { mutableStateOf(voceIniziale?.tipo ?: tipoIniziale ?: "") }
+    var sottotipo by remember { mutableStateOf(voceIniziale?.sottotipo ?: sottotipoIniziale ?: "") }
     var note by remember { mutableStateOf(esistente?.note ?: "") }
     var dataRicorrente by remember { mutableStateOf(esistente?.dataRicorrente) }
     var errore by remember { mutableStateOf<String?>(null) }

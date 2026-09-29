@@ -1,6 +1,7 @@
 package com.desideri.familybalance.ui
 
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -43,6 +44,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.desideri.familybalance.SpeseViewModel
 import com.desideri.familybalance.logica.Calcoli
 import com.desideri.familybalance.logica.Cambi
+import com.desideri.familybalance.logica.RigaRicorrente
 import com.desideri.familybalance.logica.formattaImporto
 import java.time.YearMonth
 import java.time.format.DateTimeFormatter
@@ -53,8 +55,8 @@ private val FORMATO_NOME_MESE = DateTimeFormatter.ofPattern("MMM", Locale.ITALIA
 private val LARGHEZZA_MESE: Dp = 56.dp
 private val LARGHEZZA_COLONNA: Dp = 96.dp
 
-/** Valore di una cella: importo (positivo), se stimato e se la scadenza è annullata. */
-private data class Cella(val importo: Double, val stimato: Boolean, val annullata: Boolean)
+/** Valore di una cella: importo (positivo), se stimato, se la scadenza è annullata e la riga ricorrente. */
+private data class Cella(val importo: Double, val stimato: Boolean, val annullata: Boolean, val riga: RigaRicorrente)
 
 /**
  * Calendario delle spese ricorrenti (menu ⋮): per l'anno scelto una riga per mese e una colonna per
@@ -72,6 +74,8 @@ fun CalendarioRicorrentiDialog(vm: SpeseViewModel, onChiudi: () -> Unit) {
     val voci = remember(dati.voci) {
         dati.voci.filter { it.ricorrente && !it.entrata && !it.obsoleta }.sortedBy { it.descrizione.lowercase() }
     }
+    // Cella aperta nel dettaglio (spesa e mese).
+    var aperta by remember { mutableStateOf<Pair<Long, YearMonth>?>(null) }
     var scelte by rememberSaveable { mutableStateOf<List<Long>>(emptyList()) }
     val mostrate = if (scelte.isEmpty()) voci else voci.filter { it.id in scelte }
 
@@ -82,7 +86,7 @@ fun CalendarioRicorrentiDialog(vm: SpeseViewModel, onChiudi: () -> Unit) {
             righe.forEach { m ->
                 m.righe.groupBy { it.voce.id }.forEach { (voceId, rr) ->
                     val importo = rr.sumOf { abs(it.pagato) + abs(it.previsto ?: 0.0) }
-                    put(voceId to m.mese, Cella(importo, rr.any { it.previsto != null }, rr.all { it.annullata }))
+                    put(voceId to m.mese, Cella(importo, rr.any { it.previsto != null }, rr.all { it.annullata }, rr.first()))
                 }
             }
         }
@@ -107,7 +111,8 @@ fun CalendarioRicorrentiDialog(vm: SpeseViewModel, onChiudi: () -> Unit) {
                     )
                 }
                 Text(
-                    "Pagato del mese; in corsivo la stima dove non ci sono operazioni; ✕ scadenza annullata. CHF al cambio delle Impostazioni.",
+                    "Pagato del mese; in corsivo la stima dove non ci sono operazioni; ✕ scadenza annullata. CHF al cambio delle Impostazioni. " +
+                        "Tocca una cella per aggiungere, modificare o eliminare la spesa di quel mese.",
                     style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier.padding(vertical = 4.dp)
                 )
@@ -138,7 +143,8 @@ fun CalendarioRicorrentiDialog(vm: SpeseViewModel, onChiudi: () -> Unit) {
                                             },
                                             LARGHEZZA_COLONNA,
                                             corsivo = c?.stimato == true,
-                                            allineaDestra = true
+                                            allineaDestra = true,
+                                            onClick = { aperta = v.id to m }
                                         )
                                     }
                                     CellaTesto(if (totale != 0.0) formattaImporto(totale) else "", LARGHEZZA_COLONNA, grassetto = true, allineaDestra = true)
@@ -161,6 +167,17 @@ fun CalendarioRicorrentiDialog(vm: SpeseViewModel, onChiudi: () -> Unit) {
             }
         }
     }
+
+    aperta?.let { (voceId, mese) ->
+        val voce = dati.vociPerId[voceId]
+        if (voce == null) {
+            aperta = null
+        } else {
+            // Senza riga (mese fuori ricorrenza): dettaglio vuoto, da cui si può comunque aggiungere.
+            val riga = celle[voceId to mese]?.riga?.copy(voce = voce) ?: RigaRicorrente(voce, 0.0, null, meseScadenza = mese)
+            DettaglioRicorrenteDialog(vm, dati, riga, mese, onChiudi = { aperta = null })
+        }
+    }
 }
 
 @Composable
@@ -170,7 +187,8 @@ private fun CellaTesto(
     grassetto: Boolean = false,
     corsivo: Boolean = false,
     allineaDestra: Boolean = false,
-    righe: Int = 1
+    righe: Int = 1,
+    onClick: (() -> Unit)? = null
 ) {
     Text(
         testo,
@@ -183,6 +201,7 @@ private fun CellaTesto(
         overflow = TextOverflow.Ellipsis,
         modifier = Modifier
             .width(larghezza)
+            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
             .height(if (righe > 1) 40.dp else 28.dp)
             .border(0.5.dp, MaterialTheme.colorScheme.outlineVariant)
             .padding(horizontal = 4.dp, vertical = 4.dp)
