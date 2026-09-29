@@ -1,8 +1,6 @@
 package com.desideri.familybalance.ui
 
 import androidx.compose.foundation.clickable
-import com.desideri.familybalance.logica.ValoreGrafico
-import com.desideri.familybalance.logica.Aggregazione
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableStateOf
@@ -108,33 +106,40 @@ fun ContiScreen(vm: SpeseViewModel, onApriConto: (Long) -> Unit, onAnagraficaCon
     }
 
     if (mostraGrafico) {
-        // Saldo di ogni conto/valuta e totale, in EUR al cambio del mese, a ogni giorno con movimenti.
-        val colonne = dati.contiValutaOrdinati
-        val serie = listOf(SerieGrafico("Totale", coloreSerie(0, null))) +
-            colonne.mapIndexed { i, cv -> SerieGrafico(dati.etichetta(cv.id), coloreSerie(i + 1, null)) }
-        val valori = remember(dati.operazioni, cambi) {
+        // Per ogni conto/valuta e per il totale: saldo a fine giorno, entrate e uscite (senza gli
+        // spostamenti tra conti), in EUR al cambio del mese.
+        val conti = remember(dati.operazioni, dati.contiValuta, cambi) {
+            val colonne = dati.contiValutaOrdinati
             val saldiCent = colonne.associate { it.id to it.saldoInizialeCent }.toMutableMap()
-            val indice = colonne.withIndex().associate { (i, cv) -> cv.id to i + 1 }
-            buildList {
-                dati.operazioni.groupBy { it.data }.toSortedMap().forEach { (giorno, ops) ->
-                    ops.forEach { op -> saldiCent[op.contoValutaId]?.let { saldiCent[op.contoValutaId] = it + op.importoCent } }
-                    val mese = Calcoli.mese(giorno)
-                    var totale = 0.0
-                    colonne.forEach { cv ->
-                        val eur = cambi.inEuro(saldiCent.getValue(cv.id), cv.valuta, mese)
-                        totale += eur
-                        add(ValoreGrafico(indice.getValue(cv.id), giorno, eur))
+            val saldi = colonne.associate { it.id to ArrayList<Pair<Long, Double>>() }
+            val entrate = colonne.associate { it.id to ArrayList<Pair<Long, Double>>() }
+            val uscite = colonne.associate { it.id to ArrayList<Pair<Long, Double>>() }
+            val totale = ArrayList<Pair<Long, Double>>()
+            dati.operazioni.groupBy { it.data }.toSortedMap().forEach { (giorno, ops) ->
+                val mese = Calcoli.mese(giorno)
+                ops.forEach { op ->
+                    val cv = dati.contiValutaPerId[op.contoValutaId] ?: return@forEach
+                    saldiCent[cv.id] = (saldiCent[cv.id] ?: 0L) + op.importoCent
+                    if (!op.trasferimento) {
+                        val eur = cambi.inEuro(op.importoCent, cv.valuta, mese)
+                        if (eur > 0) entrate[cv.id]?.add(giorno to eur) else uscite[cv.id]?.add(giorno to -eur)
                     }
-                    add(ValoreGrafico(0, giorno, totale))
                 }
+                var somma = 0.0
+                colonne.forEach { cv ->
+                    val eur = cambi.inEuro(saldiCent.getValue(cv.id), cv.valuta, mese)
+                    somma += eur
+                    saldi.getValue(cv.id).add(giorno to eur)
+                }
+                totale += giorno to somma
             }
+            colonne.map { cv -> ContoGrafico(dati.etichetta(cv.id), saldi.getValue(cv.id), entrate.getValue(cv.id), uscite.getValue(cv.id)) } +
+                ContoGrafico("Totale", totale, colonne.flatMap { entrate.getValue(it.id) }, colonne.flatMap { uscite.getValue(it.id) })
         }
-        GraficoSpeseDialog(
-            titolo = "Saldo",
-            nota = "Saldo totale e dei singoli conti a fine giorno/mese/anno, in EUR (CHF al cambio del mese).",
-            serie = serie,
-            valori = valori,
-            aggregazione = Aggregazione.ULTIMO,
+        GraficoContiDialog(
+            titolo = "Andamento dei conti",
+            nota = "In EUR (CHF al cambio del mese). Saldo a fine periodo; entrate e uscite sommate nel periodo, esclusi gli spostamenti tra conti.",
+            conti = conti,
             onChiudi = { mostraGrafico = false }
         )
     }

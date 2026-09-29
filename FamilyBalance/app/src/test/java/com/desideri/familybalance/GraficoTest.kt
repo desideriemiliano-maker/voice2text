@@ -56,4 +56,19 @@ class GraficoTest {
         assertEquals(listOf(80.0, 80.0, 150.0), punti.map { it.valori[0] })
         assertEquals(3, Grafico.punti(saldi, 1, Raggruppamento.VALORE, Aggregazione.ULTIMO).size)
     }
+
+    @Test
+    fun perSettimana_saldoUltimoEUsciteSommate() {
+        // Lunedì 5/1/2026 e giovedì 8/1 nella stessa settimana; lunedì 19/1 due settimane dopo.
+        val v = listOf(
+            ValoreGrafico(0, giorno(2026, 1, 5), 100.0), ValoreGrafico(1, giorno(2026, 1, 5), 10.0),
+            ValoreGrafico(0, giorno(2026, 1, 8), 90.0), ValoreGrafico(1, giorno(2026, 1, 8), 10.0),
+            ValoreGrafico(0, giorno(2026, 1, 19), 70.0), ValoreGrafico(1, giorno(2026, 1, 19), 20.0)
+        )
+        val punti = Grafico.puntiPerPeriodo(v, listOf(Aggregazione.ULTIMO, Aggregazione.SOMMA), Raggruppamento.SETTIMANA)
+        assertEquals(3, punti.size)
+        assertEquals(listOf(90.0, 20.0), punti[0].valori)
+        assertEquals(listOf(90.0, null), punti[1].valori)
+        assertEquals(listOf(70.0, 20.0), punti[2].valori)
+    }
 }

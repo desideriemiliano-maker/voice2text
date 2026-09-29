@@ -4,7 +4,6 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import com.desideri.familybalance.logica.ValoreGrafico
 import androidx.compose.material.icons.automirrored.filled.ShowChart
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.foundation.layout.heightIn
@@ -256,27 +255,22 @@ fun OperazioniScreen(vm: SpeseViewModel, contoValutaId: Long, onIndietro: () -> 
     }
 
     if (mostraGrafico) {
-        // Una serie per tipo filtrato (o il totale); gli spostamenti solo se filtrati esplicitamente.
-        val ops = filtrate.map { it.operazione }.filter { !it.trasferimento || "spostamento" in filtri.tipi }
-        val chiaveTipo = { op: Operazione -> if (op.trasferimento) "spostamento" else op.voceId?.let { dati.vociPerId[it]?.tipo?.lowercase() } ?: "" }
-        val chiavi = filtri.tipi.sorted()
-        val serie = if (chiavi.isEmpty()) {
-            listOf(SerieGrafico("Totale", coloreSerie(0, null)))
-        } else {
-            chiavi.mapIndexed { i, k ->
-                val voce = dati.voci.firstOrNull { it.tipo.lowercase() == k }
-                SerieGrafico(voce?.tipo ?: if (k == "spostamento") "Spostamento" else "Senza tipo", coloreSerie(i, voce?.colore))
-            }
+        // Saldo del conto a fine giorno (da tutte le operazioni); entrate e uscite dalle operazioni
+        // mostrate con i filtri attuali (gli spostamenti solo se filtrati esplicitamente).
+        val conto = remember(righe, filtrate, filtri) {
+            val saldi = righe.asReversed().groupBy { it.operazione.data }.map { (giorno, rr) -> giorno to rr.last().saldoDopo / 100.0 }
+            val ops = filtrate.map { it.operazione }.filter { !it.trasferimento || "spostamento" in filtri.tipi }
+            ContoGrafico(
+                dati.etichetta(contoValutaId),
+                saldi,
+                ops.filter { it.importoCent > 0 }.map { it.data to it.importoCent / 100.0 },
+                ops.filter { it.importoCent < 0 }.map { it.data to -it.importoCent / 100.0 }
+            )
         }
-        val valori = ops.mapNotNull { op ->
-            val s = if (chiavi.isEmpty()) 0 else chiavi.indexOf(chiaveTipo(op)).takeIf { it >= 0 } ?: return@mapNotNull null
-            ValoreGrafico(s, op.data, -op.importoCent / 100.0)
-        }
-        GraficoSpeseDialog(
+        GraficoContiDialog(
             titolo = dati.etichetta(contoValutaId),
-            nota = "Operazioni mostrate con i filtri attuali: spese in positivo, entrate in negativo.",
-            serie = serie,
-            valori = valori,
+            nota = "Saldo del conto a fine periodo; entrate e uscite (sommate nel periodo) delle operazioni mostrate con i filtri attuali.",
+            conti = listOf(conto),
             valuta = cv.valuta,
             onChiudi = { mostraGrafico = false }
         )

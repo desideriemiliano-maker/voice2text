@@ -12,9 +12,10 @@ enum class TipoGrafico(val etichetta: String) {
     PUNTI("Punti")
 }
 
-/** Come raggruppare i valori: uno per operazione, somma per mese o per anno. */
+/** Come raggruppare i valori: uno per operazione (o per giorno), per settimana, mese o anno. */
 enum class Raggruppamento(val etichetta: String) {
     VALORE("Valore"),
+    SETTIMANA("Settimana"),
     MESE("Mese"),
     ANNO("Anno")
 }
@@ -47,38 +48,47 @@ object Grafico {
         aggregazione: Aggregazione = Aggregazione.SOMMA
     ): List<PuntoGrafico> {
         if (valori.isEmpty()) return emptyList()
-        val ordinati = valori.sortedBy { it.data }
         if (raggruppamento == Raggruppamento.VALORE && aggregazione == Aggregazione.SOMMA) {
-            return ordinati.map { v ->
+            return valori.sortedBy { it.data }.map { v ->
                 PuntoGrafico(LocalDate.ofEpochDay(v.data).format(FORMATO_GIORNO), List(numeroSerie) { if (it == v.serie) v.valore else null })
             }
         }
-        // Periodi (chiave ordinabile ed etichetta) in cui raggruppare.
+        return puntiPerPeriodo(valori, List(numeroSerie) { aggregazione }, raggruppamento)
+    }
+
+    /**
+     * Punti per periodo (giorno con [Raggruppamento.VALORE], settimana, mese o anno; per
+     * settimana/mese/anno tutti i periodi tra il primo e l'ultimo), ogni serie con la propria
+     * [aggregazioni]: somma dei valori del periodo (null se nessuno) o ultimo valore, riportando il
+     * precedente dove la serie non ne ha.
+     */
+    fun puntiPerPeriodo(valori: List<ValoreGrafico>, aggregazioni: List<Aggregazione>, raggruppamento: Raggruppamento): List<PuntoGrafico> {
+        if (valori.isEmpty()) return emptyList()
+        val ordinati = valori.sortedBy { it.data }
+        val primo = LocalDate.ofEpochDay(ordinati.first().data)
+        val ultimo = LocalDate.ofEpochDay(ordinati.last().data)
         val periodi: List<Pair<Long, String>> = when (raggruppamento) {
             Raggruppamento.VALORE -> ordinati.map { it.data }.distinct().map { it to LocalDate.ofEpochDay(it).format(FORMATO_GIORNO) }
-            Raggruppamento.MESE -> {
-                val mesi = ordinati.map { YearMonth.from(LocalDate.ofEpochDay(it.data)) }
-                generateSequence(mesi.first()) { it.plusMonths(1) }.takeWhile { it <= mesi.last() }
-                    .map { (it.year * 12L + it.monthValue) to it.format(FORMATO_MESE) }.toList()
-            }
-            Raggruppamento.ANNO -> {
-                val anni = ordinati.map { LocalDate.ofEpochDay(it.data).year }
-                (anni.first()..anni.last()).map { it.toLong() to it.toString() }
-            }
+            Raggruppamento.SETTIMANA -> generateSequence(inizioSettimana(primo)) { it.plusWeeks(1) }.takeWhile { it <= ultimo }
+                .map { it.toEpochDay() to it.format(FORMATO_GIORNO) }.toList()
+            Raggruppamento.MESE -> generateSequence(YearMonth.from(primo)) { it.plusMonths(1) }.takeWhile { it <= YearMonth.from(ultimo) }
+                .map { (it.year * 12L + it.monthValue) to it.format(FORMATO_MESE) }.toList()
+            Raggruppamento.ANNO -> (primo.year..ultimo.year).map { it.toLong() to it.toString() }
         }
         fun chiave(v: ValoreGrafico): Long {
             val d = LocalDate.ofEpochDay(v.data)
             return when (raggruppamento) {
                 Raggruppamento.VALORE -> v.data
+                Raggruppamento.SETTIMANA -> inizioSettimana(d).toEpochDay()
                 Raggruppamento.MESE -> d.year * 12L + d.monthValue
                 Raggruppamento.ANNO -> d.year.toLong()
             }
         }
         val perPeriodo = ordinati.groupBy(::chiave)
-        val precedenti = arrayOfNulls<Double>(numeroSerie)
+        val precedenti = arrayOfNulls<Double>(aggregazioni.size)
         return periodi.map { (k, etichetta) ->
             val gruppo = perPeriodo[k].orEmpty().groupBy { it.serie }
-            val valoriPunto = List(numeroSerie) { s ->
+            val valoriPunto = aggregazioni.mapIndexed { s, aggregazione ->
                 val lista = gruppo[s]
                 when (aggregazione) {
                     Aggregazione.SOMMA -> lista?.sumOf { it.valore }
@@ -88,6 +98,8 @@ object Grafico {
             PuntoGrafico(etichetta, valoriPunto)
         }
     }
+
+    private fun inizioSettimana(d: LocalDate): LocalDate = d.minusDays((d.dayOfWeek.value - 1).toLong())
 
     /** Retta di regressione (pendenza, intercetta) sui punti (indice, valore); piatta se non calcolabile. */
     fun regressione(punti: List<Pair<Int, Double>>): Pair<Double, Double> {

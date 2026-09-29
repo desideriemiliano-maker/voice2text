@@ -144,7 +144,7 @@ fun GraficoSpeseDialog(
 
 /** Il grafico: asse Y con gli importi (zero sempre visibile), asse X con fino a 5 etichette. */
 @Composable
-private fun GraficoSerie(
+internal fun GraficoSerie(
     punti: List<com.desideri.familybalance.logica.PuntoGrafico>,
     serie: List<SerieGrafico>,
     tipo: TipoGrafico,
