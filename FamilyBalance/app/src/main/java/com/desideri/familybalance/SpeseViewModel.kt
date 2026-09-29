@@ -205,6 +205,11 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
         messaggio("Scadenza aggiornata")
     }
 
+    /** Esclude (o reinclude) l'operazione [op] dalla media usata per stimare la sua spesa ricorrente. */
+    fun impostaEsclusaDaMedia(op: Operazione, esclusa: Boolean) = viewModelScope.launch {
+        dao.operazione(op.id)?.let { dao.aggiornaOperazione(it.copy(esclusaDaMedia = esclusa)) }
+    }
+
     /** Annulla (o ripristina, con [annulla] false) la scadenza di [voce] del mese [meseScadenza]. */
     fun annullaScadenza(voce: Voce, meseScadenza: YearMonth, annulla: Boolean) = viewModelScope.launch {
         val chiave = meseScadenza.toString()

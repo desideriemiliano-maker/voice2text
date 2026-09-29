@@ -115,13 +115,14 @@ object Calcoli {
         vociRicorrenti: Collection<Voce>,
         operazioni: List<Operazione>,
         valutaDi: Map<Long, String>,
-        cambi: Cambi
+        cambi: Cambi,
+        perMedia: Boolean = false
     ): Map<Long, Map<YearMonth, Double>> {
         val ids = vociRicorrenti.map { it.id }.toHashSet()
         val storico = HashMap<Long, HashMap<YearMonth, Double>>()
         for (op in operazioni) {
             val voceId = op.voceId ?: continue
-            if (op.trasferimento || voceId !in ids) continue
+            if (op.trasferimento || voceId !in ids || (perMedia && op.esclusaDaMedia)) continue
             val perMese = storico.getOrPut(voceId) { HashMap() }
             val m = mese(op.data)
             perMese[m] = (perMese[m] ?: 0.0) + cambi.inEuro(op.importoCent, valutaDi[op.contoValutaId] ?: Valute.EUR, m)
@@ -166,7 +167,9 @@ object Calcoli {
         val vociRicorrenti = voci.filter { it.ricorrente && !it.entrata }
         val valutaDi = contiValuta.associate { it.id to it.valuta }
         val storico = storicoRicorrenti(vociRicorrenti, operazioni, valutaDi, cambi)
-        val previsioni = vociRicorrenti.associate { it.id to previsione(it, storico[it.id], oggi) }
+        // Per la media non contano le operazioni escluse dall'utente.
+        val storicoMedia = storicoRicorrenti(vociRicorrenti, operazioni, valutaDi, cambi, perMedia = true)
+        val previsioni = vociRicorrenti.associate { it.id to previsione(it, storicoMedia[it.id], oggi) }
         val perVoceEMese = personalizzazioni.associateBy { it.voceId to it.mese }
         val spostatePerMese = personalizzazioni.filter { it.spostataA != null && it.spostataA != it.mese }
             .groupBy { testoInMese(it.spostataA!!) }
@@ -182,7 +185,7 @@ object Calcoli {
             if (previsto == null || previsto == 0.0) return null
             return RigaRicorrente(
                 voce, pagato, previsto, fonte,
-                mediaSu = if (fonte == FontePrevisione.MEDIA) ultimiPagamenti(storico[voce.id], oggi) else emptyList(),
+                mediaSu = if (fonte == FontePrevisione.MEDIA) ultimiPagamenti(storicoMedia[voce.id], oggi) else emptyList(),
                 dataPrevista = p?.data,
                 meseOrigine = origine,
                 meseScadenza = meseScadenza

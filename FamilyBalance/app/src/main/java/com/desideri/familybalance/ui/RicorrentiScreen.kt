@@ -339,6 +339,10 @@ private fun DettaglioRicorrenteDialog(vm: SpeseViewModel, dati: DatiApp, riga: R
                                 )
                             }
                             op.note?.let { Text(it, style = MaterialTheme.typography.bodySmall, maxLines = 2) }
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Checkbox(checked = op.esclusaDaMedia, onCheckedChange = { vm.impostaEsclusaDaMedia(op, it) })
+                                Text("Escludi dalla media per le stime", style = MaterialTheme.typography.bodySmall)
+                            }
                         }
                     }
                     Text("Tocca un'operazione per modificarla o eliminarla.", style = MaterialTheme.typography.bodySmall)

@@ -137,4 +137,18 @@ class CalcoliTest {
         assertTrue(ottobre.annullata)
         assertNull(ottobre.previsto)
     }
+
+    @Test
+    fun ricorrenti_operazioneEsclusaNonEntraNellaMedia() {
+        val conti = listOf(ContoValuta(id = 1, contoId = 1, valuta = "EUR"))
+        val voce = Voce(id = 1, tipo = "Luce", ricorrente = true, mesiRicorrenza = 1, meseInizio = "2026-06")
+        val ops = listOf(
+            Operazione(id = 1, contoValutaId = 1, data = giorno(2026, 6, 10), importoCent = -10_000, voceId = 1),
+            Operazione(id = 2, contoValutaId = 1, data = giorno(2026, 7, 10), importoCent = -90_000, voceId = 1, esclusaDaMedia = true)
+        )
+        val r = Calcoli.ricorrenti(listOf(YearMonth.of(2026, 7), YearMonth.of(2026, 9)), listOf(voce), conti, ops, Cambi.fisso(1.0), YearMonth.of(2026, 9))
+        // Luglio mostra comunque il pagato; la stima di settembre usa solo giugno.
+        assertEquals(-900.0, r[0].righe.single().pagato, 0.001)
+        assertEquals(-100.0, r[1].righe.single().previsto!!, 0.001)
+    }
 }

@@ -94,7 +94,10 @@ data class Operazione(
      * Ordine tra le operazioni dello stesso giorno (crescente = più vecchia), dalla posizione della
      * riga nell'estratto conto o nell'Excel importato; null per quelle inserite a mano.
      */
-    val ordine: Long? = null
+    val ordine: Long? = null,
+    /** Operazione di una spesa ricorrente da non considerare nella media per le stime (es. importo eccezionale). */
+    @ColumnInfo(defaultValue = "0")
+    val esclusaDaMedia: Boolean = false
 )
 
 /**
