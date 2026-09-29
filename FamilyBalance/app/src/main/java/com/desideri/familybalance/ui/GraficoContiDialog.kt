@@ -164,7 +164,7 @@ fun GraficoContiDialog(titolo: String, nota: String, conti: List<ContoGrafico>, 
 
 /** Menu a tendina a scelta multipla: le voci restano aperte mentre si spuntano. */
 @Composable
-private fun <T> MenuMultiplo(
+internal fun <T> MenuMultiplo(
     etichetta: String,
     opzioni: List<T>,
     selezionate: List<T>,

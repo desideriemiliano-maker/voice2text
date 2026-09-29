@@ -32,6 +32,7 @@ import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.CurrencyExchange
 import androidx.compose.material.icons.automirrored.filled.CompareArrows
 import androidx.compose.material3.AlertDialog
@@ -119,6 +120,7 @@ private fun SchermataPrincipale(vm: SpeseViewModel, sezione: Sezione, onSezione:
     var menuAperto by remember { mutableStateOf(false) }
     var mostraVersioni by remember { mutableStateOf(false) }
     var mostraRegistro by remember { mutableStateOf(false) }
+    var mostraCalendario by remember { mutableStateOf(false) }
     var confermaImport by remember { mutableStateOf(false) }
     val importazioneInCorso by vm.importazioneInCorso.collectAsStateWithLifecycle()
     val analisiImport by vm.analisiImport.collectAsStateWithLifecycle()
@@ -164,6 +166,7 @@ private fun SchermataPrincipale(vm: SpeseViewModel, sezione: Sezione, onSezione:
                             VoceMenu("Importa da Excel", Icons.Filled.FileOpen) { menuAperto = false; confermaImport = true }
                             HorizontalDivider()
                             VoceMenu("Riscontro spostamenti", Icons.AutoMirrored.Filled.CompareArrows) { menuAperto = false; onApri(Schermata.MappaSpostamenti) }
+                            VoceMenu("Calendario ricorrenti", Icons.Filled.CalendarMonth) { menuAperto = false; mostraCalendario = true }
                             VoceMenu("Cambi CHF/EUR", Icons.Filled.CurrencyExchange) { menuAperto = false; onApri(Schermata.Cambi) }
                             HorizontalDivider()
                             VoceMenu("Backup Google Drive", Icons.Filled.CloudUpload) { menuAperto = false; onApri(Schermata.Backup) }
@@ -200,6 +203,7 @@ private fun SchermataPrincipale(vm: SpeseViewModel, sezione: Sezione, onSezione:
 
     if (mostraVersioni) VersioniDialog(onDismiss = { mostraVersioni = false })
     if (mostraRegistro) RegistroDialog(onDismiss = { mostraRegistro = false })
+    if (mostraCalendario) CalendarioRicorrentiDialog(vm, onChiudi = { mostraCalendario = false })
 
     if (confermaImport) {
         DialogConferma(
