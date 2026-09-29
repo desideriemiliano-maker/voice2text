@@ -156,6 +156,7 @@ private fun SchermataPrincipale(vm: SpeseViewModel, sezione: Sezione, onSezione:
                             VoceMenu("Cambi CHF/EUR", Icons.Filled.CurrencyExchange) { menuAperto = false; onApri(Schermata.Cambi) }
                             HorizontalDivider()
                             VoceMenu("Backup Google Drive", Icons.Filled.CloudUpload) { menuAperto = false; onApri(Schermata.Backup) }
+                            HorizontalDivider()
                             VoceMenu("Impostazioni", Icons.Filled.Settings) { menuAperto = false; onApri(Schermata.Impostazioni) }
                             VoceMenu("Registro Gemini", Icons.Filled.History) { menuAperto = false; mostraRegistro = true }
                             VoceMenu("Versioni", Icons.Filled.Info) { menuAperto = false; mostraVersioni = true }
