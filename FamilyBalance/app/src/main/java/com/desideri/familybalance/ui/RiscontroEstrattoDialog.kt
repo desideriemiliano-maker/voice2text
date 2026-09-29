@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -68,6 +69,14 @@ import java.time.format.DateTimeFormatter
 private val FORMATO_GIORNO = DateTimeFormatter.ofPattern("dd/MM")
 private val FORMATO_ANNO = DateTimeFormatter.ofPattern("yyyy")
 
+/** Cosa mostrare nel riscontro. */
+private enum class FiltroRiscontro(val etichetta: String) {
+    TUTTE("Tutte"),
+    ASSOCIATE("Associate"),
+    CONTINUE("Continue"),
+    TRATTEGGIATE("Tratteggiate")
+}
+
 /** Chiavi delle carte per le posizioni: operazione del conto o movimento dell'estratto. */
 private fun chiaveOp(id: Long) = "o$id"
 private fun chiaveMov(indice: Int) = "m$indice"
@@ -120,10 +129,24 @@ fun RiscontroEstrattoDialog(vm: SpeseViewModel, dati: DatiApp, stato: StatoRisco
     // Periodo dell'estratto: operazioni del conto in quel periodo (più quelle collegate appena fuori).
     val da = movimenti.minOf { it.data }
     val a = movimenti.maxOf { it.data }
-    val opsVisibili = opsConto.filter { it.data in da..a || it.id in opCollegate }
-    val date = (opsVisibili.map { it.data } + movimenti.map { it.data }).distinct().sortedDescending()
+    var filtro by remember { mutableStateOf(FiltroRiscontro.TUTTE) }
+    fun mostrato(c: Collegamento?): Boolean {
+        if (filtro == FiltroRiscontro.TUTTE) return true
+        if (c == null) return false
+        val stessaData = perIdOp[c.operazioneId]?.data == movimenti[c.movimento].data
+        return when (filtro) {
+            FiltroRiscontro.CONTINUE -> stessaData
+            FiltroRiscontro.TRATTEGGIATE -> !stessaData
+            else -> true
+        }
+    }
+    val opsVisibili = opsConto.filter { (it.data in da..a || it.id in opCollegate) && mostrato(opCollegate[it.id]) }
+    val movVisibili = movimenti.indices.filter { mostrato(movCollegati[it]) }
+    val date = (opsVisibili.map { it.data } + movVisibili.map { movimenti[it].data }).distinct().sortedDescending()
     val opsPerData = opsVisibili.groupBy { it.data }
-    val movPerData = movimenti.indices.groupBy { movimenti[it].data }
+    val movPerData = movVisibili.groupBy { movimenti[it].data }
+    // Solo le carte mostrate contano per linee e trascinamento (le posizioni delle nascoste restano in memoria).
+    val chiaviVisibili = opsVisibili.map { chiaveOp(it.id) }.toSet() + movVisibili.map { chiaveMov(it) }
 
     val daAggiornare = collegamenti.mapNotNull { c ->
         val op = perIdOp[c.operazioneId] ?: return@mapNotNull null
@@ -141,7 +164,7 @@ fun RiscontroEstrattoDialog(vm: SpeseViewModel, dati: DatiApp, stato: StatoRisco
     var dito by remember { mutableStateOf(Offset.Zero) }
     val bersaglio = trascinata?.let { t ->
         val altraColonna = if (t.startsWith("o")) "m" else "o"
-        posizioni.entries.firstOrNull { (k, r) -> k.startsWith(altraColonna) && r.contains(dito) }?.key
+        posizioni.entries.firstOrNull { (k, r) -> k.startsWith(altraColonna) && k in chiaviVisibili && r.contains(dito) }?.key
     }
     var inModifica by remember { mutableStateOf<Operazione?>(null) }
     var confermaDate by remember { mutableStateOf(false) }
@@ -152,6 +175,7 @@ fun RiscontroEstrattoDialog(vm: SpeseViewModel, dati: DatiApp, stato: StatoRisco
 
     /** Segmenti delle linee (coordinate del contenuto) con il loro collegamento. */
     fun linee(): List<Pair<Collegamento, Pair<Offset, Offset>>> = collegamenti.mapNotNull { c ->
+        if (chiaveOp(c.operazioneId) !in chiaviVisibili || chiaveMov(c.movimento) !in chiaviVisibili) return@mapNotNull null
         val r1 = posizioni[chiaveOp(c.operazioneId)]?.translate(-origine) ?: return@mapNotNull null
         val r2 = posizioni[chiaveMov(c.movimento)]?.translate(-origine) ?: return@mapNotNull null
         c to (r1.centerRight to r2.centerLeft)
@@ -166,10 +190,25 @@ fun RiscontroEstrattoDialog(vm: SpeseViewModel, dati: DatiApp, stato: StatoRisco
 
     Dialog(onDismissRequest = onChiudi, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Surface(modifier = Modifier.fillMaxSize(), tonalElevation = 4.dp) {
-            Column(modifier = Modifier.fillMaxSize().padding(12.dp)) {
+            Column(modifier = Modifier.fillMaxSize().systemBarsPadding().padding(12.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("Riscontro estratto · ${dati.etichetta(stato.contoValutaId)}", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
                     IconButton(onClick = onChiudi) { Icon(Icons.Filled.Close, contentDescription = "Chiudi") }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                    OutlinedButton(onClick = { confermaDate = true }, enabled = daAggiornare.isNotEmpty(), modifier = Modifier.weight(1f)) {
+                        Text("Aggiorna date (${daAggiornare.size})")
+                    }
+                    Button(onClick = {
+                        vm.salvaTipoDataEstratto(stato.contoId, tipoData)
+                        vm.creaDaEstratto(mancanti)
+                    }, enabled = mancanti.isNotEmpty(), modifier = Modifier.weight(1f)) {
+                        Text("Crea operazioni (${mancanti.size})")
+                    }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically, modifier = Modifier.horizontalScroll(rememberScrollState())) {
+                    Text("Mostra", style = MaterialTheme.typography.labelMedium)
+                    FiltroRiscontro.entries.forEach { f -> FilterChip(selected = filtro == f, onClick = { filtro = f }, label = { Text(f.etichetta) }) }
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically, modifier = Modifier.horizontalScroll(rememberScrollState())) {
                     Text("Data estratto", style = MaterialTheme.typography.labelMedium)
@@ -272,17 +311,6 @@ fun RiscontroEstrattoDialog(vm: SpeseViewModel, dati: DatiApp, stato: StatoRisco
                             }
                             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
                         }
-                    }
-                }
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
-                    OutlinedButton(onClick = { confermaDate = true }, enabled = daAggiornare.isNotEmpty(), modifier = Modifier.weight(1f)) {
-                        Text("Aggiorna date (${daAggiornare.size})")
-                    }
-                    Button(onClick = {
-                        vm.salvaTipoDataEstratto(stato.contoId, tipoData)
-                        vm.creaDaEstratto(mancanti)
-                    }, enabled = mancanti.isNotEmpty(), modifier = Modifier.weight(1f)) {
-                        Text("Crea operazioni (${mancanti.size})")
                     }
                 }
             }
