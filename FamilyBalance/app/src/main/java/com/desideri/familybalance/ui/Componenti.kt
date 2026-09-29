@@ -265,7 +265,7 @@ fun ScorrimentoAutomatico(attivo: Boolean, dito: () -> androidx.compose.ui.geome
                 y > r.bottom - fascia -> massimo * ((y - (r.bottom - fascia)) / fascia).coerceIn(0.2f, 1f)
                 else -> 0f
             }
-            if (passo != 0f) scorrimento.scrollBy(passo)
+            if (passo != 0f) scorrimento.dispatchRawDelta(passo)
             kotlinx.coroutines.delay(16)
         }
     }
