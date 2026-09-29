@@ -170,6 +170,7 @@ fun RiscontroEstrattoDialog(vm: SpeseViewModel, dati: DatiApp, stato: StatoRisco
     }
     var inModifica by remember { mutableStateOf<Operazione?>(null) }
     var confermaDate by remember { mutableStateOf(false) }
+    var esitoImporto by remember { mutableStateOf<RiscontroEstratto.EsitoPerImporto?>(null) }
 
     val colAuto = MaterialTheme.colorScheme.primary
     val colManuale = MaterialTheme.colorScheme.tertiary
@@ -204,6 +205,19 @@ fun RiscontroEstrattoDialog(vm: SpeseViewModel, dati: DatiApp, stato: StatoRisco
                     OutlinedButton(onClick = { confermaDate = true }, enabled = daAggiornare.isNotEmpty(), modifier = Modifier.weight(1f)) {
                         Text("Aggiorna date (${daAggiornare.size})")
                     }
+                    OutlinedButton(onClick = {
+                        // Operazioni del periodo dell'estratto (con 15 giorni di margine) non ancora collegate.
+                        val esito = RiscontroEstratto.abbinaPerImporto(
+                            opsConto.filter { it.data in (da - 15)..(a + 15) }, movimenti,
+                            esclusiOperazioni = opCollegate.keys, esclusiMovimenti = movCollegati.keys
+                        )
+                        manuali += esito.collegamenti
+                        esitoImporto = esito
+                    }, enabled = mancanti.isNotEmpty(), modifier = Modifier.weight(1f)) {
+                        Text("Associa per importo")
+                    }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                     Button(onClick = {
                         vm.salvaTipoDataEstratto(stato.contoId, tipoData)
                         vm.creaDaEstratto(mancanti)
@@ -320,6 +334,23 @@ fun RiscontroEstrattoDialog(vm: SpeseViewModel, dati: DatiApp, stato: StatoRisco
                 }
             }
         }
+    }
+
+    esitoImporto?.let { e ->
+        AlertDialog(
+            onDismissRequest = { esitoImporto = null },
+            title = { Text("Associa per importo") },
+            text = {
+                Text(
+                    "Associate: ${e.collegamenti.size}\n" +
+                        "Non associate: ${e.piuCandidati + e.senzaCandidati}\n" +
+                        "  · con più candidati (saltate): ${e.piuCandidati}\n" +
+                        "  · senza operazioni con lo stesso importo: ${e.senzaCandidati}\n\n" +
+                        "Le nuove associazioni hanno il colore di quelle fatte a mano: toccando una linea la elimini."
+                )
+            },
+            confirmButton = { TextButton(onClick = { esitoImporto = null }) { Text("OK") } }
+        )
     }
 
     if (confermaDate) {

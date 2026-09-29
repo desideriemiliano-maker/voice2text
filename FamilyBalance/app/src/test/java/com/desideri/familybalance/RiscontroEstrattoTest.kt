@@ -33,4 +33,22 @@ class RiscontroEstrattoTest {
         val movimenti = listOf(MovimentoRiscontro(-1_000, 100))
         assertEquals(emptyList<Collegamento>(), RiscontroEstratto.abbina(ops, movimenti, esclusiOperazioni = setOf(1L)))
     }
+
+    @Test
+    fun perImporto_saltaIMovimentiConPiuCandidati() {
+        val ops = listOf(
+            Operazione(id = 1, contoValutaId = 1, data = 100, importoCent = -1_000),
+            Operazione(id = 2, contoValutaId = 1, data = 300, importoCent = -2_000),
+            Operazione(id = 3, contoValutaId = 1, data = 310, importoCent = -2_000)
+        )
+        val movimenti = listOf(
+            MovimentoRiscontro(-1_000, 150), // unico candidato, 50 giorni dopo: collegato
+            MovimentoRiscontro(-2_000, 200), // due operazioni con lo stesso importo: saltato
+            MovimentoRiscontro(-9_000, 200)  // nessuna operazione
+        )
+        val esito = RiscontroEstratto.abbinaPerImporto(ops, movimenti, emptySet(), emptySet())
+        assertEquals(listOf(Collegamento(1, 0, manuale = true)), esito.collegamenti)
+        assertEquals(1, esito.piuCandidati)
+        assertEquals(1, esito.senzaCandidati)
+    }
 }

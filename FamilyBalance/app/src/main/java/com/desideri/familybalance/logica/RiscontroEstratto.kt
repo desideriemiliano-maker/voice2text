@@ -41,4 +41,34 @@ object RiscontroEstratto {
         }
         return risultato
     }
+
+    /** Esito di [abbinaPerImporto]: i nuovi collegamenti e i movimenti rimasti senza, per motivo. */
+    data class EsitoPerImporto(val collegamenti: List<Collegamento>, val piuCandidati: Int, val senzaCandidati: Int)
+
+    /**
+     * Collega per solo importo (a qualunque data) i movimenti non ancora collegati: solo quando c'è
+     * un'unica operazione non collegata con quell'importo e lei stessa ha un unico movimento con
+     * quell'importo; con più candidati il movimento viene saltato.
+     */
+    fun abbinaPerImporto(
+        operazioni: List<Operazione>,
+        movimenti: List<MovimentoRiscontro>,
+        esclusiOperazioni: Set<Long>,
+        esclusiMovimenti: Set<Int>
+    ): EsitoPerImporto {
+        val opsLibere = operazioni.filter { it.id !in esclusiOperazioni }.groupBy { it.importoCent }
+        val movLiberi = movimenti.indices.filter { it !in esclusiMovimenti }.groupBy { movimenti[it].importoCent }
+        val nuovi = ArrayList<Collegamento>()
+        var piu = 0
+        var nessuno = 0
+        for ((importo, indici) in movLiberi) {
+            val candidate = opsLibere[importo].orEmpty()
+            when {
+                candidate.isEmpty() -> nessuno += indici.size
+                candidate.size == 1 && indici.size == 1 -> nuovi += Collegamento(candidate.single().id, indici.single(), manuale = true)
+                else -> piu += indici.size
+            }
+        }
+        return EsitoPerImporto(nuovi, piu, nessuno)
+    }
 }
