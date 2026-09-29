@@ -124,6 +124,9 @@ fun MappaSpostamentiScreen(vm: SpeseViewModel, onIndietro: () -> Unit) {
     val coloreErrore = MaterialTheme.colorScheme.error
     val coloreTrascinamento = MaterialTheme.colorScheme.tertiary
 
+    // Vicino ai bordi la lista scorre da sola durante il trascinamento.
+    ScorrimentoAutomatico(trascinata != null, { dito }, { areaVisibile }, scorrimento)
+
     Scaffold(topBar = { BarraIndietro("Riscontro spostamenti", onIndietro) }) { padding ->
         Column(modifier = Modifier.fillMaxSize().padding(padding)) {
             // Filtri: periodo e solo righe da collegare.
@@ -244,11 +247,6 @@ fun MappaSpostamentiScreen(vm: SpeseViewModel, onIndietro: () -> Unit) {
                                             },
                                             onTrascinamento = { delta ->
                                                 dito += delta
-                                                // Scorrimento automatico vicino ai bordi dell'area visibile.
-                                                when {
-                                                    dito.y < areaVisibile.top + 48f -> scorrimento.dispatchRawDelta(-24f)
-                                                    dito.y > areaVisibile.bottom - 48f -> scorrimento.dispatchRawDelta(24f)
-                                                }
                                             },
                                             onFineTrascinamento = {
                                                 val t = trascinata

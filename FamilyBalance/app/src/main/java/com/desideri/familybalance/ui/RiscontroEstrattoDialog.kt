@@ -190,7 +190,10 @@ fun RiscontroEstrattoDialog(vm: SpeseViewModel, dati: DatiApp, stato: StatoRisco
         manuali += Collegamento(op, mov, manuale = true)
     }
 
-    Dialog(onDismissRequest = onChiudi, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+    ScorrimentoAutomatico(trascinata != null, { dito }, { area }, scorrimento)
+
+    // decorFitsSystemWindows = false + systemBarsPadding: il popup resta dentro lo schermo visibile.
+    Dialog(onDismissRequest = onChiudi, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
         Surface(modifier = Modifier.fillMaxSize(), tonalElevation = 4.dp) {
             Column(modifier = Modifier.fillMaxSize().systemBarsPadding().padding(12.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -286,7 +289,7 @@ fun RiscontroEstrattoDialog(vm: SpeseViewModel, dati: DatiApp, stato: StatoRisco
                                             onPosizione = { posizioni[chiave] = it },
                                             onTocco = { inModifica = op },
                                             onInizio = { p -> posizioni[chiave]?.let { r -> trascinata = chiave; dito = r.topLeft + p } },
-                                            onTrascina = { delta -> dito += delta; scorriVicinoAiBordi(dito, area, scorrimento) },
+                                            onTrascina = { delta -> dito += delta },
                                             onFine = { val t = trascinata; val b = bersaglio; trascinata = null; if (t != null && b != null) collega(t, b) },
                                             onAnnulla = { trascinata = null }
                                         )
@@ -304,7 +307,7 @@ fun RiscontroEstrattoDialog(vm: SpeseViewModel, dati: DatiApp, stato: StatoRisco
                                             onPosizione = { posizioni[chiave] = it },
                                             onTocco = {},
                                             onInizio = { p -> posizioni[chiave]?.let { r -> trascinata = chiave; dito = r.topLeft + p } },
-                                            onTrascina = { delta -> dito += delta; scorriVicinoAiBordi(dito, area, scorrimento) },
+                                            onTrascina = { delta -> dito += delta },
                                             onFine = { val t = trascinata; val b = bersaglio; trascinata = null; if (t != null && b != null) collega(t, b) },
                                             onAnnulla = { trascinata = null }
                                         )
@@ -346,14 +349,6 @@ fun RiscontroEstrattoDialog(vm: SpeseViewModel, dati: DatiApp, stato: StatoRisco
     }
     inModifica?.let { op ->
         OperazioneDialog(vm, dati, op.contoValutaId, op, onChiudi = { inModifica = null })
-    }
-}
-
-/** Scorrimento automatico quando il dito trascinato è vicino ai bordi dell'area visibile. */
-private fun scorriVicinoAiBordi(dito: Offset, area: Rect, scorrimento: androidx.compose.foundation.ScrollState) {
-    when {
-        dito.y < area.top + 48f -> scorrimento.dispatchRawDelta(-24f)
-        dito.y > area.bottom - 48f -> scorrimento.dispatchRawDelta(24f)
     }
 }
 

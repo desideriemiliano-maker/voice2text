@@ -1,5 +1,6 @@
 package com.desideri.familybalance.ui
 
+import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -94,9 +95,9 @@ fun GraficoSpeseDialog(
     var tendenza by rememberSaveable { mutableStateOf(true) }
     val punti = remember(valori, serie.size, raggruppamento, aggregazione) { Grafico.punti(valori, serie.size, raggruppamento, aggregazione) }
 
-    Dialog(onDismissRequest = onChiudi, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+    Dialog(onDismissRequest = onChiudi, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
         Surface(modifier = Modifier.fillMaxSize(), tonalElevation = 4.dp) {
-            Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+            Column(modifier = Modifier.fillMaxSize().systemBarsPadding().padding(16.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(titolo, style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
                     IconButton(onClick = onChiudi) { Icon(Icons.Filled.Close, contentDescription = "Chiudi") }

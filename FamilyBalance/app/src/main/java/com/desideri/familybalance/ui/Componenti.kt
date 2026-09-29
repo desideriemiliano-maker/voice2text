@@ -245,3 +245,28 @@ fun SelettoreColore(colore: Int?, onColore: (Int?) -> Unit) {
         }
     }
 }
+
+/**
+ * Scorrimento automatico durante un trascinamento: finché [attivo] e il dito ([dito], coordinate
+ * della finestra) è vicino al bordo alto o basso di [area], la lista scorre, più veloce quanto più
+ * il dito è vicino al bordo (anche se il dito resta fermo).
+ */
+@Composable
+fun ScorrimentoAutomatico(attivo: Boolean, dito: () -> androidx.compose.ui.geometry.Offset, area: () -> androidx.compose.ui.geometry.Rect, scorrimento: androidx.compose.foundation.ScrollState) {
+    val densita = androidx.compose.ui.platform.LocalDensity.current
+    androidx.compose.runtime.LaunchedEffect(attivo) {
+        val fascia = with(densita) { 72.dp.toPx() }
+        val massimo = with(densita) { 18.dp.toPx() }
+        while (attivo) {
+            val y = dito().y
+            val r = area()
+            val passo = when {
+                y < r.top + fascia -> -massimo * ((r.top + fascia - y) / fascia).coerceIn(0.2f, 1f)
+                y > r.bottom - fascia -> massimo * ((y - (r.bottom - fascia)) / fascia).coerceIn(0.2f, 1f)
+                else -> 0f
+            }
+            if (passo != 0f) scorrimento.scrollBy(passo)
+            kotlinx.coroutines.delay(16)
+        }
+    }
+}
