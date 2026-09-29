@@ -2,9 +2,11 @@ package com.desideri.familybalance
 
 import com.desideri.familybalance.data.ContoValuta
 import com.desideri.familybalance.data.Operazione
+import com.desideri.familybalance.data.PrevisioneRicorrente
 import com.desideri.familybalance.data.Voce
 import com.desideri.familybalance.logica.Calcoli
 import com.desideri.familybalance.logica.Cambi
+import com.desideri.familybalance.logica.FontePrevisione
 import com.desideri.familybalance.logica.StatoMese
 import com.desideri.familybalance.logica.testoInCent
 import org.junit.Assert.assertEquals
@@ -94,5 +96,24 @@ class CalcoliTest {
         assertEquals(-770.0, settembre.pagato, 0.001)
         assertNull(settembre.previsto)
         assertEquals(-700.0, risultato[1].righe.single().previsto!!, 0.001)
+    }
+
+    @Test
+    fun ricorrenti_personalizzazioniEObsolete() {
+        val conti = listOf(ContoValuta(id = 1, contoId = 1, valuta = "EUR"))
+        val luce = Voce(id = 1, tipo = "Luce", ricorrente = true, mesiRicorrenza = 2, meseInizio = "2026-09", importoPrevistoCent = 10_000)
+        val gas = Voce(id = 2, tipo = "Gas", ricorrente = true, mesiRicorrenza = 1, meseInizio = "2026-01", importoPrevistoCent = 5_000, obsoleta = true)
+        val mesi = (9..12).map { YearMonth.of(2026, it) }
+        // Scadenza di novembre spostata a dicembre con importo 120 e data nota.
+        val pers = listOf(PrevisioneRicorrente(voceId = 1, mese = "2026-11", importoCent = 12_000, data = giorno(2026, 12, 10), spostataA = "2026-12"))
+        val r = Calcoli.ricorrenti(mesi, listOf(luce, gas), conti, emptyList(), Cambi.fisso(1.0), YearMonth.of(2026, 9), pers)
+
+        assertEquals(-100.0, r[0].righe.single().previsto!!, 0.001)
+        assertTrue(r[1].righe.isEmpty())
+        assertTrue(r[2].righe.isEmpty())
+        val dicembre = r[3].righe.single()
+        assertEquals(-120.0, dicembre.previsto!!, 0.001)
+        assertEquals(YearMonth.of(2026, 11), dicembre.meseOrigine)
+        assertEquals(FontePrevisione.PERSONALIZZATA, dicembre.fonte)
     }
 }

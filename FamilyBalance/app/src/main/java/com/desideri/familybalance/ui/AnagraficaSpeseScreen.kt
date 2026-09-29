@@ -35,6 +35,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -156,7 +157,12 @@ private fun RigaVoce(voce: Voce, utilizzi: Int, onClick: () -> Unit, onOperazion
         Row(verticalAlignment = Alignment.CenterVertically) {
             PallinoColore(voce.colore, modifier = Modifier.padding(end = 8.dp), dimensione = 14.dp)
             Column(modifier = Modifier.weight(1f)) {
-                Text(voce.tipo, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold)
+                Text(
+                    voce.tipo,
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    color = if (voce.obsoleta) MaterialTheme.colorScheme.onSurfaceVariant else Color.Unspecified
+                )
                 voce.sottotipo?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
             }
             if (utilizzi > 0) {
@@ -165,8 +171,9 @@ private fun RigaVoce(voce: Voce, utilizzi: Int, onClick: () -> Unit, onOperazion
                 Text("0 op.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
-        if (voce.entrata || voce.ricorrente) {
+        if (voce.entrata || voce.ricorrente || voce.obsoleta) {
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                if (voce.obsoleta) AssistChip(onClick = onClick, label = { Text("Obsoleta") })
                 if (voce.entrata) AssistChip(onClick = onClick, label = { Text("Entrata") })
                 if (voce.ricorrente) {
                     val periodo = if (voce.mesiRicorrenza == 1) "ogni mese" else "ogni ${voce.mesiRicorrenza} mesi"
@@ -198,6 +205,7 @@ private fun VoceDialog(
     }
     var importoPrevisto by remember { mutableStateOf(voce.importoPrevistoCent?.let { centInTesto(it) } ?: "") }
     var colore by remember { mutableStateOf(voce.colore) }
+    var obsoleta by remember { mutableStateOf(voce.obsoleta) }
     var errore by remember { mutableStateOf<String?>(null) }
     var confermaElimina by remember { mutableStateOf(false) }
 
@@ -215,7 +223,8 @@ private fun VoceDialog(
                 mesiRicorrenza = if (ricorrente) numeroMesi ?: 1 else voce.mesiRicorrenza,
                 meseInizio = if (ricorrente) inizio?.toString() else voce.meseInizio,
                 importoPrevistoCent = if (ricorrente) previsto?.let { kotlin.math.abs(it) } else voce.importoPrevistoCent,
-                colore = colore
+                colore = colore,
+                obsoleta = obsoleta
             )
         )
     }
@@ -235,6 +244,16 @@ private fun VoceDialog(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Checkbox(checked = ricorrente, onCheckedChange = { ricorrente = it })
                     Text("Spesa ricorrente")
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(checked = obsoleta, onCheckedChange = { obsoleta = it })
+                    Column {
+                        Text("Obsoleta")
+                        Text(
+                            "Non si propone più come tipo; se ricorrente, niente previsioni nei mesi futuri.",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
                 }
                 if (ricorrente) {
                     OutlinedTextField(
@@ -390,7 +409,7 @@ private fun SpostaOperazioniDialog(
     onConferma: (Voce) -> Unit,
     onAnnulla: () -> Unit
 ) {
-    val candidate = remember(voci, sorgente.id) { voci.filter { it.id != sorgente.id }.sortedBy { it.descrizione.lowercase() } }
+    val candidate = remember(voci, sorgente.id) { voci.filter { it.id != sorgente.id && !it.obsoleta }.sortedBy { it.descrizione.lowercase() } }
     var testo by remember { mutableStateOf("") }
     val destinazione = candidate.firstOrNull { it.descrizione.equals(testo.trim(), ignoreCase = true) }
 

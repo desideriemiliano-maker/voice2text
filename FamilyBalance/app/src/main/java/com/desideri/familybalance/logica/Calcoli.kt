@@ -2,6 +2,7 @@ package com.desideri.familybalance.logica
 
 import com.desideri.familybalance.data.ContoValuta
 import com.desideri.familybalance.data.Operazione
+import com.desideri.familybalance.data.PrevisioneRicorrente
 import com.desideri.familybalance.data.Valute
 import com.desideri.familybalance.data.Voce
 import java.time.LocalDate
@@ -14,11 +15,25 @@ enum class Classe { ENTRATA, CORRENTE, RICORRENTE, TRASFERIMENTO }
 
 enum class StatoMese { PASSATO, CORRENTE, FUTURO }
 
-/** Una spesa ricorrente in un mese: quanto è stato pagato e/o quanto è previsto (importi EUR con segno). */
+/** Da dove viene l'importo previsto di una scadenza ricorrente. */
+enum class FontePrevisione { ANAGRAFICA, MEDIA, PERSONALIZZATA, NESSUNA }
+
+/**
+ * Una spesa ricorrente in un mese: quanto è stato pagato e/o quanto è previsto (importi EUR con segno).
+ * Per le previsioni: [fonte] dell'importo, [mediaSu] (mesi e importi usati per la media),
+ * [dataPrevista] se nota e [meseOrigine] se la scadenza è stata spostata qui da un altro mese.
+ * [meseScadenza] è il mese della scadenza secondo la ricorrenza (quello a cui si riferisce la
+ * personalizzazione).
+ */
 data class RigaRicorrente(
     val voce: Voce,
     val pagato: Double,
-    val previsto: Double?
+    val previsto: Double?,
+    val fonte: FontePrevisione = FontePrevisione.NESSUNA,
+    val mediaSu: List<Pair<YearMonth, Double>> = emptyList(),
+    val dataPrevista: Long? = null,
+    val meseOrigine: YearMonth? = null,
+    val meseScadenza: YearMonth? = null
 )
 
 data class MeseRicorrenti(
@@ -119,31 +134,79 @@ object Calcoli {
      */
     fun previsione(voce: Voce, storicoVoce: Map<YearMonth, Double>?, oggi: YearMonth): Double? {
         voce.importoPrevistoCent?.let { return -abs(it) / 100.0 }
-        val ultimi = storicoVoce.orEmpty().entries
-            .filter { it.key < oggi && it.value != 0.0 }
-            .sortedByDescending { it.key }
-            .take(6)
-            .map { it.value }
+        val ultimi = ultimiPagamenti(storicoVoce, oggi).map { it.second }
         return if (ultimi.isEmpty()) null else ultimi.average()
     }
 
+    /** Le ultime 6 occorrenze pagate prima di [oggi] (mese, importo EUR), usate per la media. */
+    fun ultimiPagamenti(storicoVoce: Map<YearMonth, Double>?, oggi: YearMonth): List<Pair<YearMonth, Double>> =
+        storicoVoce.orEmpty().entries
+            .filter { it.key < oggi && it.value != 0.0 }
+            .sortedByDescending { it.key }
+            .take(6)
+            .map { it.key to it.value }
+
+    /**
+     * Spese ricorrenti mese per mese: pagato (operazioni del mese) e, dal mese corrente in poi, le
+     * scadenze non ancora pagate con l'importo previsto. Le [personalizzazioni] (importo, data o
+     * spostamento di una singola scadenza) prevalgono sul calcolo; le voci obsolete non hanno
+     * previsioni.
+     */
     fun ricorrenti(
         mesi: List<YearMonth>,
         voci: List<Voce>,
         contiValuta: List<ContoValuta>,
         operazioni: List<Operazione>,
         cambi: Cambi,
-        oggi: YearMonth
+        oggi: YearMonth,
+        personalizzazioni: List<PrevisioneRicorrente> = emptyList()
     ): List<MeseRicorrenti> {
         val vociRicorrenti = voci.filter { it.ricorrente && !it.entrata }
         val valutaDi = contiValuta.associate { it.id to it.valuta }
         val storico = storicoRicorrenti(vociRicorrenti, operazioni, valutaDi, cambi)
         val previsioni = vociRicorrenti.associate { it.id to previsione(it, storico[it.id], oggi) }
+        val perVoceEMese = personalizzazioni.associateBy { it.voceId to it.mese }
+        val spostatePerMese = personalizzazioni.filter { it.spostataA != null && it.spostataA != it.mese }
+            .groupBy { testoInMese(it.spostataA!!) }
+
+        fun riga(voce: Voce, pagato: Double, meseScadenza: YearMonth, p: PrevisioneRicorrente?, origine: YearMonth?): RigaRicorrente? {
+            val calcolato = previsioni[voce.id]
+            val (previsto, fonte) = when {
+                p?.importoCent != null -> -abs(p.importoCent) / 100.0 to FontePrevisione.PERSONALIZZATA
+                voce.importoPrevistoCent != null -> calcolato to FontePrevisione.ANAGRAFICA
+                calcolato != null -> calcolato to FontePrevisione.MEDIA
+                else -> null to FontePrevisione.NESSUNA
+            }
+            if (previsto == null || previsto == 0.0) return null
+            return RigaRicorrente(
+                voce, pagato, previsto, fonte,
+                mediaSu = if (fonte == FontePrevisione.MEDIA) ultimiPagamenti(storico[voce.id], oggi) else emptyList(),
+                dataPrevista = p?.data,
+                meseOrigine = origine,
+                meseScadenza = meseScadenza
+            )
+        }
+
         return mesi.map { m ->
-            val righe = vociRicorrenti.mapNotNull { voce ->
+            val righe = vociRicorrenti.flatMap { voce ->
                 val pagato = storico[voce.id]?.get(m) ?: 0.0
-                val previsto = if (m >= oggi && pagato == 0.0 && dovuta(voce, m)) previsioni[voce.id] else null
-                if (pagato != 0.0 || (previsto != null && previsto != 0.0)) RigaRicorrente(voce, pagato, previsto) else null
+                val daPrevedere = m >= oggi && pagato == 0.0 && !voce.obsoleta
+                val p = perVoceEMese[voce.id to m.toString()]
+                // Scadenza del mese secondo la ricorrenza, se non spostata altrove.
+                val propria = if (daPrevedere && dovuta(voce, m) && (p?.spostataA == null || p.spostataA == m.toString())) {
+                    riga(voce, pagato, m, p, null)
+                } else null
+                // Scadenze di altri mesi spostate in questo.
+                val arrivate = if (daPrevedere) {
+                    spostatePerMese[m].orEmpty().filter { it.voceId == voce.id }
+                        .mapNotNull { q -> testoInMese(q.mese)?.let { origine -> riga(voce, pagato, origine, q, origine) } }
+                } else emptyList()
+                val previste = listOfNotNull(propria) + arrivate
+                when {
+                    previste.isNotEmpty() -> previste
+                    pagato != 0.0 -> listOf(RigaRicorrente(voce, pagato, null))
+                    else -> emptyList()
+                }
             }.sortedBy { it.voce.descrizione.lowercase() }
             MeseRicorrenti(m, righe)
         }
@@ -156,7 +219,8 @@ object Calcoli {
         cambi: Cambi,
         targetEuro: Double,
         oggi: YearMonth,
-        mesiFuturi: Int = 12
+        mesiFuturi: Int = 12,
+        personalizzazioni: List<PrevisioneRicorrente> = emptyList()
     ): List<RigaBilancio> {
         val valutaDi = contiValuta.associate { it.id to it.valuta }
         val vociPerId = voci.associateBy { it.id }
@@ -191,7 +255,7 @@ object Calcoli {
 
         val ultimoMese = oggi.plusMonths(mesiFuturi.toLong())
         val mesi = generateSequence(primoMese) { it.plusMonths(1) }.takeWhile { it <= ultimoMese }.toList()
-        val previsti = ricorrenti(mesi.filter { it >= oggi }, voci, contiValuta, operazioni, cambi, oggi)
+        val previsti = ricorrenti(mesi.filter { it >= oggi }, voci, contiValuta, operazioni, cambi, oggi, personalizzazioni)
             .associate { it.mese to it.totalePrevisto }
 
         var saldoEurCent = contiValuta.filter { it.valuta != Valute.CHF }.sumOf { it.saldoInizialeCent }

@@ -1,5 +1,6 @@
 package com.desideri.familybalance.data
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
@@ -44,6 +45,8 @@ data class ContoValuta(
  * - [importoPrevistoCent]: importo atteso (positivo) per la previsione; se null si usa la media
  *   delle ultime occorrenze pagate.
  * - [colore]: colore con cui la voce è evidenziata nelle liste.
+ * - [obsoleta]: voce non più in uso: non si propone più come tipo e, se ricorrente, non ha
+ *   previsioni nei mesi futuri (le operazioni passate restano).
  */
 @Entity(tableName = "voci", indices = [Index(value = ["tipo", "sottotipo"], unique = true)])
 data class Voce(
@@ -56,7 +59,9 @@ data class Voce(
     val meseInizio: String? = null,
     val importoPrevistoCent: Long? = null,
     /** Colore scelto per la voce (ARGB), null = nessuno. */
-    val colore: Int? = null
+    val colore: Int? = null,
+    @ColumnInfo(defaultValue = "0")
+    val obsoleta: Boolean = false
 ) {
     val descrizione: String get() = if (sottotipo.isNullOrBlank()) tipo else "$tipo / $sottotipo"
 }
@@ -120,4 +125,24 @@ data class Associazione(
 data class Cambio(
     @PrimaryKey val mese: String,
     val chfEur: Double
+)
+
+/**
+ * Personalizzazione di una scadenza di una spesa ricorrente: la scadenza della voce [voceId] attesa
+ * nel mese [mese] ("yyyy-MM", secondo la ricorrenza dell'anagrafica) ha importo [importoCent]
+ * (positivo; null = quello calcolato), data prevista [data] (giorni dall'epoch; null = non nota) ed
+ * è eventualmente spostata al mese [spostataA] ("yyyy-MM") solo per questa volta.
+ */
+@Entity(
+    tableName = "previsioni_ricorrenti",
+    foreignKeys = [ForeignKey(entity = Voce::class, parentColumns = ["id"], childColumns = ["voceId"], onDelete = ForeignKey.CASCADE)],
+    indices = [Index(value = ["voceId", "mese"], unique = true)]
+)
+data class PrevisioneRicorrente(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val voceId: Long,
+    val mese: String,
+    val importoCent: Long? = null,
+    val data: Long? = null,
+    val spostataA: String? = null
 )

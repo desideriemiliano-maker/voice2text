@@ -122,7 +122,7 @@ fun ImportEstrattoDialog(vm: SpeseViewModel, dati: DatiApp, importazione: Import
     // Quale data registrare: ricordata per conto dall'ultimo import.
     var tipoData by remember(importazione) { mutableStateOf(vm.tipoDataEstratto(importazione.contoId)) }
 
-    val tipi = remember(dati.voci) { (dati.voci.map { it.tipo } + Associazione.TIPO_SPOSTAMENTO).distinct().sortedBy { it.lowercase() } }
+    val tipi = remember(dati.voci) { (dati.vociAttive.map { it.tipo } + Associazione.TIPO_SPOSTAMENTO).distinct().sortedBy { it.lowercase() } }
     fun valida(stato: StatoRiga) = stato.includi && stato.tipo.isNotBlank() && (!stato.spostamento || stato.destinazione != null)
     val daImportare = stati.count { valida(it) }
     val dateDaAggiornare = importazione.righe.indices.filter { stati[it].aggiornaData && dataDiversa(importazione.righe[it], tipoData) }
@@ -399,7 +399,7 @@ private fun CardMovimento(
                         onScelta = { onStato(stato.copy(destinazione = it.id)) }
                     )
                 } else {
-                    val sottotipi = dati.voci.filter { it.tipo.equals(stato.tipo.trim(), true) }.mapNotNull { it.sottotipo }.distinct().sortedBy { it.lowercase() }
+                    val sottotipi = dati.vociAttive.filter { it.tipo.equals(stato.tipo.trim(), true) }.mapNotNull { it.sottotipo }.distinct().sortedBy { it.lowercase() }
                     CampoAutocompletamento("Sottotipo (opzionale)", stato.sottotipo, sottotipi, { onStato(stato.copy(sottotipo = it)) })
                     if (stato.tipo.isNotBlank() && !tipoNoto) {
                         Text("Tipo nuovo: verrà creato in anagrafica", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.tertiary)
@@ -424,7 +424,7 @@ private fun NuovaAssociazioneDialog(
     var chiave by remember { mutableStateOf(descrizione) }
     var tipo by remember { mutableStateOf(statoIniziale.tipo) }
     var sottotipo by remember { mutableStateOf(statoIniziale.sottotipo) }
-    val sottotipi = dati.voci.filter { it.tipo.equals(tipo.trim(), true) }.mapNotNull { it.sottotipo }.distinct().sortedBy { it.lowercase() }
+    val sottotipi = dati.vociAttive.filter { it.tipo.equals(tipo.trim(), true) }.mapNotNull { it.sottotipo }.distinct().sortedBy { it.lowercase() }
     val valida = chiave.isNotBlank() && tipo.isNotBlank() && Associazioni.contiene(descrizione, chiave)
 
     AlertDialog(

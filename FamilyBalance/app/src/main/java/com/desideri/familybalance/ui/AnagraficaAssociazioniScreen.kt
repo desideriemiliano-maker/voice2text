@@ -51,7 +51,7 @@ fun AnagraficaAssociazioniScreen(vm: SpeseViewModel, onIndietro: () -> Unit) {
     var inModifica by remember { mutableStateOf<Associazione?>(null) }
     var incolla by remember { mutableStateOf(false) }
 
-    val tipi = remember(dati.voci) { (dati.voci.map { it.tipo } + Associazione.TIPO_SPOSTAMENTO).distinct().sortedBy { it.lowercase() } }
+    val tipi = remember(dati.voci) { (dati.vociAttive.map { it.tipo } + Associazione.TIPO_SPOSTAMENTO).distinct().sortedBy { it.lowercase() } }
     val filtrate = remember(associazioni, filtro) {
         val f = filtro.trim()
         if (f.isEmpty()) associazioni else associazioni.filter {
@@ -103,7 +103,7 @@ fun AnagraficaAssociazioniScreen(vm: SpeseViewModel, onIndietro: () -> Unit) {
         AssociazioneDialog(
             associazione = a,
             tipi = tipi,
-            sottotipiDi = { tipo -> dati.voci.filter { it.tipo.equals(tipo.trim(), true) }.mapNotNull { it.sottotipo }.distinct().sortedBy { it.lowercase() } },
+            sottotipiDi = { tipo -> dati.vociAttive.filter { it.tipo.equals(tipo.trim(), true) }.mapNotNull { it.sottotipo }.distinct().sortedBy { it.lowercase() } },
             onSalva = {
                 vm.salvaAssociazione(it)
                 inModifica = null

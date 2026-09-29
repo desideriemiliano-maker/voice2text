@@ -18,6 +18,7 @@ import com.desideri.familybalance.data.Conto
 import com.desideri.familybalance.data.ContoValuta
 import com.desideri.familybalance.data.Impostazioni
 import com.desideri.familybalance.data.Operazione
+import com.desideri.familybalance.data.PrevisioneRicorrente
 import com.desideri.familybalance.data.Preferenze
 import com.desideri.familybalance.data.Valute
 import com.desideri.familybalance.data.Voce
@@ -42,6 +43,7 @@ import com.desideri.familybalance.logica.testoInMese
 import com.desideri.familybalance.logica.MeseRicorrenti
 import com.desideri.familybalance.logica.RigaBilancio
 import com.desideri.familybalance.logica.formattaCent
+import com.desideri.familybalance.logica.formattaMese
 import com.google.api.client.googleapis.extensions.android.gms.auth.GooglePlayServicesAvailabilityIOException
 import com.google.api.client.googleapis.extensions.android.gms.auth.UserRecoverableAuthIOException
 import kotlinx.coroutines.Dispatchers
@@ -73,6 +75,9 @@ data class DatiApp(
     private val contiPerId by lazy { conti.associateBy { it.id } }
     val contiValutaPerId by lazy { contiValuta.associateBy { it.id } }
     val vociPerId by lazy { voci.associateBy { it.id } }
+
+    /** Voci proponibili come tipo/sottotipo (le obsolete no). */
+    val vociAttive: List<Voce> by lazy { voci.filterNot { it.obsoleta } }
 
     /** Conti/valuta ordinati per nome conto e valuta, come mostrati nelle liste. */
     val contiValutaOrdinati: List<ContoValuta> by lazy {
@@ -148,16 +153,82 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
         )
     }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.Eagerly, Cambi.fisso(_impostazioni.value.cambioChfEur))
 
-    val bilancio: StateFlow<List<RigaBilancio>> = combine(dati, _impostazioni, cambi) { d, imp, cambi ->
-        Calcoli.bilancio(d.contiValuta, d.voci, d.operazioni, cambi, imp.targetRisparmioCent / 100.0, YearMonth.now())
+    /** Personalizzazioni delle scadenze ricorrenti (importo, data, spostamento). */
+    val personalizzazioni: StateFlow<List<PrevisioneRicorrente>> =
+        dao.previsioniFlow().stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    val bilancio: StateFlow<List<RigaBilancio>> = combine(dati, _impostazioni, cambi, personalizzazioni) { d, imp, cambi, pers ->
+        Calcoli.bilancio(d.contiValuta, d.voci, d.operazioni, cambi, imp.targetRisparmioCent / 100.0, YearMonth.now(), personalizzazioni = pers)
     }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
-    /** Spese ricorrenti da 12 mesi fa a 12 mesi avanti. */
-    val ricorrenti: StateFlow<List<MeseRicorrenti>> = combine(dati, cambi) { d, cambi ->
+    /** Periodo mostrato nella sezione Ricorrenti (di default da 12 mesi fa a 12 mesi avanti). */
+    private val _periodoRicorrenti = MutableStateFlow(YearMonth.now().minusMonths(12) to YearMonth.now().plusMonths(12))
+    val periodoRicorrenti: StateFlow<Pair<YearMonth, YearMonth>> = _periodoRicorrenti.asStateFlow()
+
+    fun impostaPeriodoRicorrenti(da: YearMonth, a: YearMonth) {
+        if (da <= a) _periodoRicorrenti.value = da to a
+    }
+
+    /** Spese ricorrenti mese per mese nel periodo scelto. */
+    val ricorrenti: StateFlow<List<MeseRicorrenti>> = combine(dati, cambi, personalizzazioni, _periodoRicorrenti) { d, cambi, pers, periodo ->
         val oggi = YearMonth.now()
-        val mesi = (-12L..12L).map { oggi.plusMonths(it) }
-        Calcoli.ricorrenti(mesi, d.voci, d.contiValuta, d.operazioni, cambi, oggi)
+        val mesi = generateSequence(periodo.first) { it.plusMonths(1) }.takeWhile { it <= periodo.second }.toList()
+        Calcoli.ricorrenti(mesi, d.voci, d.contiValuta, d.operazioni, cambi, oggi, pers)
     }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    // --- Scadenze ricorrenti ---
+
+    /**
+     * Imposta importo ([importoCent], positivo) e data prevista ([data]) della scadenza di [voce]
+     * del mese [meseScadenza]; null = calcolati. Una data in un altro mese sposta la scadenza lì
+     * (solo questa volta). Senza nessuna personalizzazione la riga viene tolta.
+     */
+    fun salvaScadenza(voce: Voce, meseScadenza: YearMonth, importoCent: Long?, data: Long?) = viewModelScope.launch {
+        val chiave = meseScadenza.toString()
+        val attuale = personalizzazioni.value.firstOrNull { it.voceId == voce.id && it.mese == chiave }
+        val spostataA = data?.let { Calcoli.mese(it) }?.takeIf { it != meseScadenza }?.toString()
+            ?: attuale?.spostataA.takeIf { data == null }
+        if (importoCent == null && data == null && spostataA == null) {
+            dao.eliminaPrevisione(voce.id, chiave)
+        } else {
+            dao.salvaPrevisione(
+                PrevisioneRicorrente(id = attuale?.id ?: 0, voceId = voce.id, mese = chiave, importoCent = importoCent?.let { kotlin.math.abs(it) }, data = data, spostataA = spostataA)
+            )
+        }
+        messaggio("Scadenza aggiornata")
+    }
+
+    /**
+     * Sposta la scadenza di [voce] del mese [meseScadenza] a [nuovoMese]: con [mantieniRicorrenza]
+     * solo questa volta (le successive restano come in anagrafica), altrimenti la ricorrenza riparte
+     * da [nuovoMese] (cambia il mese di partenza in anagrafica e le personalizzazioni successive
+     * vengono tolte; importo e data di questa passano alla nuova scadenza).
+     */
+    fun spostaScadenza(voce: Voce, meseScadenza: YearMonth, nuovoMese: YearMonth, mantieniRicorrenza: Boolean) = viewModelScope.launch {
+        val chiave = meseScadenza.toString()
+        val attuale = personalizzazioni.value.firstOrNull { it.voceId == voce.id && it.mese == chiave }
+        val dataNelMese = attuale?.data?.takeIf { Calcoli.mese(it) == nuovoMese }
+        db.withTransaction {
+            if (mantieniRicorrenza) {
+                val spostata = nuovoMese.toString().takeIf { nuovoMese != meseScadenza }
+                if (spostata == null && attuale?.importoCent == null && dataNelMese == null) {
+                    dao.eliminaPrevisione(voce.id, chiave)
+                } else {
+                    dao.salvaPrevisione(
+                        PrevisioneRicorrente(id = attuale?.id ?: 0, voceId = voce.id, mese = chiave, importoCent = attuale?.importoCent, data = dataNelMese, spostataA = spostata)
+                    )
+                }
+            } else {
+                dao.aggiornaVoce(voce.copy(meseInizio = nuovoMese.toString()))
+                personalizzazioni.value.filter { it.voceId == voce.id && (testoInMese(it.mese) ?: nuovoMese) >= meseScadenza }
+                    .forEach { dao.eliminaPrevisione(voce.id, it.mese) }
+                if (attuale?.importoCent != null || dataNelMese != null) {
+                    dao.salvaPrevisione(PrevisioneRicorrente(voceId = voce.id, mese = nuovoMese.toString(), importoCent = attuale?.importoCent, data = dataNelMese))
+                }
+            }
+        }
+        messaggio(if (mantieniRicorrenza) "Scadenza spostata a ${formattaMese(nuovoMese)}" else "Ricorrenza ripartita da ${formattaMese(nuovoMese)}")
+    }
 
     /** Problemi del riscontro spostamenti (null finché non calcolati), solo mentre la schermata è aperta. */
     val riscontro: StateFlow<List<ProblemaSpostamento>?> = dati.map { d ->

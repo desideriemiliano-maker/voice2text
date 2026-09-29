@@ -8,7 +8,7 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import java.io.File
 
-@Database(entities = [Conto::class, ContoValuta::class, Voce::class, Operazione::class, Associazione::class, Cambio::class], version = 5, exportSchema = false)
+@Database(entities = [Conto::class, ContoValuta::class, Voce::class, Operazione::class, Associazione::class, Cambio::class, PrevisioneRicorrente::class], version = 6, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun dao(): SpeseDao
 
@@ -23,7 +23,7 @@ abstract class AppDatabase : RoomDatabase() {
                 // TRUNCATE invece di WAL: tutto il contenuto sta nel solo file .db, così il backup
                 // su Drive è una semplice copia del file senza dover gestire -wal/-shm.
                 .setJournalMode(JournalMode.TRUNCATE)
-                .addMigrations(MIGRAZIONE_1_2, MIGRAZIONE_2_3, MIGRAZIONE_3_4, MIGRAZIONE_4_5)
+                .addMigrations(MIGRAZIONE_1_2, MIGRAZIONE_2_3, MIGRAZIONE_3_4, MIGRAZIONE_4_5, MIGRAZIONE_5_6)
                 .build()
                 .also { istanza = it }
         }
@@ -56,6 +56,21 @@ abstract class AppDatabase : RoomDatabase() {
         private val MIGRAZIONE_4_5 = object : Migration(4, 5) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("CREATE TABLE IF NOT EXISTS `cambi` (`mese` TEXT NOT NULL, `chfEur` REAL NOT NULL, PRIMARY KEY(`mese`))")
+            }
+        }
+
+        /** Versione 6: voci obsolete e personalizzazioni delle scadenze delle spese ricorrenti. */
+        private val MIGRAZIONE_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `voci` ADD COLUMN `obsoleta` INTEGER NOT NULL DEFAULT 0")
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `previsioni_ricorrenti` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "`voceId` INTEGER NOT NULL, `mese` TEXT NOT NULL, `importoCent` INTEGER, `data` INTEGER, `spostataA` TEXT, " +
+                        "FOREIGN KEY(`voceId`) REFERENCES `voci`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )"
+                )
+                db.execSQL(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS `index_previsioni_ricorrenti_voceId_mese` ON `previsioni_ricorrenti` (`voceId`, `mese`)"
+                )
             }
         }
 

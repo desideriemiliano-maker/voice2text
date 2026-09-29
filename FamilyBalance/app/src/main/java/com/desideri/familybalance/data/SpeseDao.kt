@@ -116,6 +116,19 @@ interface SpeseDao {
     @Query("SELECT COUNT(*) FROM operazioni WHERE contoValutaId = :contoValutaId AND data = :data AND importoCent = :importoCent")
     suspend fun contaOperazioniUguali(contoValutaId: Long, data: Long, importoCent: Long): Int
 
+    // --- Personalizzazioni delle scadenze ricorrenti ---
+    @Query("SELECT * FROM previsioni_ricorrenti")
+    fun previsioniFlow(): Flow<List<PrevisioneRicorrente>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun salvaPrevisione(previsione: PrevisioneRicorrente): Long
+
+    @Query("DELETE FROM previsioni_ricorrenti WHERE voceId = :voceId AND mese = :mese")
+    suspend fun eliminaPrevisione(voceId: Long, mese: String)
+
+    @Query("DELETE FROM previsioni_ricorrenti WHERE voceId = :voceId")
+    suspend fun eliminaPrevisioniVoce(voceId: Long)
+
     // --- Cambi mensili CHF/EUR ---
     @Query("SELECT * FROM cambi ORDER BY mese")
     fun cambiFlow(): Flow<List<Cambio>>

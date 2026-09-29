@@ -71,9 +71,9 @@ fun OperazioneDialog(vm: SpeseViewModel, dati: DatiApp, contoValutaId: Long, esi
     var errore by remember { mutableStateOf<String?>(null) }
     var confermaElimina by remember { mutableStateOf(false) }
 
-    val tipi = remember(dati.voci) { dati.voci.map { it.tipo }.distinct().sortedBy { it.lowercase() } }
+    val tipi = remember(dati.voci) { dati.vociAttive.map { it.tipo }.distinct().sortedBy { it.lowercase() } }
     val sottotipi = remember(dati.voci, tipo) {
-        dati.voci.filter { it.tipo.equals(tipo.trim(), ignoreCase = true) }.mapNotNull { it.sottotipo }.distinct().sortedBy { it.lowercase() }
+        dati.vociAttive.filter { it.tipo.equals(tipo.trim(), ignoreCase = true) }.mapNotNull { it.sottotipo }.distinct().sortedBy { it.lowercase() }
     }
     val altriConti = dati.contiValutaOrdinati.filter { it.id != contoValutaId }
     val valutaDest = destinazione?.let { dati.contiValutaPerId[it]?.valuta }
@@ -134,6 +134,10 @@ fun OperazioneDialog(vm: SpeseViewModel, dati: DatiApp, contoValutaId: Long, esi
                 if (tipo.isBlank()) return@launch run { errore = "Scegli il tipo di spesa" }
                 val voceId = vm.voceId(tipo, sottotipo)
                     ?: return@launch run { errore = "Tipo/sottotipo non presente: definiscilo in Anagrafica spese" }
+                // Una voce obsoleta resta solo sulle operazioni che l'avevano già.
+                if (dati.vociPerId[voceId]?.obsoleta == true && voceId != esistente?.voceId) {
+                    return@launch run { errore = "Voce obsoleta: non si può più usare (Anagrafica spese)" }
+                }
                 val op = Operazione(
                     id = esistente?.id ?: 0,
                     contoValutaId = contoValutaId,
