@@ -205,6 +205,18 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
         messaggio("Scadenza aggiornata")
     }
 
+    /** Annulla (o ripristina, con [annulla] false) la scadenza di [voce] del mese [meseScadenza]. */
+    fun annullaScadenza(voce: Voce, meseScadenza: YearMonth, annulla: Boolean) = viewModelScope.launch {
+        val chiave = meseScadenza.toString()
+        val attuale = personalizzazioni.value.firstOrNull { it.voceId == voce.id && it.mese == chiave }
+        if (!annulla && attuale != null && attuale.importoCent == null && attuale.data == null && attuale.spostataA == null) {
+            dao.eliminaPrevisione(voce.id, chiave)
+        } else {
+            dao.salvaPrevisione((attuale ?: PrevisioneRicorrente(voceId = voce.id, mese = chiave)).copy(annullata = annulla))
+        }
+        messaggio(if (annulla) "Scadenza di ${formattaMese(meseScadenza)} annullata" else "Scadenza di ${formattaMese(meseScadenza)} ripristinata")
+    }
+
     /**
      * Sposta la scadenza di [voce] del mese [meseScadenza] a [nuovoMese]: con [mantieniRicorrenza]
      * solo questa volta (le successive restano come in anagrafica), altrimenti la ricorrenza riparte

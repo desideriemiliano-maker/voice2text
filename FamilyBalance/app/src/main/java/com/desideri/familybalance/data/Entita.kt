@@ -144,5 +144,8 @@ data class PrevisioneRicorrente(
     val mese: String,
     val importoCent: Long? = null,
     val data: Long? = null,
-    val spostataA: String? = null
+    val spostataA: String? = null,
+    /** Scadenza annullata per questo mese (nessuna previsione). */
+    @ColumnInfo(defaultValue = "0")
+    val annullata: Boolean = false
 )

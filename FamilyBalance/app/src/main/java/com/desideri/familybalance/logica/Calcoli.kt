@@ -33,7 +33,9 @@ data class RigaRicorrente(
     val mediaSu: List<Pair<YearMonth, Double>> = emptyList(),
     val dataPrevista: Long? = null,
     val meseOrigine: YearMonth? = null,
-    val meseScadenza: YearMonth? = null
+    val meseScadenza: YearMonth? = null,
+    /** Scadenza del mese annullata dall'utente (nessuna previsione). */
+    val annullata: Boolean = false
 )
 
 data class MeseRicorrenti(
@@ -147,8 +149,8 @@ object Calcoli {
             .map { it.key to it.value }
 
     /**
-     * Spese ricorrenti mese per mese: pagato (operazioni del mese) e, dal mese corrente in poi, le
-     * scadenze non ancora pagate con l'importo previsto. Le [personalizzazioni] (importo, data o
+     * Spese ricorrenti mese per mese secondo la loro ricorrenza: il pagato (operazioni del mese) o,
+     * se nel mese non ci sono operazioni, l'importo stimato (anche nei mesi passati, come non pagato). Le [personalizzazioni] (importo, data o
      * spostamento di una singola scadenza) prevalgono sul calcolo; le voci obsolete non hanno
      * previsioni.
      */
@@ -190,21 +192,25 @@ object Calcoli {
         return mesi.map { m ->
             val righe = vociRicorrenti.flatMap { voce ->
                 val pagato = storico[voce.id]?.get(m) ?: 0.0
-                val daPrevedere = m >= oggi && pagato == 0.0 && !voce.obsoleta
+                // Senza pagamenti nel mese la scadenza si stima (anche nei mesi passati: non pagata).
+                val daPrevedere = pagato == 0.0 && !voce.obsoleta
                 val p = perVoceEMese[voce.id to m.toString()]
-                // Scadenza del mese secondo la ricorrenza, se non spostata altrove.
-                val propria = if (daPrevedere && dovuta(voce, m) && (p?.spostataA == null || p.spostataA == m.toString())) {
+                val dovutaQui = !voce.obsoleta && dovuta(voce, m)
+                val annullata = dovutaQui && p?.annullata == true
+                // Scadenza del mese secondo la ricorrenza, se non annullata né spostata altrove.
+                val propria = if (daPrevedere && dovutaQui && !annullata && (p?.spostataA == null || p.spostataA == m.toString())) {
                     riga(voce, pagato, m, p, null)
                 } else null
                 // Scadenze di altri mesi spostate in questo.
                 val arrivate = if (daPrevedere) {
-                    spostatePerMese[m].orEmpty().filter { it.voceId == voce.id }
+                    spostatePerMese[m].orEmpty().filter { it.voceId == voce.id && !it.annullata }
                         .mapNotNull { q -> testoInMese(q.mese)?.let { origine -> riga(voce, pagato, origine, q, origine) } }
                 } else emptyList()
                 val previste = listOfNotNull(propria) + arrivate
                 when {
                     previste.isNotEmpty() -> previste
-                    pagato != 0.0 -> listOf(RigaRicorrente(voce, pagato, null))
+                    pagato != 0.0 -> listOf(RigaRicorrente(voce, pagato, null, meseScadenza = m))
+                    annullata -> listOf(RigaRicorrente(voce, 0.0, null, meseScadenza = m, annullata = true))
                     else -> emptyList()
                 }
             }.sortedBy { it.voce.descrizione.lowercase() }

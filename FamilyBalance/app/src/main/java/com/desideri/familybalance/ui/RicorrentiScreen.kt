@@ -44,6 +44,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -221,11 +222,19 @@ private fun CardMese(mese: MeseRicorrenti, oggi: YearMonth, onRiga: (RigaRicorre
                 ) {
                     PallinoColore(riga.voce.colore, modifier = Modifier.padding(end = 6.dp), dimensione = 10.dp)
                     Column(modifier = Modifier.weight(1f)) {
+                        val nonPagata = riga.previsto != null && mese.mese < oggi
                         Text(
-                            (if (riga.previsto != null) "⏳ " else "✓ ") + (riga.voce.sottotipo ?: riga.voce.tipo),
-                            style = MaterialTheme.typography.bodyMedium
+                            when {
+                                riga.annullata -> "✕ "
+                                nonPagata -> "⚠ "
+                                riga.previsto != null -> "⏳ "
+                                else -> "✓ "
+                            } + (riga.voce.sottotipo ?: riga.voce.tipo),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = if (riga.annullata) MaterialTheme.colorScheme.onSurfaceVariant else Color.Unspecified
                         )
                         val extra = listOfNotNull(
+                            "non pagata".takeIf { nonPagata },
                             riga.dataPrevista?.let { "il ${formattaData(it)}" },
                             riga.meseOrigine?.let { "spostata da ${formattaMese(it)}" },
                             "importo impostato".takeIf { riga.fonte == FontePrevisione.PERSONALIZZATA }
@@ -234,9 +243,11 @@ private fun CardMese(mese: MeseRicorrenti, oggi: YearMonth, onRiga: (RigaRicorre
                             Text(extra.joinToString(" · "), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
                         }
                     }
-                    if (riga.previsto != null) {
+                    if (riga.annullata) {
+                        Text("annullata", style = MaterialTheme.typography.bodyMedium, fontStyle = FontStyle.Italic, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    } else if (riga.previsto != null) {
                         Text(
-                            "previsto " + formattaImporto(riga.previsto),
+                            (if (mese.mese < oggi) "stima " else "previsto ") + formattaImporto(riga.previsto),
                             style = MaterialTheme.typography.bodyMedium,
                             fontStyle = FontStyle.Italic,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -405,6 +416,24 @@ private fun DettaglioRicorrenteDialog(vm: SpeseViewModel, dati: DatiApp, riga: R
                         vm.spostaScadenza(voce, meseScadenza, nuovoMese, mantieni)
                         onChiudi()
                     }, enabled = nuovoMese != mese) { Text("Sposta a ${formattaMese(nuovoMese)}") }
+
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+                    Text("Annulla la scadenza", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                    Text(
+                        "Per questo mese la spesa non è prevista; le scadenze successive restano come in anagrafica.",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    OutlinedButton(onClick = {
+                        vm.annullaScadenza(voce, meseScadenza, true)
+                        onChiudi()
+                    }) { Text("Annulla la scadenza di ${formattaMese(meseScadenza)}", color = MaterialTheme.colorScheme.error) }
+                }
+                if (riga.annullata) {
+                    Text("Scadenza di ${formattaMese(meseScadenza)} annullata.", style = MaterialTheme.typography.bodyMedium)
+                    OutlinedButton(onClick = {
+                        vm.annullaScadenza(voce, meseScadenza, false)
+                        onChiudi()
+                    }) { Text("Ripristina") }
                 }
                 errore?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             }

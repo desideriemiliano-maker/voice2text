@@ -116,4 +116,25 @@ class CalcoliTest {
         assertEquals(YearMonth.of(2026, 11), dicembre.meseOrigine)
         assertEquals(FontePrevisione.PERSONALIZZATA, dicembre.fonte)
     }
+
+    @Test
+    fun ricorrenti_stimaNeiMesiPassatiEScadenzaAnnullata() {
+        val conti = listOf(ContoValuta(id = 1, contoId = 1, valuta = "EUR"))
+        val voce = Voce(id = 1, tipo = "Luce", ricorrente = true, mesiRicorrenza = 1, meseInizio = "2026-06")
+        val ops = listOf(
+            Operazione(id = 1, contoValutaId = 1, data = giorno(2026, 6, 10), importoCent = -10_000, voceId = 1),
+            Operazione(id = 2, contoValutaId = 1, data = giorno(2026, 7, 10), importoCent = -12_000, voceId = 1)
+        )
+        val pers = listOf(PrevisioneRicorrente(voceId = 1, mese = "2026-10", annullata = true))
+        val mesi = (6..10).map { YearMonth.of(2026, it) }
+        val r = Calcoli.ricorrenti(mesi, listOf(voce), conti, ops, Cambi.fisso(1.0), YearMonth.of(2026, 9), pers)
+
+        assertEquals(-100.0, r[0].righe.single().pagato, 0.001)
+        // Agosto (passato, nessun pagamento): stima con la media 110.
+        assertEquals(-110.0, r[2].righe.single().previsto!!, 0.001)
+        assertEquals(-110.0, r[3].righe.single().previsto!!, 0.001)
+        val ottobre = r[4].righe.single()
+        assertTrue(ottobre.annullata)
+        assertNull(ottobre.previsto)
+    }
 }
