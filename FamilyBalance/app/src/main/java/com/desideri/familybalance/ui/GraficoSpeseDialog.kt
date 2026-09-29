@@ -53,6 +53,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import com.desideri.familybalance.logica.Aggregazione
 import com.desideri.familybalance.logica.Grafico
 import com.desideri.familybalance.logica.Raggruppamento
 import com.desideri.familybalance.logica.TipoGrafico
@@ -79,11 +80,19 @@ fun coloreSerie(indice: Int, colore: Int?): Color = colore?.let { Color(it) } ?:
  * chiamante (le spese in positivo, le entrate in negativo); [nota] spiega cosa è rappresentato.
  */
 @Composable
-fun GraficoSpeseDialog(titolo: String, nota: String, serie: List<SerieGrafico>, valori: List<ValoreGrafico>, valuta: String = "EUR", onChiudi: () -> Unit) {
+fun GraficoSpeseDialog(
+    titolo: String,
+    nota: String,
+    serie: List<SerieGrafico>,
+    valori: List<ValoreGrafico>,
+    valuta: String = "EUR",
+    aggregazione: Aggregazione = Aggregazione.SOMMA,
+    onChiudi: () -> Unit
+) {
     var tipo by rememberSaveable { mutableStateOf(TipoGrafico.LINEA) }
     var raggruppamento by rememberSaveable { mutableStateOf(Raggruppamento.MESE) }
     var tendenza by rememberSaveable { mutableStateOf(true) }
-    val punti = remember(valori, serie.size, raggruppamento) { Grafico.punti(valori, serie.size, raggruppamento) }
+    val punti = remember(valori, serie.size, raggruppamento, aggregazione) { Grafico.punti(valori, serie.size, raggruppamento, aggregazione) }
 
     Dialog(onDismissRequest = onChiudi, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Surface(modifier = Modifier.fillMaxSize(), tonalElevation = 4.dp) {

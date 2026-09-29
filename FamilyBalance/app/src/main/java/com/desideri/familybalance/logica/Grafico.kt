@@ -19,6 +19,9 @@ enum class Raggruppamento(val etichetta: String) {
     ANNO("Anno")
 }
 
+/** Come combinare i valori di uno stesso periodo: somma (movimenti) o ultimo (saldi). */
+enum class Aggregazione { SOMMA, ULTIMO }
+
 /** Un valore da rappresentare: serie ([serie] = indice), giorno (epochDay) e importo. */
 data class ValoreGrafico(val serie: Int, val data: Long, val valore: Double)
 
@@ -31,38 +34,59 @@ object Grafico {
     private val FORMATO_MESE = DateTimeFormatter.ofPattern("MM/yy")
 
     /**
-     * Punti del grafico per [numeroSerie] serie: con [Raggruppamento.VALORE] un punto per valore
-     * (in ordine di data, valorizzato solo nella sua serie); per mese/anno la somma dei valori di
-     * ogni serie nel periodo, con tutti i periodi tra il primo e l'ultimo (null dove una serie
-     * non ha valori).
+     * Punti del grafico per [numeroSerie] serie. Con [Aggregazione.SOMMA] (movimenti): per
+     * [Raggruppamento.VALORE] un punto per valore (valorizzato solo nella sua serie), per mese/anno
+     * la somma di ogni serie nel periodo (null se non ha valori). Con [Aggregazione.ULTIMO] (saldi):
+     * un punto per giorno, mese o anno con l'ultimo valore di ogni serie nel periodo, riportando il
+     * precedente dove una serie non ne ha. Per mese/anno ci sono tutti i periodi tra il primo e l'ultimo.
      */
-    fun punti(valori: List<ValoreGrafico>, numeroSerie: Int, raggruppamento: Raggruppamento): List<PuntoGrafico> {
+    fun punti(
+        valori: List<ValoreGrafico>,
+        numeroSerie: Int,
+        raggruppamento: Raggruppamento,
+        aggregazione: Aggregazione = Aggregazione.SOMMA
+    ): List<PuntoGrafico> {
         if (valori.isEmpty()) return emptyList()
         val ordinati = valori.sortedBy { it.data }
-        return when (raggruppamento) {
-            Raggruppamento.VALORE -> ordinati.map { v ->
+        if (raggruppamento == Raggruppamento.VALORE && aggregazione == Aggregazione.SOMMA) {
+            return ordinati.map { v ->
                 PuntoGrafico(LocalDate.ofEpochDay(v.data).format(FORMATO_GIORNO), List(numeroSerie) { if (it == v.serie) v.valore else null })
             }
+        }
+        // Periodi (chiave ordinabile ed etichetta) in cui raggruppare.
+        val periodi: List<Pair<Long, String>> = when (raggruppamento) {
+            Raggruppamento.VALORE -> ordinati.map { it.data }.distinct().map { it to LocalDate.ofEpochDay(it).format(FORMATO_GIORNO) }
             Raggruppamento.MESE -> {
-                val perMese = ordinati.groupBy { YearMonth.from(LocalDate.ofEpochDay(it.data)) }
-                val primo = perMese.keys.min()
-                val ultimo = perMese.keys.max()
-                generateSequence(primo) { it.plusMonths(1) }.takeWhile { it <= ultimo }.map { m ->
-                    PuntoGrafico(m.format(FORMATO_MESE), somme(perMese[m].orEmpty(), numeroSerie))
-                }.toList()
+                val mesi = ordinati.map { YearMonth.from(LocalDate.ofEpochDay(it.data)) }
+                generateSequence(mesi.first()) { it.plusMonths(1) }.takeWhile { it <= mesi.last() }
+                    .map { (it.year * 12L + it.monthValue) to it.format(FORMATO_MESE) }.toList()
             }
             Raggruppamento.ANNO -> {
-                val perAnno = ordinati.groupBy { LocalDate.ofEpochDay(it.data).year }
-                (perAnno.keys.min()..perAnno.keys.max()).map { a ->
-                    PuntoGrafico(a.toString(), somme(perAnno[a].orEmpty(), numeroSerie))
-                }
+                val anni = ordinati.map { LocalDate.ofEpochDay(it.data).year }
+                (anni.first()..anni.last()).map { it.toLong() to it.toString() }
             }
         }
-    }
-
-    private fun somme(valori: List<ValoreGrafico>, numeroSerie: Int): List<Double?> {
-        val perSerie = valori.groupBy { it.serie }
-        return List(numeroSerie) { s -> perSerie[s]?.sumOf { it.valore } }
+        fun chiave(v: ValoreGrafico): Long {
+            val d = LocalDate.ofEpochDay(v.data)
+            return when (raggruppamento) {
+                Raggruppamento.VALORE -> v.data
+                Raggruppamento.MESE -> d.year * 12L + d.monthValue
+                Raggruppamento.ANNO -> d.year.toLong()
+            }
+        }
+        val perPeriodo = ordinati.groupBy(::chiave)
+        val precedenti = arrayOfNulls<Double>(numeroSerie)
+        return periodi.map { (k, etichetta) ->
+            val gruppo = perPeriodo[k].orEmpty().groupBy { it.serie }
+            val valoriPunto = List(numeroSerie) { s ->
+                val lista = gruppo[s]
+                when (aggregazione) {
+                    Aggregazione.SOMMA -> lista?.sumOf { it.valore }
+                    Aggregazione.ULTIMO -> (lista?.last()?.valore ?: precedenti[s]).also { precedenti[s] = it }
+                }
+            }
+            PuntoGrafico(etichetta, valoriPunto)
+        }
     }
 
     /** Retta di regressione (pendenza, intercetta) sui punti (indice, valore); piatta se non calcolabile. */

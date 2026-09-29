@@ -1,5 +1,6 @@
 package com.desideri.familybalance
 
+import com.desideri.familybalance.logica.Aggregazione
 import com.desideri.familybalance.logica.Grafico
 import com.desideri.familybalance.logica.Raggruppamento
 import com.desideri.familybalance.logica.ValoreGrafico
@@ -42,5 +43,17 @@ class GraficoTest {
         val (pendenza, intercetta) = Grafico.regressione(listOf(0 to 1.0, 1 to 3.0, 2 to 5.0))
         assertEquals(2.0, pendenza, 1e-9)
         assertEquals(1.0, intercetta, 1e-9)
+    }
+
+    @Test
+    fun ultimo_riportaIlSaldoPrecedente() {
+        val saldi = listOf(
+            ValoreGrafico(0, giorno(2026, 1, 5), 100.0),
+            ValoreGrafico(0, giorno(2026, 1, 25), 80.0),
+            ValoreGrafico(0, giorno(2026, 3, 2), 150.0)
+        )
+        val punti = Grafico.punti(saldi, 1, Raggruppamento.MESE, Aggregazione.ULTIMO)
+        assertEquals(listOf(80.0, 80.0, 150.0), punti.map { it.valori[0] })
+        assertEquals(3, Grafico.punti(saldi, 1, Raggruppamento.VALORE, Aggregazione.ULTIMO).size)
     }
 }

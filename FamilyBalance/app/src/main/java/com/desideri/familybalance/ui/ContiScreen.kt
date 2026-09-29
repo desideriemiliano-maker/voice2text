@@ -1,6 +1,13 @@
 package com.desideri.familybalance.ui
 
 import androidx.compose.foundation.clickable
+import com.desideri.familybalance.logica.ValoreGrafico
+import com.desideri.familybalance.logica.Aggregazione
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.material3.IconButton
+import androidx.compose.material.icons.automirrored.filled.ShowChart
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -38,6 +45,8 @@ fun ContiScreen(vm: SpeseViewModel, onApriConto: (Long) -> Unit, onAnagraficaCon
     val saldi by vm.saldi.collectAsStateWithLifecycle()
     val impostazioni by vm.impostazioni.collectAsStateWithLifecycle()
     val ricaricaInCorso by vm.ricaricaInCorso.collectAsStateWithLifecycle()
+    val cambi by vm.cambi.collectAsStateWithLifecycle()
+    var mostraGrafico by remember { mutableStateOf(false) }
 
     if (dati.caricati && dati.contiValuta.isEmpty()) {
         Column(
@@ -64,7 +73,8 @@ fun ContiScreen(vm: SpeseViewModel, onApriConto: (Long) -> Unit, onAnagraficaCon
         LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             item {
                 Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer), modifier = Modifier.fillMaxWidth()) {
-                    Column(modifier = Modifier.padding(16.dp)) {
+                    Row(modifier = Modifier.padding(start = 16.dp, top = 16.dp, bottom = 16.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(modifier = Modifier.weight(1f)) {
                         Text("Saldo totale (in EUR)", style = MaterialTheme.typography.labelLarge)
                         TestoImporto(totaleEuro, grassetto = true)
                         if (dati.contiValuta.any { it.valuta != "EUR" }) {
@@ -73,6 +83,10 @@ fun ContiScreen(vm: SpeseViewModel, onApriConto: (Long) -> Unit, onAnagraficaCon
                                 style = MaterialTheme.typography.bodySmall
                             )
                         }
+                    }
+                    IconButton(onClick = { mostraGrafico = true }, enabled = dati.operazioni.isNotEmpty()) {
+                        Icon(Icons.AutoMirrored.Filled.ShowChart, contentDescription = "Grafico del saldo")
+                    }
                     }
                 }
             }
@@ -91,5 +105,37 @@ fun ContiScreen(vm: SpeseViewModel, onApriConto: (Long) -> Unit, onAnagraficaCon
                 }
             }
         }
+    }
+
+    if (mostraGrafico) {
+        // Saldo di ogni conto/valuta e totale, in EUR al cambio del mese, a ogni giorno con movimenti.
+        val colonne = dati.contiValutaOrdinati
+        val serie = listOf(SerieGrafico("Totale", coloreSerie(0, null))) +
+            colonne.mapIndexed { i, cv -> SerieGrafico(dati.etichetta(cv.id), coloreSerie(i + 1, null)) }
+        val valori = remember(dati.operazioni, cambi) {
+            val saldiCent = colonne.associate { it.id to it.saldoInizialeCent }.toMutableMap()
+            val indice = colonne.withIndex().associate { (i, cv) -> cv.id to i + 1 }
+            buildList {
+                dati.operazioni.groupBy { it.data }.toSortedMap().forEach { (giorno, ops) ->
+                    ops.forEach { op -> saldiCent[op.contoValutaId]?.let { saldiCent[op.contoValutaId] = it + op.importoCent } }
+                    val mese = Calcoli.mese(giorno)
+                    var totale = 0.0
+                    colonne.forEach { cv ->
+                        val eur = cambi.inEuro(saldiCent.getValue(cv.id), cv.valuta, mese)
+                        totale += eur
+                        add(ValoreGrafico(indice.getValue(cv.id), giorno, eur))
+                    }
+                    add(ValoreGrafico(0, giorno, totale))
+                }
+            }
+        }
+        GraficoSpeseDialog(
+            titolo = "Saldo",
+            nota = "Saldo totale e dei singoli conti a fine giorno/mese/anno, in EUR (CHF al cambio del mese).",
+            serie = serie,
+            valori = valori,
+            aggregazione = Aggregazione.ULTIMO,
+            onChiudi = { mostraGrafico = false }
+        )
     }
 }
