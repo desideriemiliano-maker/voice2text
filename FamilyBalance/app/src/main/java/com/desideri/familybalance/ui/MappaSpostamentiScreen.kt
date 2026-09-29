@@ -68,7 +68,7 @@ private fun coerenti(a: Operazione, b: Operazione, dati: DatiApp): Boolean {
 }
 
 /**
- * Spostamenti a colonne (menu ⋮): tutti gli spostamenti del periodo in verticale, una riga per
+ * Riscontro spostamenti (menu ⋮): tutti gli spostamenti del periodo in verticale, una riga per
  * data e una colonna per conto/valuta. Le righe collegate sono unite da una linea (rossa se
  * incoerenti); una riga non collegata si collega tenendola premuta e trascinandola su quella
  * corrispondente di un altro conto; toccando una linea la si può eliminare (scollega). Toccando
@@ -124,7 +124,7 @@ fun MappaSpostamentiScreen(vm: SpeseViewModel, onIndietro: () -> Unit) {
     val coloreErrore = MaterialTheme.colorScheme.error
     val coloreTrascinamento = MaterialTheme.colorScheme.tertiary
 
-    Scaffold(topBar = { BarraIndietro("Spostamenti a colonne", onIndietro) }) { padding ->
+    Scaffold(topBar = { BarraIndietro("Riscontro spostamenti", onIndietro) }) { padding ->
         Column(modifier = Modifier.fillMaxSize().padding(padding)) {
             // Filtri: periodo e solo righe da collegare.
             Column(modifier = Modifier.padding(horizontal = 12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
