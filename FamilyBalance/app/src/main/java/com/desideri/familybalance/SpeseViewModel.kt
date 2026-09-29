@@ -176,10 +176,11 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /** Spese ricorrenti mese per mese nel periodo scelto. */
-    val ricorrenti: StateFlow<List<MeseRicorrenti>> = combine(dati, cambi, personalizzazioni, _periodoRicorrenti) { d, cambi, pers, periodo ->
+    // Qui i CHF si convertono sempre al cambio delle Impostazioni (anche i mesi passati).
+    val ricorrenti: StateFlow<List<MeseRicorrenti>> = combine(dati, _impostazioni, personalizzazioni, _periodoRicorrenti) { d, imp, pers, periodo ->
         val oggi = YearMonth.now()
         val mesi = generateSequence(periodo.first) { it.plusMonths(1) }.takeWhile { it <= periodo.second }.toList()
-        Calcoli.ricorrenti(mesi, d.voci, d.contiValuta, d.operazioni, cambi, oggi, pers)
+        Calcoli.ricorrenti(mesi, d.voci, d.contiValuta, d.operazioni, Cambi.fisso(imp.cambioChfEur), oggi, pers)
     }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     // --- Scadenze ricorrenti ---

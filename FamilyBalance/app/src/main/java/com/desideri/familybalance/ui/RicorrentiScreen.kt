@@ -87,7 +87,7 @@ fun RicorrentiScreen(vm: SpeseViewModel) {
     var sceltaVoci by remember { mutableStateOf(false) }
     var aperta by remember { mutableStateOf<RigaAperta?>(null) }
     var mostraGrafico by remember { mutableStateOf(false) }
-    val cambi by vm.cambi.collectAsStateWithLifecycle()
+    val impostazioni by vm.impostazioni.collectAsStateWithLifecycle()
 
     LaunchedEffect(mesi.isNotEmpty()) {
         val indice = mesi.indexOfFirst { it.mese == oggi }
@@ -145,7 +145,7 @@ fun RicorrentiScreen(vm: SpeseViewModel) {
         )
     }
     if (mostraGrafico) {
-        // Pagamenti delle spese filtrate nel periodo scelto, in EUR al cambio del mese.
+        // Pagamenti delle spese filtrate nel periodo scelto, in EUR al cambio delle Impostazioni.
         val scelte = if (filtroVoci.isEmpty()) vociRicorrenti else vociRicorrenti.filter { it.id in filtroVoci }
         val perVoce = filtroVoci.isNotEmpty() && scelte.size <= 8
         val indice = scelte.withIndex().associate { (i, v) -> v.id to i }
@@ -155,7 +155,7 @@ fun RicorrentiScreen(vm: SpeseViewModel) {
             val i = op.voceId?.let { indice[it] } ?: return@mapNotNull null
             val m = Calcoli.mese(op.data)
             if (op.trasferimento || m < periodo.first || m > periodo.second) return@mapNotNull null
-            val eur = cambi.inEuro(op.importoCent, dati.contiValutaPerId[op.contoValutaId]?.valuta ?: "EUR", m)
+            val eur = Calcoli.inEuro(op.importoCent, dati.contiValutaPerId[op.contoValutaId]?.valuta ?: "EUR", impostazioni.cambioChfEur)
             ValoreGrafico(if (perVoce) i else 0, op.data, -eur)
         }
         GraficoSpeseDialog(
