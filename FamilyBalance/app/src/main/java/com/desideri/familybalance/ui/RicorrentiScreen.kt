@@ -1,6 +1,8 @@
 package com.desideri.familybalance.ui
 
 import androidx.compose.foundation.clickable
+import com.desideri.familybalance.logica.ValoreGrafico
+import androidx.compose.material.icons.automirrored.filled.ShowChart
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -84,6 +86,8 @@ fun RicorrentiScreen(vm: SpeseViewModel) {
     var filtroVoci by rememberSaveable { mutableStateOf<List<Long>>(emptyList()) }
     var sceltaVoci by remember { mutableStateOf(false) }
     var aperta by remember { mutableStateOf<RigaAperta?>(null) }
+    var mostraGrafico by remember { mutableStateOf(false) }
+    val cambi by vm.cambi.collectAsStateWithLifecycle()
 
     LaunchedEffect(mesi.isNotEmpty()) {
         val indice = mesi.indexOfFirst { it.mese == oggi }
@@ -104,7 +108,8 @@ fun RicorrentiScreen(vm: SpeseViewModel) {
     LazyColumn(state = stato, contentPadding = PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         item(key = "filtri") {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Box {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(modifier = Modifier.weight(1f)) {
                     OutlinedTextField(
                         value = if (filtroVoci.isEmpty()) "Tutte" else vociRicorrenti.filter { it.id in filtroVoci }.joinToString(", ") { it.descrizione },
                         onValueChange = {},
@@ -114,6 +119,10 @@ fun RicorrentiScreen(vm: SpeseViewModel) {
                         modifier = Modifier.fillMaxWidth()
                     )
                     Box(modifier = Modifier.matchParentSize().clickable { sceltaVoci = true })
+                }
+                IconButton(onClick = { mostraGrafico = true }) {
+                    Icon(Icons.AutoMirrored.Filled.ShowChart, contentDescription = "Grafico")
+                }
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     SceltaMese("Dal", periodo.first, { vm.impostaPeriodoRicorrenti(it, periodo.second) }, Modifier.weight(1f))
@@ -133,6 +142,29 @@ fun RicorrentiScreen(vm: SpeseViewModel) {
                 sceltaVoci = false
             },
             onAnnulla = { sceltaVoci = false }
+        )
+    }
+    if (mostraGrafico) {
+        // Pagamenti delle spese filtrate nel periodo scelto, in EUR al cambio del mese.
+        val scelte = if (filtroVoci.isEmpty()) vociRicorrenti else vociRicorrenti.filter { it.id in filtroVoci }
+        val perVoce = filtroVoci.isNotEmpty() && scelte.size <= 8
+        val indice = scelte.withIndex().associate { (i, v) -> v.id to i }
+        val serie = if (perVoce) scelte.mapIndexed { i, v -> SerieGrafico(v.descrizione, coloreSerie(i, v.colore)) }
+        else listOf(SerieGrafico(if (filtroVoci.isEmpty()) "Tutte le ricorrenti" else "Totale selezionate", coloreSerie(0, null)))
+        val valori = dati.operazioni.mapNotNull { op ->
+            val i = op.voceId?.let { indice[it] } ?: return@mapNotNull null
+            val m = Calcoli.mese(op.data)
+            if (op.trasferimento || m < periodo.first || m > periodo.second) return@mapNotNull null
+            val eur = cambi.inEuro(op.importoCent, dati.contiValutaPerId[op.contoValutaId]?.valuta ?: "EUR", m)
+            ValoreGrafico(if (perVoce) i else 0, op.data, -eur)
+        }
+        GraficoSpeseDialog(
+            titolo = "Spese ricorrenti",
+            nota = "Pagamenti di ${formattaMese(periodo.first)} – ${formattaMese(periodo.second)} delle spese filtrate, in EUR" +
+                (if (!perVoce && filtroVoci.size > 8) " (più di 8 spese: mostrato il totale)" else "") + ".",
+            serie = serie,
+            valori = valori,
+            onChiudi = { mostraGrafico = false }
         )
     }
     aperta?.let { a ->
