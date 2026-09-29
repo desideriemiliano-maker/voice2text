@@ -73,6 +73,7 @@ private val FORMATO_ANNO = DateTimeFormatter.ofPattern("yyyy")
 private enum class FiltroRiscontro(val etichetta: String) {
     TUTTE("Tutte"),
     ASSOCIATE("Associate"),
+    NON_ASSOCIATE("Non associate"),
     CONTINUE("Continue"),
     TRATTEGGIATE("Tratteggiate")
 }
@@ -132,6 +133,7 @@ fun RiscontroEstrattoDialog(vm: SpeseViewModel, dati: DatiApp, stato: StatoRisco
     var filtro by remember { mutableStateOf(FiltroRiscontro.TUTTE) }
     fun mostrato(c: Collegamento?): Boolean {
         if (filtro == FiltroRiscontro.TUTTE) return true
+        if (filtro == FiltroRiscontro.NON_ASSOCIATE) return c == null
         if (c == null) return false
         val stessaData = perIdOp[c.operazioneId]?.data == movimenti[c.movimento].data
         return when (filtro) {
