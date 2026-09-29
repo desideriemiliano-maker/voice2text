@@ -20,6 +20,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -63,9 +64,10 @@ fun BloccoBiometrico(activity: FragmentActivity, content: @Composable () -> Unit
     fun bloccoAttivo() = preferenze.carica().bloccoBiometrico && bloccoDisponibile(context)
 
     var attivo by remember { mutableStateOf(bloccoAttivo()) }
-    var sbloccato by remember { mutableStateOf(false) }
+    // Salvati anche se l'activity viene ricreata (es. rotazione): lo sblocco non va richiesto di nuovo.
+    var sbloccato by rememberSaveable { mutableStateOf(false) }
     var autenticazioneInCorso by remember { mutableStateOf(false) }
-    var ultimoBackgroundMs by remember { mutableStateOf(0L) }
+    var ultimoBackgroundMs by rememberSaveable { mutableStateOf(0L) }
 
     val prompt = remember {
         BiometricPrompt(
