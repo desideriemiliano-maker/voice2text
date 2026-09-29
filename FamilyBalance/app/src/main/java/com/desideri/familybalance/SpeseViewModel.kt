@@ -88,6 +88,14 @@ data class DatiApp(
     }
 }
 
+/** Estratto conto letto per il riscontro con le operazioni del conto/valuta [contoValutaId]. */
+data class StatoRiscontroEstratto(
+    val contoValutaId: Long,
+    val contoId: Long,
+    val movimenti: List<com.desideri.familybalance.estratto.MovimentoEstratto>,
+    val avvisi: List<String>
+)
+
 data class StatoBackup(
     val inCorso: Boolean = false,
     /** Backup presenti su Drive, dal più recente. */
@@ -608,6 +616,65 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
             _importazioneInCorso.value = false
             _testoAttesa.value = "Lettura del file…"
         }
+    }
+
+    // --- Riscontro con l'estratto conto ---
+
+    private val _riscontroEstratto = MutableStateFlow<StatoRiscontroEstratto?>(null)
+    val riscontroEstratto: StateFlow<StatoRiscontroEstratto?> = _riscontroEstratto.asStateFlow()
+
+    /** Legge l'estratto conto [uri] con Gemini e apre il riscontro con le operazioni del conto/valuta. */
+    fun riscontraEstratto(uri: Uri, contoValutaId: Long) = viewModelScope.launch {
+        val cv = dati.value.contiValutaPerId[contoValutaId] ?: return@launch messaggio("Conto non trovato")
+        _testoAttesa.value = "Analisi dell'estratto conto con Gemini…"
+        _importazioneInCorso.value = true
+        try {
+            val esito = EstrattoGemini(BuildConfig.GEMINI_API_KEY, RegistroPromptStore(getApplication())).estrai(getApplication(), uri, cv.valuta) { blocco, totale ->
+                _testoAttesa.value = if (totale > 1) "Analisi con Gemini: blocco $blocco di $totale…" else "Analisi dell'estratto conto con Gemini…"
+            }
+            if (esito.movimenti.isEmpty()) {
+                messaggio("Nessun movimento trovato nel file" + esito.avvisi.firstOrNull()?.let { ": $it" }.orEmpty())
+            } else {
+                _riscontroEstratto.value = StatoRiscontroEstratto(contoValutaId, cv.contoId, esito.movimenti, esito.avvisi)
+            }
+        } catch (e: Exception) {
+            messaggio("Lettura dell'estratto conto non riuscita: ${e.message ?: e.javaClass.simpleName}")
+        } finally {
+            _importazioneInCorso.value = false
+            _testoAttesa.value = "Lettura del file…"
+        }
+    }
+
+    fun chiudiRiscontroEstratto() {
+        _riscontroEstratto.value = null
+    }
+
+    /** Porta la data delle operazioni a quella del movimento collegato dell'estratto. */
+    fun aggiornaDateDaEstratto(nuoveDate: Map<Long, Long>) = viewModelScope.launch {
+        db.withTransaction {
+            for ((id, data) in nuoveDate) {
+                dao.operazione(id)?.let { dao.aggiornaOperazione(it.copy(data = data)) }
+            }
+        }
+        messaggio(if (nuoveDate.size == 1) "Aggiornata 1 data" else "Aggiornate ${nuoveDate.size} date")
+    }
+
+    /**
+     * Apre la registrazione (lo stesso popup dell'import da estratto conto: tipo per riga, righe
+     * deselezionabili) dei movimenti [indici] dell'estratto in riscontro che mancano sul conto.
+     */
+    fun creaDaEstratto(indici: List<Int>) = viewModelScope.launch {
+        val stato = _riscontroEstratto.value ?: return@launch
+        val movimenti = stato.movimenti
+        val associazioni = dao.associazioni()
+        val discendente = movimenti.size > 1 && movimenti.first().tutteLeDate.min() > movimenti.last().tutteLeDate.min()
+        val righe = indici.map { indice ->
+            val m = movimenti[indice]
+            val ordine = if (discendente) (movimenti.size - indice).toLong() else (indice + 1).toLong()
+            RigaEstratto(indice, m, stato.contoValutaId, Associazioni.candidate(m.descrizione, associazioni), Presenza.NUOVA, 0, null, ordine)
+        }
+        _riscontroEstratto.value = null
+        _importEstratto.value = ImportEstratto(stato.contoId, righe, stato.avvisi)
     }
 
     /** Tipo di data da registrare scelto l'ultima volta per il conto (default: data dell'operazione). */

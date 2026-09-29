@@ -26,6 +26,7 @@ import androidx.compose.material.icons.filled.AccountBalance
 import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.EventRepeat
+import androidx.compose.material.icons.filled.FactCheck
 import androidx.compose.material.icons.filled.FileOpen
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Info
@@ -129,6 +130,12 @@ private fun SchermataPrincipale(vm: SpeseViewModel, sezione: Sezione, onSezione:
     val sceltaEstratto = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) fileEstratto = uri
     }
+    // File dell'estratto conto da riscontrare, in attesa della scelta del conto.
+    var fileRiscontro by remember { mutableStateOf<Uri?>(null) }
+    val sceltaRiscontro = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) fileRiscontro = uri
+    }
+    val riscontroEstratto by vm.riscontroEstratto.collectAsStateWithLifecycle()
 
     val sceltaExcel = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) vm.importaExcel(uri)
@@ -149,6 +156,10 @@ private fun SchermataPrincipale(vm: SpeseViewModel, sezione: Sezione, onSezione:
                             VoceMenu("Importa estratto conto", Icons.AutoMirrored.Filled.ReceiptLong) {
                                 menuAperto = false
                                 sceltaEstratto.launch(arrayOf("*/*"))
+                            }
+                            VoceMenu("Riscontro estratto conto", Icons.Filled.FactCheck) {
+                                menuAperto = false
+                                sceltaRiscontro.launch(arrayOf("*/*"))
                             }
                             VoceMenu("Importa da Excel", Icons.Filled.FileOpen) { menuAperto = false; confermaImport = true }
                             HorizontalDivider()
@@ -232,6 +243,19 @@ private fun SchermataPrincipale(vm: SpeseViewModel, sezione: Sezione, onSezione:
             onAnnulla = { fileEstratto = null }
         )
     }
+
+    fileRiscontro?.let { uri ->
+        SceltaContoDialog(
+            dati = dati,
+            onScelto = { contoValutaId ->
+                fileRiscontro = null
+                vm.riscontraEstratto(uri, contoValutaId)
+            },
+            onAnnulla = { fileRiscontro = null }
+        )
+    }
+
+    riscontroEstratto?.let { RiscontroEstrattoDialog(vm, dati, it, onChiudi = { vm.chiudiRiscontroEstratto() }) }
 
     importEstratto?.let { ImportEstrattoDialog(vm, dati, it) }
 

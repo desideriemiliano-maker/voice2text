@@ -1,0 +1,379 @@
+package com.desideri.familybalance.ui
+
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.toSize
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import com.desideri.familybalance.DatiApp
+import com.desideri.familybalance.SpeseViewModel
+import com.desideri.familybalance.StatoRiscontroEstratto
+import com.desideri.familybalance.data.Operazione
+import com.desideri.familybalance.estratto.TipoData
+import com.desideri.familybalance.logica.Collegamento
+import com.desideri.familybalance.logica.MovimentoRiscontro
+import com.desideri.familybalance.logica.RiscontroEstratto
+import com.desideri.familybalance.logica.formattaCent
+import com.desideri.familybalance.logica.formattaData
+import java.time.LocalDate
+import java.time.format.DateTimeFormatter
+
+private val FORMATO_GIORNO = DateTimeFormatter.ofPattern("dd/MM")
+private val FORMATO_ANNO = DateTimeFormatter.ofPattern("yyyy")
+
+/** Chiavi delle carte per le posizioni: operazione del conto o movimento dell'estratto. */
+private fun chiaveOp(id: Long) = "o$id"
+private fun chiaveMov(indice: Int) = "m$indice"
+
+/** Distanza del punto [p] dal segmento [a]-[b]. */
+private fun distanza(p: Offset, a: Offset, b: Offset): Float {
+    val ab = b - a
+    val l2 = ab.x * ab.x + ab.y * ab.y
+    if (l2 == 0f) return (p - a).getDistance()
+    val t = (((p.x - a.x) * ab.x + (p.y - a.y) * ab.y) / l2).coerceIn(0f, 1f)
+    return (p - Offset(a.x + ab.x * t, a.y + ab.y * t)).getDistance()
+}
+
+/**
+ * Riscontro tra le operazioni di un conto/valuta e i movimenti di un estratto conto letto con
+ * Gemini: tre colonne (data, operazione del conto, movimento dell'estratto) e una linea tra le
+ * coppie con lo stesso importo e date entro [RiscontroEstratto.GIORNI] giorni (continua se la data
+ * coincide, tratteggiata se è vicina; di un altro colore quelle create a mano). Toccando una linea
+ * la si elimina; tenendo premuta una riga non collegata e trascinandola su una dell'altra colonna
+ * se ne crea una nuova. "Aggiorna date" porta le date delle operazioni a quelle dell'estratto per
+ * le coppie tratteggiate; "Crea operazioni" registra i movimenti mancanti sul conto.
+ */
+@Composable
+fun RiscontroEstrattoDialog(vm: SpeseViewModel, dati: DatiApp, stato: StatoRiscontroEstratto, onChiudi: () -> Unit) {
+    val valuta = dati.contiValutaPerId[stato.contoValutaId]?.valuta ?: "EUR"
+    val tipiDisponibili = TipoData.entries.filter { t -> stato.movimenti.any { it.dataDi(t) != null } }.ifEmpty { TipoData.entries }
+    var tipoData by remember {
+        mutableStateOf(vm.tipoDataEstratto(stato.contoId).takeIf { it in tipiDisponibili } ?: tipiDisponibili.first())
+    }
+    val movimenti = remember(stato, tipoData) {
+        stato.movimenti.map { MovimentoRiscontro(it.importoCent, it.data(tipoData).toEpochDay()) }
+    }
+    val opsConto = remember(dati.operazioni, stato) { dati.operazioni.filter { it.contoValutaId == stato.contoValutaId } }
+    val perIdOp = remember(opsConto) { opsConto.associateBy { it.id } }
+
+    // Collegamenti creati a mano e automatici tolti dall'utente; gli altri si calcolano.
+    val manuali = remember(stato) { mutableStateListOf<Collegamento>() }
+    val rimossi = remember(stato) { mutableStateListOf<Pair<Long, Int>>() }
+    val automatici = remember(opsConto, movimenti, manuali.toList(), rimossi.toList()) {
+        RiscontroEstratto.abbina(
+            opsConto, movimenti,
+            esclusiOperazioni = manuali.map { it.operazioneId }.toSet(),
+            esclusiMovimenti = manuali.map { it.movimento }.toSet()
+        ).filter { (it.operazioneId to it.movimento) !in rimossi }
+    }
+    val collegamenti = manuali.filter { it.operazioneId in perIdOp } + automatici
+    val opCollegate = collegamenti.associateBy { it.operazioneId }
+    val movCollegati = collegamenti.associateBy { it.movimento }
+
+    // Periodo dell'estratto: operazioni del conto in quel periodo (più quelle collegate appena fuori).
+    val da = movimenti.minOf { it.data }
+    val a = movimenti.maxOf { it.data }
+    val opsVisibili = opsConto.filter { it.data in da..a || it.id in opCollegate }
+    val date = (opsVisibili.map { it.data } + movimenti.map { it.data }).distinct().sortedDescending()
+    val opsPerData = opsVisibili.groupBy { it.data }
+    val movPerData = movimenti.indices.groupBy { movimenti[it].data }
+
+    val daAggiornare = collegamenti.mapNotNull { c ->
+        val op = perIdOp[c.operazioneId] ?: return@mapNotNull null
+        val d = movimenti[c.movimento].data
+        if (op.data != d) op.id to d else null
+    }.toMap()
+    val mancanti = movimenti.indices.filter { it !in movCollegati }
+    val senzaRiscontro = opsConto.count { it.data in da..a && it.id !in opCollegate }
+
+    val posizioni = remember { mutableStateMapOf<String, Rect>() }
+    var origine by remember { mutableStateOf(Offset.Zero) }
+    var area by remember { mutableStateOf(Rect.Zero) }
+    val scorrimento = rememberScrollState()
+    var trascinata by remember { mutableStateOf<String?>(null) }
+    var dito by remember { mutableStateOf(Offset.Zero) }
+    val bersaglio = trascinata?.let { t ->
+        val altraColonna = if (t.startsWith("o")) "m" else "o"
+        posizioni.entries.firstOrNull { (k, r) -> k.startsWith(altraColonna) && r.contains(dito) }?.key
+    }
+    var inModifica by remember { mutableStateOf<Operazione?>(null) }
+    var confermaDate by remember { mutableStateOf(false) }
+
+    val colAuto = MaterialTheme.colorScheme.primary
+    val colManuale = MaterialTheme.colorScheme.tertiary
+    val colTrascina = MaterialTheme.colorScheme.secondary
+
+    /** Segmenti delle linee (coordinate del contenuto) con il loro collegamento. */
+    fun linee(): List<Pair<Collegamento, Pair<Offset, Offset>>> = collegamenti.mapNotNull { c ->
+        val r1 = posizioni[chiaveOp(c.operazioneId)]?.translate(-origine) ?: return@mapNotNull null
+        val r2 = posizioni[chiaveMov(c.movimento)]?.translate(-origine) ?: return@mapNotNull null
+        c to (r1.centerRight to r2.centerLeft)
+    }
+
+    fun collega(k1: String, k2: String) {
+        val op = (if (k1.startsWith("o")) k1 else k2).drop(1).toLong()
+        val mov = (if (k1.startsWith("m")) k1 else k2).drop(1).toInt()
+        if (op in opCollegate || mov in movCollegati) return
+        manuali += Collegamento(op, mov, manuale = true)
+    }
+
+    Dialog(onDismissRequest = onChiudi, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        Surface(modifier = Modifier.fillMaxSize(), tonalElevation = 4.dp) {
+            Column(modifier = Modifier.fillMaxSize().padding(12.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Riscontro estratto · ${dati.etichetta(stato.contoValutaId)}", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                    IconButton(onClick = onChiudi) { Icon(Icons.Filled.Close, contentDescription = "Chiudi") }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically, modifier = Modifier.horizontalScroll(rememberScrollState())) {
+                    Text("Data estratto", style = MaterialTheme.typography.labelMedium)
+                    tipiDisponibili.forEach { t -> FilterChip(selected = tipoData == t, onClick = { tipoData = t }, label = { Text(t.etichetta) }) }
+                }
+                Text(
+                    "${collegamenti.size} collegate · ${mancanti.size} mancanti sul conto · $senzaRiscontro del conto non nell'estratto. " +
+                        "Linea continua: stessa data; tratteggiata: data vicina; colorata diversa: collegata a mano. " +
+                        "Tocca una linea per eliminarla; tieni premuta una riga non collegata e trascinala per collegarla.",
+                    style = MaterialTheme.typography.bodySmall
+                )
+                stato.avvisi.firstOrNull()?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
+                Row(modifier = Modifier.fillMaxWidth().padding(top = 6.dp, bottom = 4.dp)) {
+                    Text("Data", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, modifier = Modifier.width(44.dp))
+                    Text("Sul conto", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, modifier = Modifier.weight(1f))
+                    Text("Nell'estratto", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, modifier = Modifier.weight(1f))
+                }
+                HorizontalDivider()
+                Box(modifier = Modifier.weight(1f).fillMaxWidth().onGloballyPositioned { area = Rect(it.positionInRoot(), it.size.toSize()) }) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .verticalScroll(scorrimento, enabled = trascinata == null)
+                            .onGloballyPositioned { origine = it.positionInRoot() }
+                            .pointerInput(collegamenti) {
+                                detectTapGestures { punto ->
+                                    linee().map { (c, s) -> c to distanza(punto, s.first, s.second) }
+                                        .filter { it.second <= 16.dp.toPx() }
+                                        .minByOrNull { it.second }
+                                        ?.first?.let { c ->
+                                            if (c.manuale) manuali.remove(c) else rimossi += c.operazioneId to c.movimento
+                                        }
+                                }
+                            }
+                            .drawWithContent {
+                                drawContent()
+                                for ((c, s) in linee()) {
+                                    val op = perIdOp[c.operazioneId] ?: continue
+                                    val stessaData = op.data == movimenti[c.movimento].data
+                                    drawLine(
+                                        color = if (c.manuale) colManuale else colAuto,
+                                        start = s.first,
+                                        end = s.second,
+                                        strokeWidth = 2.dp.toPx(),
+                                        pathEffect = if (stessaData) null else PathEffect.dashPathEffect(floatArrayOf(10f, 8f))
+                                    )
+                                }
+                                trascinata?.let { t ->
+                                    val r = posizioni[t]?.translate(-origine) ?: return@let
+                                    val p = dito - origine
+                                    drawLine(colTrascina, r.center, p, strokeWidth = 3.dp.toPx(), pathEffect = PathEffect.dashPathEffect(floatArrayOf(12f, 8f)))
+                                    drawCircle(colTrascina, radius = 8.dp.toPx(), center = p)
+                                }
+                            }
+                    ) {
+                        date.forEach { giorno ->
+                            Row(modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp), verticalAlignment = Alignment.Top) {
+                                val d = LocalDate.ofEpochDay(giorno)
+                                Column(modifier = Modifier.width(44.dp).padding(top = 4.dp)) {
+                                    Text(d.format(FORMATO_GIORNO), style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                                    Text(d.format(FORMATO_ANNO), style = MaterialTheme.typography.labelSmall)
+                                }
+                                Column(modifier = Modifier.weight(1f).padding(horizontal = 6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    opsPerData[giorno].orEmpty().forEach { op ->
+                                        val chiave = chiaveOp(op.id)
+                                        val descrizione = op.note ?: op.voceId?.let { dati.vociPerId[it]?.descrizione }
+                                            ?: if (op.trasferimento) "Spostamento" else ""
+                                        CartaRiscontro(
+                                            importo = formattaCent(op.importoCent, valuta),
+                                            descrizione = descrizione,
+                                            collegata = op.id in opCollegate,
+                                            evidenziata = bersaglio == chiave,
+                                            onPosizione = { posizioni[chiave] = it },
+                                            onTocco = { inModifica = op },
+                                            onInizio = { p -> posizioni[chiave]?.let { r -> trascinata = chiave; dito = r.topLeft + p } },
+                                            onTrascina = { delta -> dito += delta; scorriVicinoAiBordi(dito, area, scorrimento) },
+                                            onFine = { val t = trascinata; val b = bersaglio; trascinata = null; if (t != null && b != null) collega(t, b) },
+                                            onAnnulla = { trascinata = null }
+                                        )
+                                    }
+                                }
+                                Column(modifier = Modifier.weight(1f).padding(horizontal = 6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    movPerData[giorno].orEmpty().forEach { i ->
+                                        val chiave = chiaveMov(i)
+                                        val m = stato.movimenti[i]
+                                        CartaRiscontro(
+                                            importo = formattaCent(m.importoCent, valuta),
+                                            descrizione = m.descrizione,
+                                            collegata = i in movCollegati,
+                                            evidenziata = bersaglio == chiave,
+                                            onPosizione = { posizioni[chiave] = it },
+                                            onTocco = {},
+                                            onInizio = { p -> posizioni[chiave]?.let { r -> trascinata = chiave; dito = r.topLeft + p } },
+                                            onTrascina = { delta -> dito += delta; scorriVicinoAiBordi(dito, area, scorrimento) },
+                                            onFine = { val t = trascinata; val b = bersaglio; trascinata = null; if (t != null && b != null) collega(t, b) },
+                                            onAnnulla = { trascinata = null }
+                                        )
+                                    }
+                                }
+                            }
+                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+                        }
+                    }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
+                    OutlinedButton(onClick = { confermaDate = true }, enabled = daAggiornare.isNotEmpty(), modifier = Modifier.weight(1f)) {
+                        Text("Aggiorna date (${daAggiornare.size})")
+                    }
+                    Button(onClick = {
+                        vm.salvaTipoDataEstratto(stato.contoId, tipoData)
+                        vm.creaDaEstratto(mancanti)
+                    }, enabled = mancanti.isNotEmpty(), modifier = Modifier.weight(1f)) {
+                        Text("Crea operazioni (${mancanti.size})")
+                    }
+                }
+            }
+        }
+    }
+
+    if (confermaDate) {
+        AlertDialog(
+            onDismissRequest = { confermaDate = false },
+            title = { Text("Aggiorna date") },
+            text = {
+                Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                    Text("Le operazioni collegate con data diversa prendono la data (${tipoData.etichetta.lowercase()}) dell'estratto:")
+                    daAggiornare.forEach { (id, nuova) ->
+                        val op = perIdOp[id] ?: return@forEach
+                        Text(
+                            "${formattaCent(op.importoCent, valuta)}: ${formattaData(op.data)} → ${formattaData(nuova)}",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    vm.aggiornaDateDaEstratto(daAggiornare)
+                    confermaDate = false
+                }) { Text("Aggiorna") }
+            },
+            dismissButton = { TextButton(onClick = { confermaDate = false }) { Text("Annulla") } }
+        )
+    }
+    inModifica?.let { op ->
+        OperazioneDialog(vm, dati, op.contoValutaId, op, onChiudi = { inModifica = null })
+    }
+}
+
+/** Scorrimento automatico quando il dito trascinato è vicino ai bordi dell'area visibile. */
+private fun scorriVicinoAiBordi(dito: Offset, area: Rect, scorrimento: androidx.compose.foundation.ScrollState) {
+    when {
+        dito.y < area.top + 48f -> scorrimento.dispatchRawDelta(-24f)
+        dito.y > area.bottom - 48f -> scorrimento.dispatchRawDelta(24f)
+    }
+}
+
+/** Una riga (operazione del conto o movimento dell'estratto): importo e descrizione; le non collegate evidenziate. */
+@Composable
+private fun CartaRiscontro(
+    importo: String,
+    descrizione: String,
+    collegata: Boolean,
+    evidenziata: Boolean,
+    onPosizione: (Rect) -> Unit,
+    onTocco: () -> Unit,
+    onInizio: (Offset) -> Unit,
+    onTrascina: (Offset) -> Unit,
+    onFine: () -> Unit,
+    onAnnulla: () -> Unit
+) {
+    val colori = MaterialTheme.colorScheme
+    val inizio by rememberUpdatedState(onInizio)
+    val trascina by rememberUpdatedState(onTrascina)
+    val fine by rememberUpdatedState(onFine)
+    val annulla by rememberUpdatedState(onAnnulla)
+    Surface(
+        shape = MaterialTheme.shapes.small,
+        color = when {
+            evidenziata -> colori.primaryContainer
+            collegata -> colori.surfaceVariant
+            else -> colori.errorContainer
+        },
+        border = if (evidenziata) BorderStroke(2.dp, colori.secondary) else null,
+        modifier = Modifier
+            .fillMaxWidth()
+            .onGloballyPositioned { onPosizione(Rect(it.positionInRoot(), it.size.toSize())) }
+            .pointerInput(collegata) {
+                if (!collegata) {
+                    detectDragGesturesAfterLongPress(
+                        onDragStart = { inizio(it) },
+                        onDrag = { change, delta -> change.consume(); trascina(delta) },
+                        onDragEnd = { fine() },
+                        onDragCancel = { annulla() }
+                    )
+                }
+            }
+            .clickable(onClick = onTocco)
+    ) {
+        Column(modifier = Modifier.padding(horizontal = 4.dp, vertical = 3.dp)) {
+            Text(importo, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, maxLines = 1)
+            if (descrizione.isNotBlank()) {
+                Text(descrizione, style = MaterialTheme.typography.labelSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            }
+        }
+    }
+}
