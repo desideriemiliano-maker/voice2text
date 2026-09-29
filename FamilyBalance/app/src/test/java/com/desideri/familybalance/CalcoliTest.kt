@@ -151,4 +151,15 @@ class CalcoliTest {
         assertEquals(-900.0, r[0].righe.single().pagato, 0.001)
         assertEquals(-100.0, r[1].righe.single().previsto!!, 0.001)
     }
+
+    @Test
+    fun ricorrenti_dataPerRicorrenteSpostaIlMese() {
+        val conti = listOf(ContoValuta(id = 1, contoId = 1, valuta = "EUR"))
+        val voce = Voce(id = 1, tipo = "Affitto", ricorrente = true, mesiRicorrenza = 1, meseInizio = "2026-06")
+        // Addebitata il 1° luglio ma relativa a giugno.
+        val ops = listOf(Operazione(id = 1, contoValutaId = 1, data = giorno(2026, 7, 1), importoCent = -80_000, voceId = 1, dataRicorrente = giorno(2026, 6, 30)))
+        val r = Calcoli.ricorrenti(listOf(YearMonth.of(2026, 6), YearMonth.of(2026, 7)), listOf(voce), conti, ops, Cambi.fisso(1.0), YearMonth.of(2026, 9))
+        assertEquals(-800.0, r[0].righe.single().pagato, 0.001)
+        assertEquals(-800.0, r[1].righe.single().previsto!!, 0.001)
+    }
 }

@@ -68,6 +68,7 @@ fun OperazioneDialog(vm: SpeseViewModel, dati: DatiApp, contoValutaId: Long, esi
     var tipo by remember { mutableStateOf(voceIniziale?.tipo ?: "") }
     var sottotipo by remember { mutableStateOf(voceIniziale?.sottotipo ?: "") }
     var note by remember { mutableStateOf(esistente?.note ?: "") }
+    var dataRicorrente by remember { mutableStateOf(esistente?.dataRicorrente) }
     var errore by remember { mutableStateOf<String?>(null) }
     var confermaElimina by remember { mutableStateOf(false) }
 
@@ -127,7 +128,8 @@ fun OperazioneDialog(vm: SpeseViewModel, dati: DatiApp, contoValutaId: Long, esi
                     trasferimento = true,
                     contoValutaDestId = dest,
                     collegataId = esistente?.collegataId,
-                    note = note.trim().ifEmpty { null }
+                    note = note.trim().ifEmpty { null },
+                    ordine = esistente?.ordine
                 )
                 vm.salvaOperazione(op, if (entrata) -centDest else centDest, scelta?.id)
             } else {
@@ -145,7 +147,11 @@ fun OperazioneDialog(vm: SpeseViewModel, dati: DatiApp, contoValutaId: Long, esi
                     importoCent = importoConSegno,
                     voceId = voceId,
                     collegataId = esistente?.collegataId,
-                    note = note.trim().ifEmpty { null }
+                    note = note.trim().ifEmpty { null },
+                    ordine = esistente?.ordine,
+                    esclusaDaMedia = esistente?.esclusaDaMedia ?: false,
+                    // La data per la ricorrente conta solo per le voci ricorrenti e se diversa dalla data.
+                    dataRicorrente = dataRicorrente.takeIf { dati.vociPerId[voceId]?.ricorrente == true && it != data }
                 )
                 vm.salvaOperazione(op, null)
             }
@@ -225,6 +231,15 @@ fun OperazioneDialog(vm: SpeseViewModel, dati: DatiApp, contoValutaId: Long, esi
                         if (dati.voci.any { v -> v.tipo.equals(it.trim(), true) && v.entrata }) entrata = true
                     })
                     CampoAutocompletamento("Sottotipo (opzionale)", sottotipo, sottotipi, { sottotipo = it })
+                    val ricorrente = dati.vociAttive.any { it.ricorrente && it.tipo.equals(tipo.trim(), true) } ||
+                        (voceIniziale?.ricorrente == true && voceIniziale.tipo.equals(tipo.trim(), true))
+                    if (ricorrente) {
+                        CampoData("Data per la spesa ricorrente (facoltativa)", dataRicorrente, { dataRicorrente = it }, Modifier.fillMaxWidth(), consentiVuoto = true)
+                        Text(
+                            "Se l'addebito è in un mese diverso da quello della spesa (es. il 1° del mese per il mese prima), la ricorrente la conta in questa data.",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
                 }
                 OutlinedTextField(value = note, onValueChange = { note = it }, label = { Text("Note") }, modifier = Modifier.fillMaxWidth())
                 errore?.let { Text(it, color = MaterialTheme.colorScheme.error) }

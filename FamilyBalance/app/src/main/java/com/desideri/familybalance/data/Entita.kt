@@ -97,8 +97,16 @@ data class Operazione(
     val ordine: Long? = null,
     /** Operazione di una spesa ricorrente da non considerare nella media per le stime (es. importo eccezionale). */
     @ColumnInfo(defaultValue = "0")
-    val esclusaDaMedia: Boolean = false
+    val esclusaDaMedia: Boolean = false,
+    /**
+     * Data a cui imputare l'operazione per la spesa ricorrente, se diversa da [data] (es. addebitata
+     * il 1° del mese ma relativa al mese precedente); null = [data].
+     */
+    val dataRicorrente: Long? = null
 )
+
+/** Giorno che conta per le spese ricorrenti (fuori dall'entità: non è una colonna). */
+val Operazione.dataPerRicorrente: Long get() = dataRicorrente ?: data
 
 /**
  * Associazione dell'anagrafica associazioni: se la descrizione di un movimento di un estratto conto

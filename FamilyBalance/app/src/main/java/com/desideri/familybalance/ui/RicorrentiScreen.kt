@@ -1,5 +1,6 @@
 package com.desideri.familybalance.ui
 
+import com.desideri.familybalance.data.dataPerRicorrente
 import androidx.compose.foundation.clickable
 import com.desideri.familybalance.logica.ValoreGrafico
 import androidx.compose.material.icons.automirrored.filled.ShowChart
@@ -307,7 +308,7 @@ private fun SceltaVociDialog(voci: List<Voce>, selezionate: Set<Long>, onConferm
 private fun DettaglioRicorrenteDialog(vm: SpeseViewModel, dati: DatiApp, riga: RigaRicorrente, mese: YearMonth, onChiudi: () -> Unit) {
     val voce = riga.voce
     val pagate = remember(dati.operazioni, voce.id, mese) {
-        dati.operazioni.filter { it.voceId == voce.id && Calcoli.mese(it.data) == mese }.sortedBy { it.data }
+        dati.operazioni.filter { it.voceId == voce.id && Calcoli.mese(it.dataPerRicorrente) == mese }.sortedBy { it.data }
     }
     val meseScadenza = riga.meseScadenza ?: mese
     var inModifica by remember { mutableStateOf<Operazione?>(null) }
@@ -339,6 +340,9 @@ private fun DettaglioRicorrenteDialog(vm: SpeseViewModel, dati: DatiApp, riga: R
                                 )
                             }
                             op.note?.let { Text(it, style = MaterialTheme.typography.bodySmall, maxLines = 2) }
+                            op.dataRicorrente?.let {
+                                Text("Imputata alla spesa ricorrente il ${formattaData(it)}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+                            }
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Checkbox(checked = op.esclusaDaMedia, onCheckedChange = { vm.impostaEsclusaDaMedia(op, it) })
                                 Text("Escludi dalla media per le stime", style = MaterialTheme.typography.bodySmall)

@@ -8,7 +8,7 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import java.io.File
 
-@Database(entities = [Conto::class, ContoValuta::class, Voce::class, Operazione::class, Associazione::class, Cambio::class, PrevisioneRicorrente::class], version = 8, exportSchema = false)
+@Database(entities = [Conto::class, ContoValuta::class, Voce::class, Operazione::class, Associazione::class, Cambio::class, PrevisioneRicorrente::class], version = 9, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun dao(): SpeseDao
 
@@ -23,7 +23,7 @@ abstract class AppDatabase : RoomDatabase() {
                 // TRUNCATE invece di WAL: tutto il contenuto sta nel solo file .db, così il backup
                 // su Drive è una semplice copia del file senza dover gestire -wal/-shm.
                 .setJournalMode(JournalMode.TRUNCATE)
-                .addMigrations(MIGRAZIONE_1_2, MIGRAZIONE_2_3, MIGRAZIONE_3_4, MIGRAZIONE_4_5, MIGRAZIONE_5_6, MIGRAZIONE_6_7, MIGRAZIONE_7_8)
+                .addMigrations(MIGRAZIONE_1_2, MIGRAZIONE_2_3, MIGRAZIONE_3_4, MIGRAZIONE_4_5, MIGRAZIONE_5_6, MIGRAZIONE_6_7, MIGRAZIONE_7_8, MIGRAZIONE_8_9)
                 .build()
                 .also { istanza = it }
         }
@@ -85,6 +85,13 @@ abstract class AppDatabase : RoomDatabase() {
         private val MIGRAZIONE_7_8 = object : Migration(7, 8) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE `operazioni` ADD COLUMN `esclusaDaMedia` INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
+        /** Versione 9: data a cui imputare un'operazione per la spesa ricorrente. */
+        private val MIGRAZIONE_8_9 = object : Migration(8, 9) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `operazioni` ADD COLUMN `dataRicorrente` INTEGER")
             }
         }
 

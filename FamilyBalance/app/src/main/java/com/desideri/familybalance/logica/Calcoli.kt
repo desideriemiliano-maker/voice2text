@@ -1,5 +1,6 @@
 package com.desideri.familybalance.logica
 
+import com.desideri.familybalance.data.dataPerRicorrente
 import com.desideri.familybalance.data.ContoValuta
 import com.desideri.familybalance.data.Operazione
 import com.desideri.familybalance.data.PrevisioneRicorrente
@@ -124,7 +125,7 @@ object Calcoli {
             val voceId = op.voceId ?: continue
             if (op.trasferimento || voceId !in ids || (perMedia && op.esclusaDaMedia)) continue
             val perMese = storico.getOrPut(voceId) { HashMap() }
-            val m = mese(op.data)
+            val m = mese(op.dataPerRicorrente)
             perMese[m] = (perMese[m] ?: 0.0) + cambi.inEuro(op.importoCent, valutaDi[op.contoValutaId] ?: Valute.EUR, m)
         }
         return storico
