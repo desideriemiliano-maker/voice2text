@@ -2,6 +2,7 @@ package com.desideri.familybalance.ui
 
 import androidx.compose.foundation.border
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.foundation.background
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
@@ -148,7 +149,7 @@ fun CalendarioRicorrentiDialog(vm: SpeseViewModel, onChiudi: () -> Unit) {
                     )
                 }
                 Text(
-                    "Effettiva (operazioni sul conto) in nero; pianificata (giorno previsto · importo) in colore; stimata con la media in corsivo; " +
+                    "Effettiva (operazioni sul conto) in nero; pianificata (giorno previsto · importo) in verde; stimata con la media in arancio; " +
                         "✕ annullata. Il totale usa l'effettivo e, dove manca, il valore calcolato; tocca \"Totale\" per il dettaglio. " +
                         "CHF al cambio delle Impostazioni. Tocca una cella per pianificare, aggiungere, modificare o eliminare la spesa di quel mese; " +
                         "tieni premuta una spesa stimata o pianificata per eliminarla da quel mese.",
@@ -171,7 +172,10 @@ fun CalendarioRicorrentiDialog(vm: SpeseViewModel, onChiudi: () -> Unit) {
                         mesi.map { m -> m.format(FORMATO_NOME_MESE).replaceFirstChar { it.uppercase() } to m } + ("Anno" to null)
                     fun sfondo(indice: Int) = if (indice % 2 == 1) zebra else Color.Transparent
                     val coloreTotali = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f)
-                    val colorePianificata = MaterialTheme.colorScheme.primary
+                    // Colori per stato (più chiari col tema scuro): effettiva nero, pianificata verde, stimata arancio scuro.
+                    val scuro = MaterialTheme.colorScheme.surface.luminance() < 0.5f
+                    val colorePianificata = if (scuro) Color(0xFF81C784) else Color(0xFF2E7D32)
+                    val coloreStimata = if (scuro) Color(0xFFFFA64D) else Color(0xFFC25400)
                     Column(modifier = Modifier.weight(1f)) {
                         Row {
                             CellaTesto("Mese", LARGHEZZA_MESE, grassetto = true, righe = 2)
@@ -214,7 +218,12 @@ fun CalendarioRicorrentiDialog(vm: SpeseViewModel, onChiudi: () -> Unit) {
                                                     },
                                                     LARGHEZZA_COLONNA,
                                                     corsivo = c != null && c.stato == StatoSpesa.STIMATA && !c.annullata,
-                                                    colore = if (c != null && c.stato == StatoSpesa.PIANIFICATA && !c.annullata) colorePianificata else null,
+                                                    colore = when {
+                                                        c == null || c.annullata -> null
+                                                        c.stato == StatoSpesa.PIANIFICATA -> colorePianificata
+                                                        c.stato == StatoSpesa.STIMATA -> coloreStimata
+                                                        else -> MaterialTheme.colorScheme.onSurface
+                                                    },
                                                     allineaDestra = true,
                                                     sfondo = sfondo(i),
                                                     onClick = { aperta = v.id to m },
