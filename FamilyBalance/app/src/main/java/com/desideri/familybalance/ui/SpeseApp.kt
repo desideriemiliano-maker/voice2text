@@ -4,7 +4,6 @@ import android.net.Uri
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.material.icons.automirrored.filled.ReceiptLong
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
@@ -27,7 +26,6 @@ import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.EventRepeat
 import androidx.compose.material.icons.filled.FactCheck
-import androidx.compose.material.icons.filled.FileOpen
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.MoreVert
@@ -122,18 +120,11 @@ private fun SchermataPrincipale(vm: SpeseViewModel, sezione: Sezione, onSezione:
     var mostraVersioni by remember { mutableStateOf(false) }
     var mostraRegistro by remember { mutableStateOf(false) }
     var mostraCalendario by remember { mutableStateOf(false) }
-    var confermaImport by remember { mutableStateOf(false) }
     val importazioneInCorso by vm.importazioneInCorso.collectAsStateWithLifecycle()
-    val analisiImport by vm.analisiImport.collectAsStateWithLifecycle()
     val importEstratto by vm.importEstratto.collectAsStateWithLifecycle()
     val testoAttesa by vm.testoAttesa.collectAsStateWithLifecycle()
     val dati by vm.dati.collectAsStateWithLifecycle()
-    // File dell'estratto conto scelto, in attesa della scelta del conto su cui importarlo.
-    var fileEstratto by remember { mutableStateOf<Uri?>(null) }
-    val sceltaEstratto = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri != null) fileEstratto = uri
-    }
-    // File dell'estratto conto da riscontrare, in attesa della scelta del conto.
+    // File dell'estratto conto da riscontrare (con Gemini o da Excel), in attesa della scelta del conto.
     var fileRiscontro by remember { mutableStateOf<Uri?>(null) }
     var fileRiscontroExcel by remember { mutableStateOf<Uri?>(null) }
     val sceltaRiscontroExcel = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -143,10 +134,6 @@ private fun SchermataPrincipale(vm: SpeseViewModel, sezione: Sezione, onSezione:
         if (uri != null) fileRiscontro = uri
     }
     val riscontroEstratto by vm.riscontroEstratto.collectAsStateWithLifecycle()
-
-    val sceltaExcel = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri != null) vm.importaExcel(uri)
-    }
 
     Scaffold(
         topBar = {
@@ -159,11 +146,9 @@ private fun SchermataPrincipale(vm: SpeseViewModel, sezione: Sezione, onSezione:
                             VoceMenu("Anagrafica spese", Icons.AutoMirrored.Filled.List) { menuAperto = false; onApri(Schermata.AnagraficaSpese) }
                             VoceMenu("Anagrafica conti", Icons.Filled.AccountBalanceWallet) { menuAperto = false; onApri(Schermata.AnagraficaConti) }
                             VoceMenu("Anagrafica associazioni", Icons.Filled.Link) { menuAperto = false; onApri(Schermata.AnagraficaAssociazioni) }
+                            VoceMenu("Calendario ricorrenti", Icons.Filled.CalendarMonth) { menuAperto = false; mostraCalendario = true }
                             HorizontalDivider()
-                            VoceMenu("Importa estratto conto", Icons.AutoMirrored.Filled.ReceiptLong) {
-                                menuAperto = false
-                                sceltaEstratto.launch(arrayOf("*/*"))
-                            }
+                            VoceMenu("Riscontro spostamenti", Icons.AutoMirrored.Filled.CompareArrows) { menuAperto = false; onApri(Schermata.MappaSpostamenti) }
                             VoceMenu("Riscontro estratto conto", Icons.Filled.FactCheck) {
                                 menuAperto = false
                                 sceltaRiscontro.launch(arrayOf("*/*"))
@@ -178,10 +163,6 @@ private fun SchermataPrincipale(vm: SpeseViewModel, sezione: Sezione, onSezione:
                                     )
                                 )
                             }
-                            VoceMenu("Importa da Excel", Icons.Filled.FileOpen) { menuAperto = false; confermaImport = true }
-                            HorizontalDivider()
-                            VoceMenu("Riscontro spostamenti", Icons.AutoMirrored.Filled.CompareArrows) { menuAperto = false; onApri(Schermata.MappaSpostamenti) }
-                            VoceMenu("Calendario ricorrenti", Icons.Filled.CalendarMonth) { menuAperto = false; mostraCalendario = true }
                             VoceMenu("Cambi CHF/EUR", Icons.Filled.CurrencyExchange) { menuAperto = false; onApri(Schermata.Cambi) }
                             HorizontalDivider()
                             VoceMenu("Backup Google Drive", Icons.Filled.CloudUpload) { menuAperto = false; onApri(Schermata.Backup) }
@@ -219,49 +200,6 @@ private fun SchermataPrincipale(vm: SpeseViewModel, sezione: Sezione, onSezione:
     if (mostraVersioni) VersioniDialog(onDismiss = { mostraVersioni = false })
     if (mostraRegistro) RegistroDialog(onDismiss = { mostraRegistro = false })
     if (mostraCalendario) CalendarioRicorrentiDialog(vm, onChiudi = { mostraCalendario = false })
-
-    if (confermaImport) {
-        DialogConferma(
-            titolo = "Importa da Excel",
-            testo = "Scegli il file Excel delle spese (fogli HelloBank, LGT, Bollette, Impostazioni). " +
-                "Le spese ricorrenti vengono dal foglio Bollette; prima di importare potrai scegliere a quale " +
-                "ricorrente associare le operazioni di tipo Bollette. Tutti i conti, le voci e le operazioni " +
-                "presenti nell'app verranno SOSTITUITI dal contenuto del file.",
-            conferma = "Scegli file",
-            onConferma = {
-                sceltaExcel.launch(
-                    arrayOf(
-                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        "application/vnd.ms-excel",
-                        "application/octet-stream"
-                    )
-                )
-            },
-            onAnnulla = { confermaImport = false }
-        )
-    }
-
-    analisiImport?.let { analisi ->
-        val memorizzate = remember(analisi) { vm.mappatureBollette() }
-        AssociaBolletteDialog(
-            analisi = analisi,
-            memorizzate = memorizzate,
-            onConferma = { vm.confermaImport(it) },
-            onSalva = { vm.salvaScelteImport(it) },
-            onAnnulla = { vm.annullaImport() }
-        )
-    }
-
-    fileEstratto?.let { uri ->
-        SceltaContoDialog(
-            dati = dati,
-            onScelto = { contoValutaId ->
-                fileEstratto = null
-                vm.importaEstratto(uri, contoValutaId)
-            },
-            onAnnulla = { fileEstratto = null }
-        )
-    }
 
     fileRiscontro?.let { uri ->
         SceltaContoDialog(

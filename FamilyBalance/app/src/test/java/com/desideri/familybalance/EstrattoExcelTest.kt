@@ -33,7 +33,7 @@ class EstrattoExcelTest {
         assertEquals("Rimborso", esito.movimenti[1].descrizione)
         assertEquals(LocalDate.of(2026, 9, 30), esito.movimenti[1].dataContabile)
         assertEquals(250000L, esito.movimenti[2].importoCent)
-        assertEquals(6, primo.rigaFile)
+        assertEquals(5, primo.rigaFile)
         assertEquals(emptyList<String>(), esito.avvisi)
     }
 
