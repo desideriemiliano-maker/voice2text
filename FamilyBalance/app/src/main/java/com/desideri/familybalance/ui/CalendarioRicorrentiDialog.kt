@@ -3,7 +3,8 @@ package com.desideri.familybalance.ui
 import androidx.compose.foundation.border
 import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -20,11 +21,13 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -48,6 +51,7 @@ import com.desideri.familybalance.logica.Calcoli
 import com.desideri.familybalance.logica.Cambi
 import com.desideri.familybalance.logica.RigaRicorrente
 import com.desideri.familybalance.logica.formattaImporto
+import com.desideri.familybalance.logica.formattaMese
 import java.time.YearMonth
 import java.time.format.DateTimeFormatter
 import java.util.Locale
@@ -78,6 +82,8 @@ fun CalendarioRicorrentiDialog(vm: SpeseViewModel, onChiudi: () -> Unit) {
     }
     // Cella aperta nel dettaglio (spesa e mese).
     var aperta by remember { mutableStateOf<Pair<Long, YearMonth>?>(null) }
+    // Cella stimata da eliminare (pressione lunga), in attesa di conferma.
+    var daEliminare by remember { mutableStateOf<Pair<Long, YearMonth>?>(null) }
     // null = tutte le spese (anche quelle aggiunte in seguito); lista vuota = nessuna.
     var scelte by rememberSaveable { mutableStateOf<List<Long>?>(null) }
     val mostrate = scelte?.let { s -> voci.filter { it.id in s } } ?: voci
@@ -116,7 +122,7 @@ fun CalendarioRicorrentiDialog(vm: SpeseViewModel, onChiudi: () -> Unit) {
                 }
                 Text(
                     "Pagato del mese; in corsivo la stima dove non ci sono operazioni; ✕ scadenza annullata. CHF al cambio delle Impostazioni. " +
-                        "Tocca una cella per aggiungere, modificare o eliminare la spesa di quel mese.",
+                        "Tocca una cella per aggiungere, modificare o eliminare la spesa di quel mese; tieni premuta una stima per eliminarla da quel mese.",
                     style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier.padding(vertical = 4.dp)
                 )
@@ -167,7 +173,8 @@ fun CalendarioRicorrentiDialog(vm: SpeseViewModel, onChiudi: () -> Unit) {
                                                     corsivo = c?.stimato == true,
                                                     allineaDestra = true,
                                                     sfondo = sfondo(i),
-                                                    onClick = { aperta = v.id to m }
+                                                    onClick = { aperta = v.id to m },
+                                                    onLongClick = if (c != null && c.stimato && !c.annullata) ({ daEliminare = v.id to m }) else null
                                                 )
                                             }
                                             CellaTesto(if (totale != 0.0) formattaImporto(totale) else "", LARGHEZZA_COLONNA, grassetto = true, allineaDestra = true, sfondo = sfondo(i))
@@ -201,8 +208,37 @@ fun CalendarioRicorrentiDialog(vm: SpeseViewModel, onChiudi: () -> Unit) {
             DettaglioRicorrenteDialog(vm, dati, riga, mese, onChiudi = { aperta = null })
         }
     }
+
+    daEliminare?.let { (voceId, mese) ->
+        val voce = dati.vociPerId[voceId]
+        val cella = celle[voceId to mese]
+        if (voce == null || cella == null) {
+            daEliminare = null
+        } else {
+            val meseScadenza = cella.riga.meseScadenza ?: mese
+            AlertDialog(
+                onDismissRequest = { daEliminare = null },
+                title = { Text("Elimina dal mese") },
+                text = {
+                    Text(
+                        "Eliminare ${voce.descrizione} (stima ${formattaImporto(cella.importo)}) da ${formattaMese(mese)}? " +
+                            "La scadenza di questo mese viene annullata, le successive restano come in anagrafica. " +
+                            "Si può ripristinare toccando la cella."
+                    )
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        vm.annullaScadenza(voce, meseScadenza, true)
+                        daEliminare = null
+                    }) { Text("Elimina", color = MaterialTheme.colorScheme.error) }
+                },
+                dismissButton = { TextButton(onClick = { daEliminare = null }) { Text("Annulla") } }
+            )
+        }
+    }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun CellaTesto(
     testo: String,
@@ -212,7 +248,8 @@ private fun CellaTesto(
     allineaDestra: Boolean = false,
     righe: Int = 1,
     sfondo: Color = Color.Transparent,
-    onClick: (() -> Unit)? = null
+    onClick: (() -> Unit)? = null,
+    onLongClick: (() -> Unit)? = null
 ) {
     Text(
         testo,
@@ -226,7 +263,7 @@ private fun CellaTesto(
         modifier = Modifier
             .width(larghezza)
             .background(sfondo)
-            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+            .then(if (onClick != null) Modifier.combinedClickable(onLongClick = onLongClick, onClick = onClick) else Modifier)
             .height(if (righe > 1) 40.dp else 28.dp)
             .border(0.5.dp, MaterialTheme.colorScheme.outlineVariant)
             .padding(horizontal = 4.dp, vertical = 4.dp)

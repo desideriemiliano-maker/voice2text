@@ -316,6 +316,7 @@ internal fun DettaglioRicorrenteDialog(vm: SpeseViewModel, dati: DatiApp, riga: 
     var nuovaSuConto by remember { mutableStateOf<Long?>(null) }
     var importoCerca by remember(riga) { mutableStateOf(riga.previsto?.let { centInTesto(Math.round(abs(it) * 100)) } ?: "") }
     var daAssociare by remember { mutableStateOf<Operazione?>(null) }
+    var confermaElimina by remember { mutableStateOf(false) }
     var contoNuova by remember { mutableStateOf(dati.contiValutaOrdinati.firstOrNull()?.id) }
     var importo by remember(riga) { mutableStateOf(riga.previsto?.let { centInTesto(Math.round(abs(it) * 100)) } ?: "") }
     var data by remember(riga) { mutableStateOf(riga.dataPrevista) }
@@ -331,6 +332,20 @@ internal fun DettaglioRicorrenteDialog(vm: SpeseViewModel, dati: DatiApp, riga: 
                 val ricorrenza = (if (voce.mesiRicorrenza == 1) "ogni mese" else "ogni ${voce.mesiRicorrenza} mesi") +
                     (voce.meseInizio?.let { testoInMese(it) }?.let { " da ${formattaMese(it)}" } ?: " (senza mese di partenza)")
                 Text("Ricorrenza: $ricorrenza" + if (voce.obsoleta) " · obsoleta" else "", style = MaterialTheme.typography.bodySmall)
+
+                // Spesa generata dalla ricorrenza ma che in questo mese non c'è: si elimina dal mese.
+                if (riga.previsto != null) {
+                    OutlinedButton(onClick = { confermaElimina = true }, modifier = Modifier.fillMaxWidth()) {
+                        Text("Elimina da ${formattaMese(mese)} (questo mese non c'è)", color = MaterialTheme.colorScheme.error)
+                    }
+                }
+                if (riga.annullata) {
+                    Text("Eliminata da ${formattaMese(meseScadenza)}: le scadenze successive restano come in anagrafica.", style = MaterialTheme.typography.bodyMedium)
+                    OutlinedButton(onClick = {
+                        vm.annullaScadenza(voce, meseScadenza, false)
+                        onChiudi()
+                    }) { Text("Ripristina") }
+                }
 
                 if (pagate.isNotEmpty()) {
                     Text("Operazioni del mese", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
@@ -485,24 +500,6 @@ internal fun DettaglioRicorrenteDialog(vm: SpeseViewModel, dati: DatiApp, riga: 
                         vm.spostaScadenza(voce, meseScadenza, nuovoMese, mantieni)
                         onChiudi()
                     }, enabled = nuovoMese != mese) { Text("Sposta a ${formattaMese(nuovoMese)}") }
-
-                    HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
-                    Text("Annulla la scadenza", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
-                    Text(
-                        "Per questo mese la spesa non è prevista; le scadenze successive restano come in anagrafica.",
-                        style = MaterialTheme.typography.bodySmall
-                    )
-                    OutlinedButton(onClick = {
-                        vm.annullaScadenza(voce, meseScadenza, true)
-                        onChiudi()
-                    }) { Text("Annulla la scadenza di ${formattaMese(meseScadenza)}", color = MaterialTheme.colorScheme.error) }
-                }
-                if (riga.annullata) {
-                    Text("Scadenza di ${formattaMese(meseScadenza)} annullata.", style = MaterialTheme.typography.bodyMedium)
-                    OutlinedButton(onClick = {
-                        vm.annullaScadenza(voce, meseScadenza, false)
-                        onChiudi()
-                    }) { Text("Ripristina") }
                 }
                 errore?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             }
@@ -512,6 +509,26 @@ internal fun DettaglioRicorrenteDialog(vm: SpeseViewModel, dati: DatiApp, riga: 
 
     inModifica?.let { op ->
         OperazioneDialog(vm, dati, op.contoValutaId, op, onChiudi = { inModifica = null })
+    }
+    if (confermaElimina) {
+        AlertDialog(
+            onDismissRequest = { confermaElimina = false },
+            title = { Text("Elimina dal mese") },
+            text = {
+                Text(
+                    "Eliminare ${voce.descrizione} da ${formattaMese(mese)}? La scadenza di questo mese viene annullata, " +
+                        "le successive restano come in anagrafica. Si può ripristinare riaprendo il dettaglio."
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    vm.annullaScadenza(voce, meseScadenza, true)
+                    confermaElimina = false
+                    onChiudi()
+                }) { Text("Elimina", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = { TextButton(onClick = { confermaElimina = false }) { Text("Annulla") } }
+        )
     }
     daAssociare?.let { op ->
         AlertDialog(
