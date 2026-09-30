@@ -366,6 +366,13 @@ internal fun DettaglioRicorrenteDialog(vm: SpeseViewModel, dati: DatiApp, riga: 
                     )
                     OutlinedButton(onClick = { nuovaSuConto = contoNuova }, enabled = contoNuova != null) { Text("Aggiungi") }
                 }
+                // Scadenza prevista in più (es. futura): stimata con la media, senza conto né operazione.
+                if (riga.previsto == null && !riga.annullata) {
+                    OutlinedButton(onClick = {
+                        vm.aggiungiScadenza(voce, mese)
+                        onChiudi()
+                    }) { Text("Aggiungi prevista (stimata con la media, senza conto)") }
+                }
 
                 riga.previsto?.let { previsto ->
                     Text("Previsto: ${formattaImporto(previsto)}", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)

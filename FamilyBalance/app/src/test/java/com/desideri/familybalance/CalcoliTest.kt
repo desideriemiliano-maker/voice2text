@@ -162,4 +162,14 @@ class CalcoliTest {
         assertEquals(-800.0, r[0].righe.single().pagato, 0.001)
         assertEquals(-800.0, r[1].righe.single().previsto!!, 0.001)
     }
+
+    @Test
+    fun ricorrenti_scadenzaAggiuntaFuoriRicorrenza() {
+        val conti = listOf(ContoValuta(id = 1, contoId = 1, valuta = "EUR"))
+        val voce = Voce(id = 1, tipo = "Tassa", ricorrente = true, mesiRicorrenza = 12, meseInizio = "2026-01", importoPrevistoCent = 30_000)
+        val pers = listOf(PrevisioneRicorrente(voceId = 1, mese = "2026-11", aggiunta = true))
+        val r = Calcoli.ricorrenti(listOf(YearMonth.of(2026, 10), YearMonth.of(2026, 11)), listOf(voce), conti, emptyList(), Cambi.fisso(1.0), YearMonth.of(2026, 9), pers)
+        assertTrue(r[0].righe.isEmpty())
+        assertEquals(-300.0, r[1].righe.single().previsto!!, 0.001)
+    }
 }

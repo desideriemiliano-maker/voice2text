@@ -199,7 +199,8 @@ object Calcoli {
                 // Senza pagamenti nel mese la scadenza si stima (anche nei mesi passati: non pagata).
                 val daPrevedere = pagato == 0.0 && !voce.obsoleta
                 val p = perVoceEMese[voce.id to m.toString()]
-                val dovutaQui = !voce.obsoleta && dovuta(voce, m)
+                // Dovuta per la ricorrenza o aggiunta a mano in questo mese.
+                val dovutaQui = !voce.obsoleta && (dovuta(voce, m) || p?.aggiunta == true)
                 val annullata = dovutaQui && p?.annullata == true
                 // Scadenza del mese secondo la ricorrenza, se non annullata né spostata altrove.
                 val propria = if (daPrevedere && dovutaQui && !annullata && (p?.spostataA == null || p.spostataA == m.toString())) {

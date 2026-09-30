@@ -158,5 +158,8 @@ data class PrevisioneRicorrente(
     val spostataA: String? = null,
     /** Scadenza annullata per questo mese (nessuna previsione). */
     @ColumnInfo(defaultValue = "0")
-    val annullata: Boolean = false
+    val annullata: Boolean = false,
+    /** Scadenza aggiunta dall'utente in un mese fuori dalla ricorrenza (prevista, stimata con la media). */
+    @ColumnInfo(defaultValue = "0")
+    val aggiunta: Boolean = false
 )

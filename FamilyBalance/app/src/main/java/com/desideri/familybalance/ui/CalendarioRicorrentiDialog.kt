@@ -1,6 +1,8 @@
 package com.desideri.familybalance.ui
 
 import androidx.compose.foundation.border
+import androidx.compose.ui.graphics.Color
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -119,47 +121,63 @@ fun CalendarioRicorrentiDialog(vm: SpeseViewModel, onChiudi: () -> Unit) {
                 if (mostrate.isEmpty()) {
                     Text("Nessuna spesa ricorrente attiva.", modifier = Modifier.padding(16.dp))
                 } else {
+                    // Intestazione (in alto) e colonna dei mesi (a sinistra) restano ferme: le altre parti
+                    // scorrono insieme condividendo gli stati di scorrimento.
                     val orizzontale = rememberScrollState()
-                    Column(modifier = Modifier.weight(1f).verticalScroll(rememberScrollState())) {
-                        Column(modifier = Modifier.horizontalScroll(orizzontale)) {
-                            // Intestazione: mese, una colonna per spesa, totale.
-                            Row {
-                                CellaTesto("Mese", LARGHEZZA_MESE, grassetto = true)
+                    val verticale = rememberScrollState()
+                    val zebra = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
+                    // Righe: 12 mesi e il totale dell'anno.
+                    val righe: List<Pair<String, YearMonth?>> =
+                        mesi.map { m -> m.format(FORMATO_NOME_MESE).replaceFirstChar { it.uppercase() } to m } + ("Anno" to null)
+                    fun sfondo(indice: Int) = if (indice % 2 == 1) zebra else Color.Transparent
+                    Column(modifier = Modifier.weight(1f)) {
+                        Row {
+                            CellaTesto("Mese", LARGHEZZA_MESE, grassetto = true, righe = 2)
+                            Row(modifier = Modifier.horizontalScroll(orizzontale)) {
                                 mostrate.forEach { CellaTesto(it.descrizione, LARGHEZZA_COLONNA, grassetto = true, righe = 2) }
-                                CellaTesto("Totale", LARGHEZZA_COLONNA, grassetto = true)
+                                CellaTesto("Totale", LARGHEZZA_COLONNA, grassetto = true, righe = 2)
                             }
-                            mesi.forEach { m ->
-                                Row {
-                                    CellaTesto(m.format(FORMATO_NOME_MESE).replaceFirstChar { it.uppercase() }, LARGHEZZA_MESE, grassetto = m == YearMonth.now())
-                                    var totale = 0.0
-                                    mostrate.forEach { v ->
-                                        val c = celle[v.id to m]
-                                        if (c != null && !c.annullata) totale += c.importo
-                                        CellaTesto(
-                                            when {
-                                                c == null -> ""
-                                                c.annullata -> "✕"
-                                                else -> formattaImporto(c.importo)
-                                            },
-                                            LARGHEZZA_COLONNA,
-                                            corsivo = c?.stimato == true,
-                                            allineaDestra = true,
-                                            onClick = { aperta = v.id to m }
-                                        )
+                        }
+                        Row(modifier = Modifier.weight(1f)) {
+                            Column(modifier = Modifier.verticalScroll(verticale)) {
+                                righe.forEachIndexed { i, (nome, m) ->
+                                    CellaTesto(nome, LARGHEZZA_MESE, grassetto = m == null || m == YearMonth.now(), sfondo = sfondo(i))
+                                }
+                            }
+                            Column(modifier = Modifier.verticalScroll(verticale).horizontalScroll(orizzontale)) {
+                                righe.forEachIndexed { i, (_, m) ->
+                                    Row {
+                                        if (m != null) {
+                                            var totale = 0.0
+                                            mostrate.forEach { v ->
+                                                val c = celle[v.id to m]
+                                                if (c != null && !c.annullata) totale += c.importo
+                                                CellaTesto(
+                                                    when {
+                                                        c == null -> ""
+                                                        c.annullata -> "✕"
+                                                        else -> formattaImporto(c.importo)
+                                                    },
+                                                    LARGHEZZA_COLONNA,
+                                                    corsivo = c?.stimato == true,
+                                                    allineaDestra = true,
+                                                    sfondo = sfondo(i),
+                                                    onClick = { aperta = v.id to m }
+                                                )
+                                            }
+                                            CellaTesto(if (totale != 0.0) formattaImporto(totale) else "", LARGHEZZA_COLONNA, grassetto = true, allineaDestra = true, sfondo = sfondo(i))
+                                        } else {
+                                            // Totale dell'anno per spesa.
+                                            var complessivo = 0.0
+                                            mostrate.forEach { v ->
+                                                val somma = mesi.sumOf { mm -> celle[v.id to mm]?.takeIf { !it.annullata }?.importo ?: 0.0 }
+                                                complessivo += somma
+                                                CellaTesto(if (somma != 0.0) formattaImporto(somma) else "", LARGHEZZA_COLONNA, grassetto = true, allineaDestra = true, sfondo = sfondo(i))
+                                            }
+                                            CellaTesto(formattaImporto(complessivo), LARGHEZZA_COLONNA, grassetto = true, allineaDestra = true, sfondo = sfondo(i))
+                                        }
                                     }
-                                    CellaTesto(if (totale != 0.0) formattaImporto(totale) else "", LARGHEZZA_COLONNA, grassetto = true, allineaDestra = true)
                                 }
-                            }
-                            // Totale dell'anno per spesa.
-                            Row {
-                                CellaTesto("Anno", LARGHEZZA_MESE, grassetto = true)
-                                var complessivo = 0.0
-                                mostrate.forEach { v ->
-                                    val somma = mesi.sumOf { m -> celle[v.id to m]?.takeIf { !it.annullata }?.importo ?: 0.0 }
-                                    complessivo += somma
-                                    CellaTesto(if (somma != 0.0) formattaImporto(somma) else "", LARGHEZZA_COLONNA, grassetto = true, allineaDestra = true)
-                                }
-                                CellaTesto(formattaImporto(complessivo), LARGHEZZA_COLONNA, grassetto = true, allineaDestra = true)
                             }
                         }
                     }
@@ -188,6 +206,7 @@ private fun CellaTesto(
     corsivo: Boolean = false,
     allineaDestra: Boolean = false,
     righe: Int = 1,
+    sfondo: Color = Color.Transparent,
     onClick: (() -> Unit)? = null
 ) {
     Text(
@@ -201,6 +220,7 @@ private fun CellaTesto(
         overflow = TextOverflow.Ellipsis,
         modifier = Modifier
             .width(larghezza)
+            .background(sfondo)
             .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
             .height(if (righe > 1) 40.dp else 28.dp)
             .border(0.5.dp, MaterialTheme.colorScheme.outlineVariant)

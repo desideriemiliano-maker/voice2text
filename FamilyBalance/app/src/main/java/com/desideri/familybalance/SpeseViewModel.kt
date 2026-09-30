@@ -195,14 +195,26 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
         val attuale = personalizzazioni.value.firstOrNull { it.voceId == voce.id && it.mese == chiave }
         val spostataA = data?.let { Calcoli.mese(it) }?.takeIf { it != meseScadenza }?.toString()
             ?: attuale?.spostataA.takeIf { data == null }
-        if (importoCent == null && data == null && spostataA == null) {
+        val aggiunta = attuale?.aggiunta ?: false
+        if (importoCent == null && data == null && spostataA == null && !aggiunta) {
             dao.eliminaPrevisione(voce.id, chiave)
         } else {
             dao.salvaPrevisione(
-                PrevisioneRicorrente(id = attuale?.id ?: 0, voceId = voce.id, mese = chiave, importoCent = importoCent?.let { kotlin.math.abs(it) }, data = data, spostataA = spostataA)
+                PrevisioneRicorrente(
+                    id = attuale?.id ?: 0, voceId = voce.id, mese = chiave, importoCent = importoCent?.let { kotlin.math.abs(it) },
+                    data = data, spostataA = spostataA, aggiunta = aggiunta
+                )
             )
         }
         messaggio("Scadenza aggiornata")
+    }
+
+    /** Aggiunge una scadenza prevista (stimata con la media, senza conto) di [voce] nel [mese] fuori ricorrenza. */
+    fun aggiungiScadenza(voce: Voce, mese: YearMonth) = viewModelScope.launch {
+        val chiave = mese.toString()
+        val attuale = personalizzazioni.value.firstOrNull { it.voceId == voce.id && it.mese == chiave }
+        dao.salvaPrevisione((attuale ?: PrevisioneRicorrente(voceId = voce.id, mese = chiave)).copy(aggiunta = true, annullata = false))
+        messaggio("Scadenza prevista aggiunta a ${formattaMese(mese)}")
     }
 
     /** Esclude (o reinclude) l'operazione [op] dalla media usata per stimare la sua spesa ricorrente. */
@@ -214,6 +226,12 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
     fun annullaScadenza(voce: Voce, meseScadenza: YearMonth, annulla: Boolean) = viewModelScope.launch {
         val chiave = meseScadenza.toString()
         val attuale = personalizzazioni.value.firstOrNull { it.voceId == voce.id && it.mese == chiave }
+        // Una scadenza aggiunta a mano, annullata, semplicemente sparisce.
+        if (annulla && attuale?.aggiunta == true && !Calcoli.dovuta(voce, meseScadenza)) {
+            dao.eliminaPrevisione(voce.id, chiave)
+            messaggio("Scadenza di ${formattaMese(meseScadenza)} rimossa")
+            return@launch
+        }
         if (!annulla && attuale != null && attuale.importoCent == null && attuale.data == null && attuale.spostataA == null) {
             dao.eliminaPrevisione(voce.id, chiave)
         } else {
@@ -239,7 +257,7 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
                     dao.eliminaPrevisione(voce.id, chiave)
                 } else {
                     dao.salvaPrevisione(
-                        PrevisioneRicorrente(id = attuale?.id ?: 0, voceId = voce.id, mese = chiave, importoCent = attuale?.importoCent, data = dataNelMese, spostataA = spostata)
+                        PrevisioneRicorrente(id = attuale?.id ?: 0, voceId = voce.id, mese = chiave, importoCent = attuale?.importoCent, data = dataNelMese, spostataA = spostata, aggiunta = attuale?.aggiunta ?: false)
                     )
                 }
             } else {
