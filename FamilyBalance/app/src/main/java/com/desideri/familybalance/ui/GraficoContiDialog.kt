@@ -170,7 +170,9 @@ internal fun <T> MenuMultiplo(
     selezionate: List<T>,
     testo: (T) -> String,
     onCambia: (List<T>) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    /** Voce in cima per selezionare o deselezionare tutte le opzioni. */
+    conTutti: Boolean = false
 ) {
     var aperto by remember { mutableStateOf(false) }
     Box(modifier) {
@@ -185,6 +187,15 @@ internal fun <T> MenuMultiplo(
         )
         Box(Modifier.matchParentSize().clickable { aperto = true })
         DropdownMenu(expanded = aperto, onDismissRequest = { aperto = false }) {
+            if (conTutti) {
+                val tutte = opzioni.all { it in selezionate }
+                DropdownMenuItem(
+                    text = { Text(if (tutte) "Deseleziona tutto" else "Seleziona tutto") },
+                    leadingIcon = { Checkbox(checked = tutte, onCheckedChange = null) },
+                    onClick = { onCambia(if (tutte) emptyList() else opzioni) }
+                )
+                HorizontalDivider()
+            }
             opzioni.forEach { o ->
                 val scelta = o in selezionate
                 DropdownMenuItem(

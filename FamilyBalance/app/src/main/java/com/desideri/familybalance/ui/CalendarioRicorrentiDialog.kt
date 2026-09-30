@@ -78,8 +78,9 @@ fun CalendarioRicorrentiDialog(vm: SpeseViewModel, onChiudi: () -> Unit) {
     }
     // Cella aperta nel dettaglio (spesa e mese).
     var aperta by remember { mutableStateOf<Pair<Long, YearMonth>?>(null) }
-    var scelte by rememberSaveable { mutableStateOf<List<Long>>(emptyList()) }
-    val mostrate = if (scelte.isEmpty()) voci else voci.filter { it.id in scelte }
+    // null = tutte le spese (anche quelle aggiunte in seguito); lista vuota = nessuna.
+    var scelte by rememberSaveable { mutableStateOf<List<Long>?>(null) }
+    val mostrate = scelte?.let { s -> voci.filter { it.id in s } } ?: voci
 
     val mesi = (1..12).map { YearMonth.of(anno, it) }
     val celle: Map<Pair<Long, YearMonth>, Cella> = remember(dati, impostazioni.cambioChfEur, personalizzazioni, anno) {
@@ -106,10 +107,11 @@ fun CalendarioRicorrentiDialog(vm: SpeseViewModel, onChiudi: () -> Unit) {
                     Text(anno.toString(), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                     IconButton(onClick = { anno++ }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = "Anno successivo") }
                     MenuMultiplo(
-                        "Spese", voci.map { it.id }, scelte.ifEmpty { voci.map { it.id } },
+                        "Spese", voci.map { it.id }, scelte ?: voci.map { it.id },
                         { id -> voci.firstOrNull { it.id == id }?.descrizione.orEmpty() },
-                        onCambia = { nuove -> scelte = if (nuove.size == voci.size) emptyList() else nuove.ifEmpty { scelte } },
-                        modifier = Modifier.weight(1f)
+                        onCambia = { nuove -> scelte = if (nuove.size == voci.size) null else nuove },
+                        modifier = Modifier.weight(1f),
+                        conTutti = true
                     )
                 }
                 Text(
@@ -119,7 +121,10 @@ fun CalendarioRicorrentiDialog(vm: SpeseViewModel, onChiudi: () -> Unit) {
                     modifier = Modifier.padding(vertical = 4.dp)
                 )
                 if (mostrate.isEmpty()) {
-                    Text("Nessuna spesa ricorrente attiva.", modifier = Modifier.padding(16.dp))
+                    Text(
+                        if (voci.isEmpty()) "Nessuna spesa ricorrente attiva." else "Nessuna spesa selezionata nel filtro.",
+                        modifier = Modifier.padding(16.dp)
+                    )
                 } else {
                     // Intestazione (in alto) e colonna dei mesi (a sinistra) restano ferme: le altre parti
                     // scorrono insieme condividendo gli stati di scorrimento.
