@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material3.Button
@@ -27,6 +28,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.Lifecycle
@@ -68,6 +71,9 @@ fun BloccoBiometrico(activity: FragmentActivity, content: @Composable () -> Unit
     var sbloccato by rememberSaveable { mutableStateOf(false) }
     var autenticazioneInCorso by remember { mutableStateOf(false) }
     var ultimoBackgroundMs by rememberSaveable { mutableStateOf(0L) }
+    // Sbloccata almeno una volta: da lì in poi l'app resta composta sotto il blocco, così allo
+    // sblocco si ritrova la schermata (e i popup) dove si era.
+    var giaSbloccato by rememberSaveable { mutableStateOf(false) }
 
     val prompt = remember {
         BiometricPrompt(
@@ -77,6 +83,7 @@ fun BloccoBiometrico(activity: FragmentActivity, content: @Composable () -> Unit
                 override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
                     autenticazioneInCorso = false
                     sbloccato = true
+                    giaSbloccato = true
                 }
 
                 override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
@@ -118,10 +125,24 @@ fun BloccoBiometrico(activity: FragmentActivity, content: @Composable () -> Unit
         onDispose { lifecycleOwner.lifecycle.removeObserver(osservatore) }
     }
 
-    if (!attivo || sbloccato) {
-        content()
-    } else {
-        SchermataBloccata(onSblocca = ::avviaAutenticazione)
+    when {
+        !attivo || sbloccato -> content()
+        giaSbloccato -> {
+            content()
+            // In una finestra sopra a tutto, compresi i popup aperti: coprono i dati finché si sblocca.
+            // Indietro manda l'app in background.
+            Dialog(
+                onDismissRequest = { activity.moveTaskToBack(true) },
+                properties = DialogProperties(
+                    usePlatformDefaultWidth = false,
+                    decorFitsSystemWindows = false,
+                    dismissOnClickOutside = false
+                )
+            ) {
+                SchermataBloccata(onSblocca = ::avviaAutenticazione)
+            }
+        }
+        else -> SchermataBloccata(onSblocca = ::avviaAutenticazione)
     }
 }
 
@@ -129,7 +150,7 @@ fun BloccoBiometrico(activity: FragmentActivity, content: @Composable () -> Unit
 private fun SchermataBloccata(onSblocca: () -> Unit) {
     Surface(modifier = Modifier.fillMaxSize()) {
         Column(
-            modifier = Modifier.fillMaxSize().padding(24.dp),
+            modifier = Modifier.fillMaxSize().systemBarsPadding().padding(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
