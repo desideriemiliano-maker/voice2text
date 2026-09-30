@@ -17,6 +17,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -30,6 +32,8 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateMapOf
@@ -64,6 +68,7 @@ import com.desideri.familybalance.logica.RiscontroEstratto
 import com.desideri.familybalance.logica.formattaCent
 import com.desideri.familybalance.logica.formattaData
 import java.time.LocalDate
+import java.time.YearMonth
 import java.time.format.DateTimeFormatter
 
 private val FORMATO_GIORNO = DateTimeFormatter.ofPattern("dd/MM")
@@ -79,6 +84,20 @@ private enum class FiltroRiscontro(val etichetta: String) {
 }
 
 /** Chiavi delle carte per le posizioni: operazione del conto o movimento dell'estratto. */
+/** Mesi mostrati per volta e giorni di sovrapposizione selezionabili tra un periodo e l'altro. */
+private const val MESI_PERIODO = 2L
+private val SOVRAPPOSIZIONI = listOf(0, 5, 10)
+
+/** Periodo mostrato: due mesi a partire da [inizio], o tutto l'estratto con [inizio] null. */
+private data class PeriodoRiscontro(val inizio: YearMonth?) {
+    val etichetta: String
+        get() = inizio?.let { i ->
+            val fine = i.plusMonths(MESI_PERIODO - 1)
+            val nome = { m: YearMonth -> m.format(DateTimeFormatter.ofPattern("MMM yyyy", java.util.Locale.ITALIAN)) }
+            if (i.year == fine.year) "${i.format(DateTimeFormatter.ofPattern("MMM", java.util.Locale.ITALIAN))}–${nome(fine)}" else "${nome(i)}–${nome(fine)}"
+        } ?: "Tutto l'estratto"
+}
+
 private fun chiaveOp(id: Long) = "o$id"
 private fun chiaveMov(indice: Int) = "m$indice"
 
@@ -142,8 +161,26 @@ fun RiscontroEstrattoDialog(vm: SpeseViewModel, dati: DatiApp, stato: StatoRisco
             else -> true
         }
     }
-    val opsVisibili = opsConto.filter { (it.data in da..a || it.id in opCollegate) && mostrato(opCollegate[it.id]) }
-    val movVisibili = movimenti.indices.filter { mostrato(movCollegati[it]) }
+    // Periodi di due mesi dall'ultimo mese dell'estratto all'indietro (il più recente per primo). Il
+    // modello (collegamenti, mancanti, date da aggiornare) resta sull'intero estratto: il periodo
+    // limita solo le righe mostrate, con qualche giorno di sovrapposizione ai bordi.
+    val periodi = remember(da, a) {
+        val primo = YearMonth.from(LocalDate.ofEpochDay(da))
+        generateSequence(YearMonth.from(LocalDate.ofEpochDay(a)).minusMonths(MESI_PERIODO - 1)) { it.minusMonths(MESI_PERIODO) }
+            .takeWhile { !it.plusMonths(MESI_PERIODO - 1).isBefore(primo) }
+            .map { PeriodoRiscontro(it) }
+            .toList() + PeriodoRiscontro(null)
+    }
+    var periodo by remember(stato) { mutableStateOf(periodi.first()) }
+    var sovrapposizione by remember { mutableIntStateOf(5) }
+    val finestra: LongRange = periodo.inizio?.let { i ->
+        (i.atDay(1).toEpochDay() - sovrapposizione)..(i.plusMonths(MESI_PERIODO - 1).atEndOfMonth().toEpochDay() + sovrapposizione)
+    } ?: (da..a)
+    // Una riga è nel periodo se la sua data lo è o se è collegata a una riga del periodo (le linee restano intere).
+    fun opNelPeriodo(op: Operazione) = op.data in finestra || opCollegate[op.id]?.let { movimenti[it.movimento].data in finestra } == true
+    fun movNelPeriodo(i: Int) = movimenti[i].data in finestra || movCollegati[i]?.let { perIdOp[it.operazioneId]?.data?.let { d -> d in finestra } } == true
+    val opsVisibili = opsConto.filter { (it.data in da..a || it.id in opCollegate) && opNelPeriodo(it) && mostrato(opCollegate[it.id]) }
+    val movVisibili = movimenti.indices.filter { movNelPeriodo(it) && mostrato(movCollegati[it]) }
     val date = (opsVisibili.map { it.data } + movVisibili.map { movimenti[it].data }).distinct().sortedDescending()
     val opsPerData = opsVisibili.groupBy { it.data }
     val movPerData = movVisibili.groupBy { movimenti[it].data }
@@ -192,6 +229,7 @@ fun RiscontroEstrattoDialog(vm: SpeseViewModel, dati: DatiApp, stato: StatoRisco
     }
 
     ScorrimentoAutomatico(trascinata != null, { dito }, { area }, scorrimento)
+    LaunchedEffect(periodo, sovrapposizione, filtro) { scorrimento.scrollTo(0) }
 
     // decorFitsSystemWindows = false + systemBarsPadding: il popup resta dentro lo schermo visibile.
     Dialog(onDismissRequest = onChiudi, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
@@ -200,6 +238,25 @@ fun RiscontroEstrattoDialog(vm: SpeseViewModel, dati: DatiApp, stato: StatoRisco
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("Riscontro estratto · ${dati.etichetta(stato.contoValutaId)}", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
                     IconButton(onClick = onChiudi) { Icon(Icons.Filled.Close, contentDescription = "Chiudi") }
+                }
+                // Periodo mostrato (due mesi) con frecce e scelta diretta; sovrapposizione ai bordi.
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                    val indice = periodi.indexOf(periodo)
+                    IconButton(onClick = { periodo = periodi[indice + 1] }, enabled = indice + 1 < periodi.size - 1) {
+                        Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, contentDescription = "Periodo precedente")
+                    }
+                    CampoScelta("Periodo", periodo, periodi, { it.etichetta }, { periodo = it }, Modifier.weight(1f))
+                    IconButton(onClick = { periodo = periodi[indice - 1] }, enabled = indice in 1 until periodi.size - 1) {
+                        Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = "Periodo successivo")
+                    }
+                }
+                if (periodo.inizio != null) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text("Sovrapposizione", style = MaterialTheme.typography.labelMedium)
+                        SOVRAPPOSIZIONI.forEach { g ->
+                            FilterChip(selected = sovrapposizione == g, onClick = { sovrapposizione = g }, label = { Text(if (g == 0) "Nessuna" else "$g gg") })
+                        }
+                    }
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
                     OutlinedButton(onClick = { confermaDate = true }, enabled = daAggiornare.isNotEmpty(), modifier = Modifier.weight(1f)) {
@@ -234,7 +291,8 @@ fun RiscontroEstrattoDialog(vm: SpeseViewModel, dati: DatiApp, stato: StatoRisco
                     tipiDisponibili.forEach { t -> FilterChip(selected = tipoData == t, onClick = { tipoData = t }, label = { Text(t.etichetta) }) }
                 }
                 Text(
-                    "${collegamenti.size} collegate · ${mancanti.size} mancanti sul conto · $senzaRiscontro del conto non nell'estratto. " +
+                    "Estratto intero: ${collegamenti.size} collegate · ${mancanti.size} mancanti sul conto · $senzaRiscontro del conto non nell'estratto. " +
+                        "Nel periodo: ${opsVisibili.size} sul conto, ${movVisibili.size} nell'estratto. " +
                         "Linea continua: stessa data; tratteggiata: data vicina; colorata diversa: collegata a mano. " +
                         "Tocca una linea per eliminarla; tieni premuta una riga non collegata e trascinala per collegarla.",
                     style = MaterialTheme.typography.bodySmall
