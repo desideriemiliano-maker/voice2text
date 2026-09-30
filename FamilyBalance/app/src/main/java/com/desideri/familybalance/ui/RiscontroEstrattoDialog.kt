@@ -201,9 +201,14 @@ fun RiscontroEstrattoDialog(vm: SpeseViewModel, dati: DatiApp, stato: StatoRisco
     val scorrimento = rememberScrollState()
     var trascinata by remember { mutableStateOf<String?>(null) }
     var dito by remember { mutableStateOf(Offset.Zero) }
+    /** Importo (in centesimi) della riga con chiave [k]: operazione del conto o movimento dell'estratto. */
+    fun importoDi(k: String): Long? =
+        if (k.startsWith("o")) perIdOp[k.drop(1).toLong()]?.importoCent else movimenti.getOrNull(k.drop(1).toInt())?.importoCent
+    // Si può collegare solo a una riga dell'altra colonna con lo stesso importo.
     val bersaglio = trascinata?.let { t ->
         val altraColonna = if (t.startsWith("o")) "m" else "o"
-        posizioni.entries.firstOrNull { (k, r) -> k.startsWith(altraColonna) && k in chiaviVisibili && r.contains(dito) }?.key
+        val importo = importoDi(t)
+        posizioni.entries.firstOrNull { (k, r) -> k.startsWith(altraColonna) && k in chiaviVisibili && r.contains(dito) && importoDi(k) == importo }?.key
     }
     var inModifica by remember { mutableStateOf<Operazione?>(null) }
     var confermaDate by remember { mutableStateOf(false) }
@@ -225,6 +230,7 @@ fun RiscontroEstrattoDialog(vm: SpeseViewModel, dati: DatiApp, stato: StatoRisco
         val op = (if (k1.startsWith("o")) k1 else k2).drop(1).toLong()
         val mov = (if (k1.startsWith("m")) k1 else k2).drop(1).toInt()
         if (op in opCollegate || mov in movCollegati) return
+        if (perIdOp[op]?.importoCent != movimenti.getOrNull(mov)?.importoCent) return
         manuali += Collegamento(op, mov, manuale = true)
     }
 
@@ -294,7 +300,7 @@ fun RiscontroEstrattoDialog(vm: SpeseViewModel, dati: DatiApp, stato: StatoRisco
                     "Estratto intero: ${collegamenti.size} collegate · ${mancanti.size} mancanti sul conto · $senzaRiscontro del conto non nell'estratto. " +
                         "Nel periodo: ${opsVisibili.size} sul conto, ${movVisibili.size} nell'estratto. " +
                         "Linea continua: stessa data; tratteggiata: data vicina; colorata diversa: collegata a mano. " +
-                        "Tocca una linea per eliminarla; tieni premuta una riga non collegata e trascinala per collegarla.",
+                        "Tocca una linea per eliminarla; tieni premuta una riga non collegata e trascinala su una con lo stesso importo per collegarla.",
                     style = MaterialTheme.typography.bodySmall
                 )
                 stato.avvisi.firstOrNull()?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
