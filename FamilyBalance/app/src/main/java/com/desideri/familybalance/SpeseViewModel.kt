@@ -61,6 +61,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.time.LocalDate
 import java.time.YearMonth
 
 data class DatiApp(
@@ -507,6 +508,20 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /** Voce per tipo/sottotipo (sottotipo vuoto = voce di solo tipo), creata se manca solo quella di tipo. */
+    /**
+     * Associa l'operazione [op] alla spesa ricorrente [voce] nel [mese]: il tipo diventa quello della
+     * spesa, senza sottotipo; se l'operazione è in un altro mese, per la ricorrente viene imputata al
+     * [mese] (stesso giorno, se esiste).
+     */
+    fun associaARicorrente(op: Operazione, voce: Voce, mese: YearMonth) = viewModelScope.launch {
+        val id = voceId(voce.tipo, null) ?: return@launch messaggio("Tipo non trovato")
+        val x = dao.operazione(op.id) ?: return@launch
+        val giorno = LocalDate.ofEpochDay(x.data)
+        val dataRicorrente = if (YearMonth.from(giorno) != mese) mese.atDay(minOf(giorno.dayOfMonth, mese.lengthOfMonth())).toEpochDay() else null
+        dao.aggiornaOperazione(x.copy(voceId = id, trasferimento = false, contoValutaDestId = null, dataRicorrente = dataRicorrente))
+        messaggio("Operazione associata a ${voce.tipo} (${formattaMese(mese)})")
+    }
+
     suspend fun voceId(tipo: String, sottotipo: String?): Long? {
         val voci = dati.value.voci
         val s = sottotipo?.trim()?.ifEmpty { null }

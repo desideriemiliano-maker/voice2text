@@ -314,6 +314,8 @@ internal fun DettaglioRicorrenteDialog(vm: SpeseViewModel, dati: DatiApp, riga: 
     var inModifica by remember { mutableStateOf<Operazione?>(null) }
     // Nuova operazione della spesa nel mese: conto scelto (null = nessuna in corso).
     var nuovaSuConto by remember { mutableStateOf<Long?>(null) }
+    var importoCerca by remember(riga) { mutableStateOf(riga.previsto?.let { centInTesto(Math.round(abs(it) * 100)) } ?: "") }
+    var daAssociare by remember { mutableStateOf<Operazione?>(null) }
     var contoNuova by remember { mutableStateOf(dati.contiValutaOrdinati.firstOrNull()?.id) }
     var importo by remember(riga) { mutableStateOf(riga.previsto?.let { centInTesto(Math.round(abs(it) * 100)) } ?: "") }
     var data by remember(riga) { mutableStateOf(riga.dataPrevista) }
@@ -372,6 +374,43 @@ internal fun DettaglioRicorrenteDialog(vm: SpeseViewModel, dati: DatiApp, riga: 
                         vm.aggiungiScadenza(voce, mese)
                         onChiudi()
                     }) { Text("Aggiungi prevista (stimata con la media, senza conto)") }
+                }
+
+                // Ricerca per importo di un'operazione già registrata da associare alla spesa.
+                Text("Associa un'operazione esistente", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                OutlinedTextField(
+                    value = importoCerca,
+                    onValueChange = { importoCerca = it },
+                    label = { Text("Importo da cercare") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    modifier = Modifier.fillMaxWidth()
+                )
+                val centCerca = testoInCent(importoCerca)?.let { abs(it) }
+                if (centCerca != null && centCerca > 0) {
+                    val metaMese = mese.atDay(15).toEpochDay()
+                    val trovate = dati.operazioni
+                        .filter { !it.trasferimento && abs(it.importoCent) == centCerca && it.id !in pagate.map { p -> p.id } }
+                        .sortedBy { abs(it.data - metaMese) }
+                        .take(20)
+                    if (trovate.isEmpty()) Text("Nessuna operazione con questo importo.", style = MaterialTheme.typography.bodySmall)
+                    trovate.forEach { op ->
+                        Column(modifier = Modifier.fillMaxWidth().clickable { daAssociare = op }.padding(vertical = 4.dp)) {
+                            Row {
+                                Text("${formattaData(op.data)} · ${dati.etichetta(op.contoValutaId)}", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                                Text(
+                                    formattaCent(op.importoCent, dati.contiValutaPerId[op.contoValutaId]?.valuta ?: "EUR"),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                            Text(
+                                (op.voceId?.let { dati.vociPerId[it]?.descrizione } ?: "Senza tipo") + (op.note?.let { " · $it" } ?: ""),
+                                style = MaterialTheme.typography.bodySmall,
+                                maxLines = 2
+                            )
+                        }
+                    }
                 }
 
                 riga.previsto?.let { previsto ->
@@ -473,6 +512,26 @@ internal fun DettaglioRicorrenteDialog(vm: SpeseViewModel, dati: DatiApp, riga: 
 
     inModifica?.let { op ->
         OperazioneDialog(vm, dati, op.contoValutaId, op, onChiudi = { inModifica = null })
+    }
+    daAssociare?.let { op ->
+        AlertDialog(
+            onDismissRequest = { daAssociare = null },
+            title = { Text("Associa operazione") },
+            text = {
+                Text(
+                    "L'operazione del ${formattaData(op.data)} di ${formattaCent(op.importoCent, dati.contiValutaPerId[op.contoValutaId]?.valuta ?: "EUR")} " +
+                        "su ${dati.etichetta(op.contoValutaId)} prenderà il tipo \"${voce.tipo}\" senza sottotipo" +
+                        (if (Calcoli.mese(op.data) != mese) " e sarà imputata alla spesa ricorrente di ${formattaMese(mese)}" else "") + "."
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    vm.associaARicorrente(op, voce, mese)
+                    daAssociare = null
+                }) { Text("Associa") }
+            },
+            dismissButton = { TextButton(onClick = { daAssociare = null }) { Text("Annulla") } }
+        )
     }
     nuovaSuConto?.let { cv ->
         // Data proposta: oggi se nel mese, altrimenti il primo del mese (l'importo previsto va inserito a mano).
