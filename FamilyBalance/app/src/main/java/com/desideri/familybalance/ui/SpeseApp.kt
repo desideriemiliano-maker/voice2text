@@ -32,6 +32,7 @@ import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.TableChart
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.CurrencyExchange
 import androidx.compose.material.icons.automirrored.filled.CompareArrows
@@ -134,6 +135,10 @@ private fun SchermataPrincipale(vm: SpeseViewModel, sezione: Sezione, onSezione:
     }
     // File dell'estratto conto da riscontrare, in attesa della scelta del conto.
     var fileRiscontro by remember { mutableStateOf<Uri?>(null) }
+    var fileRiscontroExcel by remember { mutableStateOf<Uri?>(null) }
+    val sceltaRiscontroExcel = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) fileRiscontroExcel = uri
+    }
     val sceltaRiscontro = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) fileRiscontro = uri
     }
@@ -162,6 +167,16 @@ private fun SchermataPrincipale(vm: SpeseViewModel, sezione: Sezione, onSezione:
                             VoceMenu("Riscontro estratto conto", Icons.Filled.FactCheck) {
                                 menuAperto = false
                                 sceltaRiscontro.launch(arrayOf("*/*"))
+                            }
+                            VoceMenu("Riscontro estratto conto da Excel", Icons.Filled.TableChart) {
+                                menuAperto = false
+                                sceltaRiscontroExcel.launch(
+                                    arrayOf(
+                                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                        "application/vnd.ms-excel",
+                                        "application/octet-stream"
+                                    )
+                                )
                             }
                             VoceMenu("Importa da Excel", Icons.Filled.FileOpen) { menuAperto = false; confermaImport = true }
                             HorizontalDivider()
@@ -256,6 +271,17 @@ private fun SchermataPrincipale(vm: SpeseViewModel, sezione: Sezione, onSezione:
                 vm.riscontraEstratto(uri, contoValutaId)
             },
             onAnnulla = { fileRiscontro = null }
+        )
+    }
+
+    fileRiscontroExcel?.let { uri ->
+        SceltaContoDialog(
+            dati = dati,
+            onScelto = { contoValutaId ->
+                fileRiscontroExcel = null
+                vm.riscontraEstrattoExcel(uri, contoValutaId)
+            },
+            onAnnulla = { fileRiscontroExcel = null }
         )
     }
 

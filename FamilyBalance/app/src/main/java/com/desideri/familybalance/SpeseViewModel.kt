@@ -26,6 +26,9 @@ import com.desideri.familybalance.importazione.AnalisiImport
 import com.desideri.familybalance.importazione.ImportatoreExcel
 import com.desideri.familybalance.logica.Spostamenti
 import com.desideri.familybalance.estratto.AggiornamentoData
+import com.desideri.familybalance.estratto.EstrattoExcel
+import com.desideri.familybalance.importazione.LettoreXlsx
+import com.desideri.familybalance.importazione.testo
 import com.desideri.familybalance.estratto.EstrattoGemini
 import com.desideri.familybalance.estratto.ImportEstratto
 import com.desideri.familybalance.estratto.Presenza
@@ -687,6 +690,40 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
                 messaggio("Nessun movimento trovato nel file" + esito.avvisi.firstOrNull()?.let { ": $it" }.orEmpty())
             } else {
                 _riscontroEstratto.value = StatoRiscontroEstratto(contoValutaId, cv.contoId, esito.movimenti, esito.avvisi)
+            }
+        } catch (e: Exception) {
+            messaggio("Lettura dell'estratto conto non riuscita: ${e.message ?: e.javaClass.simpleName}")
+        } finally {
+            _importazioneInCorso.value = false
+            _testoAttesa.value = "Lettura del file…"
+        }
+    }
+
+    /**
+     * Riscontro da un estratto conto Excel esportato dalla banca, letto direttamente (senza Gemini):
+     * vedi [EstrattoExcel]. Si usa il primo foglio in cui si riconosce l'intestazione dei movimenti.
+     */
+    fun riscontraEstrattoExcel(uri: Uri, contoValutaId: Long) = viewModelScope.launch {
+        val cv = dati.value.contiValutaPerId[contoValutaId] ?: return@launch messaggio("Conto non trovato")
+        _testoAttesa.value = "Lettura dell'estratto conto Excel…"
+        _importazioneInCorso.value = true
+        try {
+            val esito = withContext(Dispatchers.IO) {
+                val lettore = getApplication<Application>().contentResolver.openInputStream(uri)?.use { LettoreXlsx(it) }
+                    ?: error("file non leggibile")
+                lettore.nomiFogli.firstNotNullOfOrNull { nome ->
+                    val foglio = lettore.foglio(nome, dateComeTesto = true) ?: return@firstNotNullOfOrNull null
+                    val righe = foglio.keys.sorted().map { r ->
+                        val celle = foglio.getValue(r)
+                        r to (1..(celle.keys.maxOrNull() ?: 0)).map { c -> foglio.testo(r, c).orEmpty() }
+                    }
+                    EstrattoExcel.leggi(righe, cv.valuta)
+                }
+            }
+            when {
+                esito == null -> messaggio("Nel file non c'è l'intestazione dei movimenti (colonne Data… e Importo)")
+                esito.movimenti.isEmpty() -> messaggio("Nessun movimento trovato nel file")
+                else -> _riscontroEstratto.value = StatoRiscontroEstratto(contoValutaId, cv.contoId, esito.movimenti, esito.avvisi)
             }
         } catch (e: Exception) {
             messaggio("Lettura dell'estratto conto non riuscita: ${e.message ?: e.javaClass.simpleName}")
