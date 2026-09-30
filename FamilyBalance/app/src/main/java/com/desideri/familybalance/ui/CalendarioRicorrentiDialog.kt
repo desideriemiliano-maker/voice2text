@@ -52,6 +52,7 @@ import com.desideri.familybalance.logica.Cambi
 import com.desideri.familybalance.logica.RigaRicorrente
 import com.desideri.familybalance.logica.formattaImporto
 import com.desideri.familybalance.logica.formattaMese
+import java.time.LocalDate
 import java.time.YearMonth
 import java.time.format.DateTimeFormatter
 import java.util.Locale
@@ -59,10 +60,27 @@ import kotlin.math.abs
 
 private val FORMATO_NOME_MESE = DateTimeFormatter.ofPattern("MMM", Locale.ITALIAN)
 private val LARGHEZZA_MESE: Dp = 56.dp
-private val LARGHEZZA_COLONNA: Dp = 96.dp
+private val LARGHEZZA_COLONNA: Dp = 104.dp
 
-/** Valore di una cella: importo (positivo), se stimato, se la scadenza è annullata e la riga ricorrente. */
-private data class Cella(val importo: Double, val stimato: Boolean, val annullata: Boolean, val riga: RigaRicorrente)
+/** Stato di una spesa ricorrente in un mese. */
+private enum class StatoSpesa { STIMATA, PIANIFICATA, EFFETTIVA }
+
+/**
+ * Valore di una cella: [effettivo] (operazioni sul conto) e [mancante] (previsto non ancora pagato),
+ * entrambi positivi, lo stato, la data prevista (se pianificata), se la scadenza è annullata e la
+ * riga ricorrente.
+ */
+private data class Cella(
+    val effettivo: Double,
+    val mancante: Double,
+    val stato: StatoSpesa,
+    val data: Long?,
+    val annullata: Boolean,
+    val riga: RigaRicorrente
+) {
+    /** Il totale: l'effettivo e, se manca, il valore calcolato o impostato. */
+    val importo: Double get() = effettivo + mancante
+}
 
 /**
  * Calendario delle spese ricorrenti (menu ⋮): per l'anno scelto una riga per mese e una colonna per
@@ -82,8 +100,10 @@ fun CalendarioRicorrentiDialog(vm: SpeseViewModel, onChiudi: () -> Unit) {
     }
     // Cella aperta nel dettaglio (spesa e mese).
     var aperta by remember { mutableStateOf<Pair<Long, YearMonth>?>(null) }
-    // Cella stimata da eliminare (pressione lunga), in attesa di conferma.
+    // Cella stimata o pianificata da eliminare (pressione lunga), in attesa di conferma.
     var daEliminare by remember { mutableStateOf<Pair<Long, YearMonth>?>(null) }
+    // Totali espansi: effettivo e quanto manca, oltre al totale.
+    var totaliEspansi by rememberSaveable { mutableStateOf(false) }
     // null = tutte le spese (anche quelle aggiunte in seguito); lista vuota = nessuna.
     var scelte by rememberSaveable { mutableStateOf<List<Long>?>(null) }
     val mostrate = scelte?.let { s -> voci.filter { it.id in s } } ?: voci
@@ -94,8 +114,15 @@ fun CalendarioRicorrentiDialog(vm: SpeseViewModel, onChiudi: () -> Unit) {
         buildMap {
             righe.forEach { m ->
                 m.righe.groupBy { it.voce.id }.forEach { (voceId, rr) ->
-                    val importo = rr.sumOf { abs(it.pagato) + abs(it.previsto ?: 0.0) }
-                    put(voceId to m.mese, Cella(importo, rr.any { it.previsto != null }, rr.all { it.annullata }, rr.first()))
+                    val effettivo = rr.sumOf { abs(it.pagato) }
+                    val mancante = rr.sumOf { abs(it.previsto ?: 0.0) }
+                    val data = rr.firstNotNullOfOrNull { r -> r.dataPrevista.takeIf { r.previsto != null } }
+                    val stato = when {
+                        rr.none { it.previsto != null } -> StatoSpesa.EFFETTIVA
+                        data != null -> StatoSpesa.PIANIFICATA
+                        else -> StatoSpesa.STIMATA
+                    }
+                    put(voceId to m.mese, Cella(effettivo, mancante, stato, data, rr.all { it.annullata }, rr.first()))
                 }
             }
         }
@@ -121,8 +148,10 @@ fun CalendarioRicorrentiDialog(vm: SpeseViewModel, onChiudi: () -> Unit) {
                     )
                 }
                 Text(
-                    "Pagato del mese; in corsivo la stima dove non ci sono operazioni; ✕ scadenza annullata. CHF al cambio delle Impostazioni. " +
-                        "Tocca una cella per aggiungere, modificare o eliminare la spesa di quel mese; tieni premuta una stima per eliminarla da quel mese.",
+                    "Effettiva (operazioni sul conto) in nero; pianificata (giorno previsto · importo) in colore; stimata con la media in corsivo; " +
+                        "✕ annullata. Il totale usa l'effettivo e, dove manca, il valore calcolato; tocca \"Totale\" per il dettaglio. " +
+                        "CHF al cambio delle Impostazioni. Tocca una cella per pianificare, aggiungere, modificare o eliminare la spesa di quel mese; " +
+                        "tieni premuta una spesa stimata o pianificata per eliminarla da quel mese.",
                     style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier.padding(vertical = 4.dp)
                 )
@@ -141,12 +170,21 @@ fun CalendarioRicorrentiDialog(vm: SpeseViewModel, onChiudi: () -> Unit) {
                     val righe: List<Pair<String, YearMonth?>> =
                         mesi.map { m -> m.format(FORMATO_NOME_MESE).replaceFirstChar { it.uppercase() } to m } + ("Anno" to null)
                     fun sfondo(indice: Int) = if (indice % 2 == 1) zebra else Color.Transparent
+                    val coloreTotali = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f)
+                    val colorePianificata = MaterialTheme.colorScheme.primary
                     Column(modifier = Modifier.weight(1f)) {
                         Row {
                             CellaTesto("Mese", LARGHEZZA_MESE, grassetto = true, righe = 2)
                             Row(modifier = Modifier.horizontalScroll(orizzontale)) {
+                                CellaTesto(
+                                    if (totaliEspansi) "Totale ◂" else "Totale ▸", LARGHEZZA_COLONNA, grassetto = true, righe = 2,
+                                    sfondo = coloreTotali, onClick = { totaliEspansi = !totaliEspansi }
+                                )
+                                if (totaliEspansi) {
+                                    CellaTesto("Effettivo", LARGHEZZA_COLONNA, grassetto = true, righe = 2, sfondo = coloreTotali)
+                                    CellaTesto("Mancante", LARGHEZZA_COLONNA, grassetto = true, righe = 2, sfondo = coloreTotali)
+                                }
                                 mostrate.forEach { CellaTesto(it.descrizione, LARGHEZZA_COLONNA, grassetto = true, righe = 2) }
-                                CellaTesto("Totale", LARGHEZZA_COLONNA, grassetto = true, righe = 2)
                             }
                         }
                         Row(modifier = Modifier.weight(1f)) {
@@ -158,35 +196,37 @@ fun CalendarioRicorrentiDialog(vm: SpeseViewModel, onChiudi: () -> Unit) {
                             Column(modifier = Modifier.verticalScroll(verticale).horizontalScroll(orizzontale)) {
                                 righe.forEachIndexed { i, (_, m) ->
                                     Row {
+                                        // Solo le celle mostrate e non annullate contano nei totali.
+                                        val contate = (if (m != null) listOf(m) else mesi).flatMap { mm ->
+                                            mostrate.mapNotNull { v -> celle[v.id to mm]?.takeIf { !it.annullata } }
+                                        }
+                                        CelleTotali(contate.sumOf { it.effettivo }, contate.sumOf { it.mancante }, totaliEspansi, coloreTotali)
                                         if (m != null) {
-                                            var totale = 0.0
                                             mostrate.forEach { v ->
                                                 val c = celle[v.id to m]
-                                                if (c != null && !c.annullata) totale += c.importo
                                                 CellaTesto(
                                                     when {
                                                         c == null -> ""
                                                         c.annullata -> "✕"
+                                                        c.stato == StatoSpesa.PIANIFICATA && c.data != null ->
+                                                            "${LocalDate.ofEpochDay(c.data).dayOfMonth}· ${formattaImporto(c.importo)}"
                                                         else -> formattaImporto(c.importo)
                                                     },
                                                     LARGHEZZA_COLONNA,
-                                                    corsivo = c?.stimato == true,
+                                                    corsivo = c != null && c.stato == StatoSpesa.STIMATA && !c.annullata,
+                                                    colore = if (c != null && c.stato == StatoSpesa.PIANIFICATA && !c.annullata) colorePianificata else null,
                                                     allineaDestra = true,
                                                     sfondo = sfondo(i),
                                                     onClick = { aperta = v.id to m },
-                                                    onLongClick = if (c != null && c.stimato && !c.annullata) ({ daEliminare = v.id to m }) else null
+                                                    onLongClick = if (c != null && c.stato != StatoSpesa.EFFETTIVA && !c.annullata) ({ daEliminare = v.id to m }) else null
                                                 )
                                             }
-                                            CellaTesto(if (totale != 0.0) formattaImporto(totale) else "", LARGHEZZA_COLONNA, grassetto = true, allineaDestra = true, sfondo = sfondo(i))
                                         } else {
                                             // Totale dell'anno per spesa.
-                                            var complessivo = 0.0
                                             mostrate.forEach { v ->
                                                 val somma = mesi.sumOf { mm -> celle[v.id to mm]?.takeIf { !it.annullata }?.importo ?: 0.0 }
-                                                complessivo += somma
                                                 CellaTesto(if (somma != 0.0) formattaImporto(somma) else "", LARGHEZZA_COLONNA, grassetto = true, allineaDestra = true, sfondo = sfondo(i))
                                             }
-                                            CellaTesto(formattaImporto(complessivo), LARGHEZZA_COLONNA, grassetto = true, allineaDestra = true, sfondo = sfondo(i))
                                         }
                                     }
                                 }
@@ -221,7 +261,7 @@ fun CalendarioRicorrentiDialog(vm: SpeseViewModel, onChiudi: () -> Unit) {
                 title = { Text("Elimina dal mese") },
                 text = {
                     Text(
-                        "Eliminare ${voce.descrizione} (stima ${formattaImporto(cella.importo)}) da ${formattaMese(mese)}? " +
+                        "Eliminare ${voce.descrizione} (previsto ${formattaImporto(cella.importo)}) da ${formattaMese(mese)}? " +
                             "La scadenza di questo mese viene annullata, le successive restano come in anagrafica. " +
                             "Si può ripristinare toccando la cella."
                     )
@@ -238,6 +278,17 @@ fun CalendarioRicorrentiDialog(vm: SpeseViewModel, onChiudi: () -> Unit) {
     }
 }
 
+/** Colonne dei totali all'inizio della riga: il totale e, se [espansi], l'effettivo e quanto manca. */
+@Composable
+private fun CelleTotali(effettivo: Double, mancante: Double, espansi: Boolean, sfondo: Color) {
+    val totale = effettivo + mancante
+    CellaTesto(if (totale != 0.0) formattaImporto(totale) else "", LARGHEZZA_COLONNA, grassetto = true, allineaDestra = true, sfondo = sfondo)
+    if (espansi) {
+        CellaTesto(if (effettivo != 0.0) formattaImporto(effettivo) else "", LARGHEZZA_COLONNA, allineaDestra = true, sfondo = sfondo)
+        CellaTesto(if (mancante != 0.0) formattaImporto(mancante) else "", LARGHEZZA_COLONNA, corsivo = true, allineaDestra = true, sfondo = sfondo)
+    }
+}
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun CellaTesto(
@@ -245,6 +296,7 @@ private fun CellaTesto(
     larghezza: Dp,
     grassetto: Boolean = false,
     corsivo: Boolean = false,
+    colore: Color? = null,
     allineaDestra: Boolean = false,
     righe: Int = 1,
     sfondo: Color = Color.Transparent,
@@ -256,7 +308,7 @@ private fun CellaTesto(
         style = MaterialTheme.typography.bodySmall,
         fontWeight = if (grassetto) FontWeight.Bold else null,
         fontStyle = if (corsivo) FontStyle.Italic else null,
-        color = if (corsivo) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
+        color = colore ?: if (corsivo) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
         textAlign = if (allineaDestra) TextAlign.End else TextAlign.Start,
         maxLines = righe,
         overflow = TextOverflow.Ellipsis,

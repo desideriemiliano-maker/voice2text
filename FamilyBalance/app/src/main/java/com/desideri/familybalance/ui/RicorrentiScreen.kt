@@ -333,6 +333,54 @@ internal fun DettaglioRicorrenteDialog(vm: SpeseViewModel, dati: DatiApp, riga: 
                     (voce.meseInizio?.let { testoInMese(it) }?.let { " da ${formattaMese(it)}" } ?: " (senza mese di partenza)")
                 Text("Ricorrenza: $ricorrenza" + if (voce.obsoleta) " · obsoleta" else "", style = MaterialTheme.typography.bodySmall)
 
+                // Stato: effettiva (operazioni sul conto), pianificata (con data prevista) o stimata.
+                Text(
+                    when {
+                        riga.annullata -> "Stato: eliminata da questo mese"
+                        riga.previsto == null && pagate.isNotEmpty() -> "Stato: effettiva (operazioni sul conto)"
+                        riga.previsto != null && riga.dataPrevista != null -> "Stato: pianificata per il ${formattaData(riga.dataPrevista)}"
+                        riga.previsto != null && riga.fonte == FontePrevisione.MEDIA -> "Stato: stimata con la media"
+                        riga.previsto != null -> "Stato: stimata"
+                        else -> "Nessuna spesa prevista in questo mese"
+                    },
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                riga.previsto?.let { previsto ->
+                    Text("Pianifica: importo e data prevista", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                    OutlinedTextField(
+                        value = importo,
+                        onValueChange = { importo = it; errore = null },
+                        label = { Text("Importo previsto (EUR)") },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    CampoData("Data prevista", data, { data = it }, Modifier.fillMaxWidth(), consentiVuoto = true)
+                    Text(
+                        "Una data in un altro mese sposta lì la scadenza (solo questa volta).",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(onClick = {
+                            val cent = testoInCent(importo)?.let { abs(it) }?.takeIf { it > 0 }
+                            if (importo.isNotBlank() && cent == null) {
+                                errore = "Importo non valido"
+                            } else {
+                                // Importo uguale al calcolato: non lo si fissa, così segue le variazioni.
+                                val calcolato = if (riga.fonte != FontePrevisione.PERSONALIZZATA) Math.round(abs(previsto) * 100) else null
+                                vm.salvaScadenza(voce, meseScadenza, cent?.takeIf { it != calcolato }, data)
+                                onChiudi()
+                            }
+                        }) { Text("Salva") }
+                        if (riga.fonte == FontePrevisione.PERSONALIZZATA || riga.dataPrevista != null) {
+                            TextButton(onClick = {
+                                vm.salvaScadenza(voce, meseScadenza, null, null)
+                                onChiudi()
+                            }) { Text("Usa calcolato") }
+                        }
+                    }
+                }
                 // Spesa generata dalla ricorrenza ma che in questo mese non c'è: si elimina dal mese.
                 if (riga.previsto != null) {
                     OutlinedButton(onClick = { confermaElimina = true }, modifier = Modifier.fillMaxWidth()) {
@@ -444,41 +492,6 @@ internal fun DettaglioRicorrenteDialog(vm: SpeseViewModel, dati: DatiApp, riga: 
                             }
                         }
                         FontePrevisione.NESSUNA -> Unit
-                    }
-
-                    HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
-                    Text("Importo e data, se noti", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
-                    OutlinedTextField(
-                        value = importo,
-                        onValueChange = { importo = it; errore = null },
-                        label = { Text("Importo previsto (EUR)") },
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    CampoData("Data prevista", data, { data = it }, Modifier.fillMaxWidth(), consentiVuoto = true)
-                    Text(
-                        "Una data in un altro mese sposta lì la scadenza (solo questa volta).",
-                        style = MaterialTheme.typography.bodySmall
-                    )
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedButton(onClick = {
-                            val cent = testoInCent(importo)?.let { abs(it) }?.takeIf { it > 0 }
-                            if (importo.isNotBlank() && cent == null) {
-                                errore = "Importo non valido"
-                            } else {
-                                // Importo uguale al calcolato: non lo si fissa, così segue le variazioni.
-                                val calcolato = if (riga.fonte != FontePrevisione.PERSONALIZZATA) Math.round(abs(previsto) * 100) else null
-                                vm.salvaScadenza(voce, meseScadenza, cent?.takeIf { it != calcolato }, data)
-                                onChiudi()
-                            }
-                        }) { Text("Salva") }
-                        if (riga.fonte == FontePrevisione.PERSONALIZZATA || riga.dataPrevista != null) {
-                            TextButton(onClick = {
-                                vm.salvaScadenza(voce, meseScadenza, null, null)
-                                onChiudi()
-                            }) { Text("Usa calcolato") }
-                        }
                     }
 
                     HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
