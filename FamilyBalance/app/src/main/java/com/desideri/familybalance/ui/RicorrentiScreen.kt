@@ -192,6 +192,8 @@ private fun SceltaMese(etichetta: String, mese: YearMonth, onMese: (YearMonth) -
 @Composable
 private fun CardMese(mese: MeseRicorrenti, oggi: YearMonth, onRiga: (RigaRicorrente) -> Unit) {
     val corrente = mese.mese == oggi
+    // Le scadenze annullate non si mostrano (si ripristinano dal Calendario ricorrenti).
+    val righe = mese.righe.filter { !it.annullata }
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = if (corrente) CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer) else CardDefaults.cardColors()
@@ -212,10 +214,10 @@ private fun CardMese(mese: MeseRicorrenti, oggi: YearMonth, onRiga: (RigaRicorre
                     style = MaterialTheme.typography.bodySmall
                 )
             }
-            if (mese.righe.isEmpty()) {
+            if (righe.isEmpty()) {
                 Text("Nessuna spesa ricorrente", style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 4.dp))
             }
-            mese.righe.forEachIndexed { indice, riga ->
+            righe.forEachIndexed { indice, riga ->
                 if (indice == 0) HorizontalDivider(modifier = Modifier.padding(vertical = 6.dp))
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
