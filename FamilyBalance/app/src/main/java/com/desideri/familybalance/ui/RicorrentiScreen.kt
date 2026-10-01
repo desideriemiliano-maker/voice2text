@@ -206,11 +206,13 @@ private fun CardMese(mese: MeseRicorrenti, oggi: YearMonth, onRiga: (RigaRicorre
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.weight(1f)
                 )
-                TestoImporto(mese.totalePagato + mese.totalePrevisto, grassetto = true)
+                TestoImporto(mese.totale, grassetto = true)
             }
-            if (mese.totalePrevisto != 0.0 && mese.totalePagato != 0.0) {
+            // Dettaglio del totale: effettivo (operazioni del mese), già pagato (fino a oggi) e mancante.
+            if (mese.totale != 0.0) {
                 Text(
-                    "Pagato ${formattaImporto(mese.totalePagato)} · previsto ${formattaImporto(mese.totalePrevisto)}",
+                    "Effettivo ${formattaImporto(mese.totalePagato)} · già pagato ${formattaImporto(mese.totaleGiaPagato)} · " +
+                        "mancante ${formattaImporto(mese.totaleMancante)}",
                     style = MaterialTheme.typography.bodySmall
                 )
             }

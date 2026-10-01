@@ -36,7 +36,9 @@ data class RigaRicorrente(
     val meseOrigine: YearMonth? = null,
     val meseScadenza: YearMonth? = null,
     /** Scadenza del mese annullata dall'utente (nessuna previsione). */
-    val annullata: Boolean = false
+    val annullata: Boolean = false,
+    /** Parte di [pagato] con operazioni già avvenute (data fino a oggi); il resto è registrato con data futura. */
+    val giaPagato: Double = pagato
 )
 
 data class MeseRicorrenti(
@@ -45,6 +47,11 @@ data class MeseRicorrenti(
 ) {
     val totalePagato: Double get() = righe.sumOf { it.pagato }
     val totalePrevisto: Double get() = righe.sumOf { it.previsto ?: 0.0 }
+    val totaleGiaPagato: Double get() = righe.sumOf { it.giaPagato }
+    /** Totale del mese: pagato e, dove manca, previsto. */
+    val totale: Double get() = totalePagato + totalePrevisto
+    /** Quanto manca al totale rispetto al già pagato. */
+    val totaleMancante: Double get() = totale - totaleGiaPagato
 }
 
 /**
@@ -163,11 +170,15 @@ object Calcoli {
         operazioni: List<Operazione>,
         cambi: Cambi,
         oggi: YearMonth,
-        personalizzazioni: List<PrevisioneRicorrente> = emptyList()
+        personalizzazioni: List<PrevisioneRicorrente> = emptyList(),
+        /** Giorno (epochDay) fino a cui le operazioni contano come già pagate; null = tutte. */
+        alGiorno: Long? = null
     ): List<MeseRicorrenti> {
         val vociRicorrenti = voci.filter { it.ricorrente && !it.entrata }
         val valutaDi = contiValuta.associate { it.id to it.valuta }
         val storico = storicoRicorrenti(vociRicorrenti, operazioni, valutaDi, cambi)
+        val storicoAdOggi = if (alGiorno == null) storico
+        else storicoRicorrenti(vociRicorrenti, operazioni.filter { it.data <= alGiorno }, valutaDi, cambi)
         // Per la media non contano le operazioni escluse dall'utente.
         val storicoMedia = storicoRicorrenti(vociRicorrenti, operazioni, valutaDi, cambi, perMedia = true)
         val previsioni = vociRicorrenti.associate { it.id to previsione(it, storicoMedia[it.id], oggi) }
@@ -214,7 +225,9 @@ object Calcoli {
                 val previste = listOfNotNull(propria) + arrivate
                 when {
                     previste.isNotEmpty() -> previste
-                    pagato != 0.0 -> listOf(RigaRicorrente(voce, pagato, null, meseScadenza = m))
+                    pagato != 0.0 -> listOf(
+                        RigaRicorrente(voce, pagato, null, meseScadenza = m, giaPagato = storicoAdOggi[voce.id]?.get(m) ?: 0.0)
+                    )
                     annullata -> listOf(RigaRicorrente(voce, 0.0, null, meseScadenza = m, annullata = true))
                     else -> emptyList()
                 }

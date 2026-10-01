@@ -172,4 +172,25 @@ class CalcoliTest {
         assertTrue(r[0].righe.isEmpty())
         assertEquals(-300.0, r[1].righe.single().previsto!!, 0.001)
     }
+
+    @Test
+    fun ricorrenti_giaPagatoEMancante() {
+        val conti = listOf(ContoValuta(id = 1, contoId = 1, valuta = "EUR"))
+        val luce = Voce(id = 1, tipo = "Luce", ricorrente = true, mesiRicorrenza = 1, meseInizio = "2026-09")
+        val gas = Voce(id = 2, tipo = "Gas", ricorrente = true, mesiRicorrenza = 1, meseInizio = "2026-09", importoPrevistoCent = 5_000)
+        val mutuo = Voce(id = 3, tipo = "Mutuo", ricorrente = true, mesiRicorrenza = 1, meseInizio = "2026-09")
+        // Luce già addebitata, mutuo registrato con data futura, gas solo previsto.
+        val ops = listOf(
+            Operazione(id = 1, contoValutaId = 1, data = giorno(2026, 9, 5), importoCent = -10_000, voceId = 1),
+            Operazione(id = 2, contoValutaId = 1, data = giorno(2026, 9, 28), importoCent = -70_000, voceId = 3)
+        )
+        val m = Calcoli.ricorrenti(
+            listOf(YearMonth.of(2026, 9)), listOf(luce, gas, mutuo), conti, ops, Cambi.fisso(1.0), YearMonth.of(2026, 9),
+            alGiorno = giorno(2026, 9, 15)
+        ).single()
+        assertEquals(-850.0, m.totale, 0.001)
+        assertEquals(-800.0, m.totalePagato, 0.001)
+        assertEquals(-100.0, m.totaleGiaPagato, 0.001)
+        assertEquals(-750.0, m.totaleMancante, 0.001)
+    }
 }

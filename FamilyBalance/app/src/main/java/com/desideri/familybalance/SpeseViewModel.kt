@@ -184,7 +184,7 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
     val ricorrenti: StateFlow<List<MeseRicorrenti>> = combine(dati, _impostazioni, personalizzazioni, _periodoRicorrenti) { d, imp, pers, periodo ->
         val oggi = YearMonth.now()
         val mesi = generateSequence(periodo.first) { it.plusMonths(1) }.takeWhile { it <= periodo.second }.toList()
-        Calcoli.ricorrenti(mesi, d.voci, d.contiValuta, d.operazioni, Cambi.fisso(imp.cambioChfEur), oggi, pers)
+        Calcoli.ricorrenti(mesi, d.voci, d.contiValuta, d.operazioni, Cambi.fisso(imp.cambioChfEur), oggi, pers, java.time.LocalDate.now().toEpochDay())
     }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     // --- Scadenze ricorrenti ---

@@ -67,20 +67,22 @@ private val LARGHEZZA_COLONNA: Dp = 104.dp
 private enum class StatoSpesa { STIMATA, PIANIFICATA, EFFETTIVA }
 
 /**
- * Valore di una cella: [effettivo] (operazioni sul conto) e [mancante] (previsto non ancora pagato),
+ * Valore di una cella: [effettivo] (operazioni sul conto), [previsto] (calcolato o impostato dove non
+ * ci sono operazioni) e [giaPagato] (operazioni con data fino a oggi),
  * entrambi positivi, lo stato, la data prevista (se pianificata), se la scadenza è annullata e la
  * riga ricorrente.
  */
 private data class Cella(
     val effettivo: Double,
-    val mancante: Double,
+    val previsto: Double,
+    val giaPagato: Double,
     val stato: StatoSpesa,
     val data: Long?,
     val annullata: Boolean,
     val riga: RigaRicorrente
 ) {
     /** Il totale: l'effettivo e, se manca, il valore calcolato o impostato. */
-    val importo: Double get() = effettivo + mancante
+    val importo: Double get() = effettivo + previsto
 }
 
 /**
@@ -111,19 +113,20 @@ fun CalendarioRicorrentiDialog(vm: SpeseViewModel, onChiudi: () -> Unit) {
 
     val mesi = (1..12).map { YearMonth.of(anno, it) }
     val celle: Map<Pair<Long, YearMonth>, Cella> = remember(dati, impostazioni.cambioChfEur, personalizzazioni, anno) {
-        val righe = Calcoli.ricorrenti(mesi, dati.voci, dati.contiValuta, dati.operazioni, Cambi.fisso(impostazioni.cambioChfEur), YearMonth.now(), personalizzazioni)
+        val righe = Calcoli.ricorrenti(mesi, dati.voci, dati.contiValuta, dati.operazioni, Cambi.fisso(impostazioni.cambioChfEur), YearMonth.now(), personalizzazioni, LocalDate.now().toEpochDay())
         buildMap {
             righe.forEach { m ->
                 m.righe.groupBy { it.voce.id }.forEach { (voceId, rr) ->
                     val effettivo = rr.sumOf { abs(it.pagato) }
-                    val mancante = rr.sumOf { abs(it.previsto ?: 0.0) }
+                    val previsto = rr.sumOf { abs(it.previsto ?: 0.0) }
+                    val giaPagato = rr.sumOf { abs(it.giaPagato) }
                     val data = rr.firstNotNullOfOrNull { r -> r.dataPrevista.takeIf { r.previsto != null } }
                     val stato = when {
                         rr.none { it.previsto != null } -> StatoSpesa.EFFETTIVA
                         data != null -> StatoSpesa.PIANIFICATA
                         else -> StatoSpesa.STIMATA
                     }
-                    put(voceId to m.mese, Cella(effettivo, mancante, stato, data, rr.all { it.annullata }, rr.first()))
+                    put(voceId to m.mese, Cella(effettivo, previsto, giaPagato, stato, data, rr.all { it.annullata }, rr.first()))
                 }
             }
         }
@@ -186,6 +189,7 @@ fun CalendarioRicorrentiDialog(vm: SpeseViewModel, onChiudi: () -> Unit) {
                                 )
                                 if (totaliEspansi) {
                                     CellaTesto("Effettivo", LARGHEZZA_COLONNA, grassetto = true, righe = 2, sfondo = coloreTotali)
+                                    CellaTesto("Già pagato", LARGHEZZA_COLONNA, grassetto = true, righe = 2, sfondo = coloreTotali)
                                     CellaTesto("Mancante", LARGHEZZA_COLONNA, grassetto = true, righe = 2, sfondo = coloreTotali)
                                 }
                                 mostrate.forEach { CellaTesto(it.descrizione, LARGHEZZA_COLONNA, grassetto = true, righe = 2) }
@@ -204,7 +208,7 @@ fun CalendarioRicorrentiDialog(vm: SpeseViewModel, onChiudi: () -> Unit) {
                                         val contate = (if (m != null) listOf(m) else mesi).flatMap { mm ->
                                             mostrate.mapNotNull { v -> celle[v.id to mm]?.takeIf { !it.annullata } }
                                         }
-                                        CelleTotali(contate.sumOf { it.effettivo }, contate.sumOf { it.mancante }, totaliEspansi, coloreTotali)
+                                        CelleTotali(contate.sumOf { it.effettivo }, contate.sumOf { it.previsto }, contate.sumOf { it.giaPagato }, totaliEspansi, coloreTotali)
                                         if (m != null) {
                                             mostrate.forEach { v ->
                                                 val c = celle[v.id to m]
@@ -287,13 +291,18 @@ fun CalendarioRicorrentiDialog(vm: SpeseViewModel, onChiudi: () -> Unit) {
     }
 }
 
-/** Colonne dei totali all'inizio della riga: il totale e, se [espansi], l'effettivo e quanto manca. */
+/**
+ * Colonne dei totali all'inizio della riga: il totale (effettivo e, dove manca, previsto) e, se
+ * [espansi], l'effettivo, il già pagato (operazioni fino a oggi) e quanto manca al totale.
+ */
 @Composable
-private fun CelleTotali(effettivo: Double, mancante: Double, espansi: Boolean, sfondo: Color) {
-    val totale = effettivo + mancante
+private fun CelleTotali(effettivo: Double, previsto: Double, giaPagato: Double, espansi: Boolean, sfondo: Color) {
+    val totale = effettivo + previsto
+    val mancante = totale - giaPagato
     CellaTesto(if (totale != 0.0) formattaImporto(totale) else "", LARGHEZZA_COLONNA, grassetto = true, allineaDestra = true, sfondo = sfondo)
     if (espansi) {
         CellaTesto(if (effettivo != 0.0) formattaImporto(effettivo) else "", LARGHEZZA_COLONNA, allineaDestra = true, sfondo = sfondo)
+        CellaTesto(if (giaPagato != 0.0) formattaImporto(giaPagato) else "", LARGHEZZA_COLONNA, allineaDestra = true, sfondo = sfondo)
         CellaTesto(if (mancante != 0.0) formattaImporto(mancante) else "", LARGHEZZA_COLONNA, corsivo = true, allineaDestra = true, sfondo = sfondo)
     }
 }
