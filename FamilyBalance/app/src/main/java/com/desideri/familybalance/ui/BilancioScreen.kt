@@ -17,6 +17,13 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ShowChart
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -42,6 +49,7 @@ fun BilancioScreen(vm: SpeseViewModel) {
     val periodo by vm.periodoBilancio.collectAsStateWithLifecycle()
     val impostazioni by vm.impostazioni.collectAsStateWithLifecycle()
     val stato = rememberLazyListState()
+    var mostraGrafico by remember { mutableStateOf(false) }
 
     // All'apertura la lista parte dal mese corrente (i passati sono sopra, i futuri sotto).
     LaunchedEffect(righe.isNotEmpty()) {
@@ -52,9 +60,12 @@ fun BilancioScreen(vm: SpeseViewModel) {
     // Periodo fisso in alto; sotto scorre la lista dei mesi in ordine cronologico.
     Column(modifier = Modifier.fillMaxSize()) {
         Column(modifier = Modifier.padding(start = 12.dp, end = 12.dp, top = 12.dp)) {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                 SceltaMese("Dal", periodo.first, { vm.impostaPeriodoBilancio(it, periodo.second) }, Modifier.weight(1f))
                 SceltaMese("Al", periodo.second, { vm.impostaPeriodoBilancio(periodo.first, it) }, Modifier.weight(1f))
+                IconButton(onClick = { mostraGrafico = true }, enabled = righe.isNotEmpty()) {
+                    Icon(Icons.AutoMirrored.Filled.ShowChart, contentDescription = "Grafico del bilancio")
+                }
             }
             if (impostazioni.targetRisparmioCent == 0L) {
                 Text(
@@ -75,6 +86,7 @@ fun BilancioScreen(vm: SpeseViewModel) {
             }
         }
     }
+    if (mostraGrafico) GraficoBilancioDialog(righe, onChiudi = { mostraGrafico = false })
 }
 
 @Composable
