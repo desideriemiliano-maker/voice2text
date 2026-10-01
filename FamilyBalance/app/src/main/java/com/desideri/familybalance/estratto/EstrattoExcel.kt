@@ -6,76 +6,111 @@ import java.time.LocalDate
 data class EsitoEstrattoExcel(val movimenti: List<MovimentoEstratto>, val avvisi: List<String>)
 
 /**
- * Lettura diretta (senza Gemini) di un estratto conto esportato in Excel dalla banca: si cerca la
- * riga d'intestazione (una colonna "Data…" e una "Importo" o "Addebiti"/"Accrediti") e da lì si
- * leggono i movimenti. Le colonne sono riconosciute dal nome:
- * - date: "Data contabile"/"registrazione", "Data valuta", altre "Data…" come data operazione
- *   ("Non contabilizzato" o celle vuote = data assente);
- * - importo con segno, oppure uscite (Dare/Addebiti/Uscite) e entrate (Avere/Accrediti/Entrate);
- * - descrizione: Descrizione, Causale, Dettaglio, Beneficiario… unite con " · ";
- * - valuta per riga ("Divisa"/"Valuta" senza "data"), altrimenti quella indicata sopra
- *   l'intestazione ("Divisa C/C: EUR") o quella del conto.
+ * Colonne scelte dall'utente per leggere un estratto Excel (indici 0-based delle celle):
+ * [rigaIntestazione] è l'indice (in `righe`) della riga con i nomi delle colonne, i movimenti sono
+ * le righe successive. Con [entrate] l'[importo] è la colonna delle uscite (Dare/Addebiti) e
+ * [entrate] quella degli accrediti; senza, [importo] ha già il segno.
+ */
+data class ColonneExcel(
+    val rigaIntestazione: Int,
+    val data: Int,
+    val importo: Int,
+    val entrate: Int? = null,
+    val descrizioni: List<Int> = emptyList()
+)
+
+/**
+ * Scelta delle colonne memorizzata per conto, per nome di colonna (così regge anche se l'ordine
+ * cambia): vedi [EstrattoExcel.proponi].
+ */
+data class ColonneSalvate(val data: String, val importo: String, val entrate: String?, val descrizioni: List<String>)
+
+/**
+ * Lettura diretta (senza AI) di un estratto conto esportato in Excel dalla banca, con le colonne
+ * (data, importo, descrizione) scelte dall'utente su una riga d'intestazione. [proponi] suggerisce
+ * la scelta: quella memorizzata per il conto se i nomi delle colonne ci sono ancora, altrimenti
+ * una riconosciuta dai nomi ("Data…", "Importo" o "Addebiti"/"Accrediti", "Descrizione"…).
  */
 object EstrattoExcel {
 
-    /** [righe]: numero di riga del file e celle come testo (date ISO o gg/mm/aaaa, numeri come testo). */
-    fun leggi(righe: List<Pair<Int, List<String>>>, valutaConto: String): EsitoEstrattoExcel? {
-        val iIntestazione = righe.indexOfFirst { (_, celle) -> eIntestazione(celle) }
-        if (iIntestazione < 0) return null
-        val intestazione = righe[iIntestazione].second.map { normalizza(it) }
+    /** Una proposta di colonne per [righe] (numero di riga del file e celle come testo); null se il foglio è vuoto. */
+    fun proponi(righe: List<Pair<Int, List<String>>>, salvate: ColonneSalvate?): ColonneExcel? {
+        if (righe.none { r -> r.second.any { it.isNotBlank() } }) return null
+        // Riga con le colonne memorizzate, poi una che sembra un'intestazione, poi la prima non vuota.
+        salvate?.let { s ->
+            righe.indices.firstNotNullOfOrNull { i -> daSalvate(righe, i, s) }?.let { return it }
+        }
+        val i = righe.indexOfFirst { (_, celle) -> eIntestazione(celle) }
+            .takeIf { it >= 0 } ?: righe.indexOfFirst { r -> r.second.any { it.isNotBlank() } }
+        return proponiSuRiga(righe, i)
+    }
 
-        val colonneData = intestazione.indices.filter { c -> intestazione[c].let { it.startsWith("data") || it.startsWith("date") } }
-        val contabile = colonneData.firstOrNull { c -> intestazione[c].let { "contabil" in it || "registr" in it } }
-        val valuta = colonneData.firstOrNull { c -> "valuta" in intestazione[c] }
-        val operazione = colonneData.firstOrNull { it != contabile && it != valuta }
-        val importo = intestazione.indexOfFirst { it.startsWith("importo") || it == "amount" || it.startsWith("ammontare") }.takeIf { it >= 0 }
-        val uscite = intestazione.indexOfFirst { h -> PAROLE_USCITE.any { h.startsWith(it) } }.takeIf { it >= 0 }
-        val entrate = intestazione.indexOfFirst { h -> PAROLE_ENTRATE.any { h.startsWith(it) } }.takeIf { it >= 0 }
-        val descrizioni = intestazione.indices.filter { c -> c !in colonneData && PAROLE_DESCRIZIONE.any { it in intestazione[c] } }
-        val divisa = intestazione.indices.firstOrNull { c -> c !in colonneData && (intestazione[c] == "divisa" || intestazione[c] == "valuta") }
+    /** Proposta di colonne con [indice] come riga d'intestazione (nomi riconosciuti o prime colonne). */
+    fun proponiSuRiga(righe: List<Pair<Int, List<String>>>, indice: Int): ColonneExcel {
+        val h = righe[indice].second.map { normalizza(it) }
+        val date = h.indices.filter { h[it].startsWith("data") || h[it].startsWith("date") }
+        val data = date.firstOrNull { "contabil" in h[it] || "registr" in h[it] } ?: date.firstOrNull() ?: 0
+        val importo = h.indexOfFirst { it.startsWith("importo") || it == "amount" || it.startsWith("ammontare") }.takeIf { it >= 0 }
+        val uscite = h.indexOfFirst { c -> PAROLE_USCITE.any { c.startsWith(it) } }.takeIf { it >= 0 }
+        val entrate = h.indexOfFirst { c -> PAROLE_ENTRATE.any { c.startsWith(it) } }.takeIf { it >= 0 }
+        val descrizioni = h.indices.filter { c -> c !in date && PAROLE_DESCRIZIONE.any { it in h[c] } }
+        return ColonneExcel(
+            rigaIntestazione = indice,
+            data = data,
+            importo = importo ?: uscite ?: h.indices.lastOrNull { it != data } ?: 0,
+            entrate = if (importo == null && uscite != null) entrate else null,
+            descrizioni = descrizioni
+        )
+    }
 
+    /** La scelta come nomi di colonna, da memorizzare per il conto. */
+    fun daSalvare(righe: List<Pair<Int, List<String>>>, c: ColonneExcel): ColonneSalvate {
+        val h = righe[c.rigaIntestazione].second
+        fun nome(i: Int) = h.getOrNull(i).orEmpty().trim()
+        return ColonneSalvate(nome(c.data), nome(c.importo), c.entrate?.let(::nome), c.descrizioni.map(::nome))
+    }
+
+    private fun daSalvate(righe: List<Pair<Int, List<String>>>, indice: Int, s: ColonneSalvate): ColonneExcel? {
+        val h = righe[indice].second.map { normalizza(it) }
+        fun trova(nome: String) = h.indexOf(normalizza(nome)).takeIf { it >= 0 && nome.isNotBlank() }
+        val data = trova(s.data) ?: return null
+        val importo = trova(s.importo) ?: return null
+        return ColonneExcel(indice, data, importo, s.entrate?.let(::trova), s.descrizioni.mapNotNull(::trova))
+    }
+
+    /** I movimenti delle righe dopo l'intestazione con le colonne [c]; si saltano le righe senza data o importo. */
+    fun leggi(righe: List<Pair<Int, List<String>>>, c: ColonneExcel, valutaConto: String): EsitoEstrattoExcel {
         // Valuta indicata sopra l'intestazione (es. "Divisa C/C: | EUR").
-        val valutaFile = righe.take(iIntestazione).firstNotNullOfOrNull { (_, celle) ->
+        val valutaFile = righe.take(c.rigaIntestazione).firstNotNullOfOrNull { (_, celle) ->
             val i = celle.indexOfFirst { normalizza(it).startsWith("divisa") || normalizza(it).startsWith("valuta") }
             if (i < 0) null else celle.drop(i + 1).firstOrNull { CODICE_VALUTA.matches(it.trim()) }?.trim()?.uppercase()
         }
-
-        val movimenti = righe.drop(iIntestazione + 1).mapNotNull { (numero, celle) ->
-            fun cella(c: Int?) = c?.let { celle.getOrNull(it)?.trim() }.orEmpty()
-            val cent = when {
-                importo != null -> centDa(cella(importo))
-                else -> {
-                    val u = centDa(cella(uscite))?.let { -kotlin.math.abs(it) }
-                    val e = centDa(cella(entrate))?.let { kotlin.math.abs(it) }
-                    if (u == null && e == null) null else (u ?: 0) + (e ?: 0)
-                }
-            } ?: return@mapNotNull null
-            if (cent == 0L) return@mapNotNull null
-            val dOperazione = dataDa(cella(operazione))
-            val dContabile = dataDa(cella(contabile))
-            val dValuta = dataDa(cella(valuta))
-            if (dOperazione == null && dContabile == null && dValuta == null) return@mapNotNull null
-            val descrizione = descrizioni.map { cella(it) }.filter { it.isNotBlank() }.distinct().joinToString(" · ")
+        val movimenti = righe.drop(c.rigaIntestazione + 1).mapNotNull { (numero, celle) ->
+            fun cella(i: Int?) = i?.let { celle.getOrNull(it)?.trim() }.orEmpty()
+            val cent = if (c.entrate == null) centDa(cella(c.importo)) else {
+                val u = centDa(cella(c.importo))?.let { -kotlin.math.abs(it) }
+                val e = centDa(cella(c.entrate))?.let { kotlin.math.abs(it) }
+                if (u == null && e == null) null else (u ?: 0) + (e ?: 0)
+            }
+            if (cent == null || cent == 0L) return@mapNotNull null
+            val data = dataDa(cella(c.data)) ?: return@mapNotNull null
             MovimentoEstratto(
-                valuta = cella(divisa).takeIf { CODICE_VALUTA.matches(it) }?.uppercase() ?: valutaFile ?: valutaConto,
+                valuta = valutaFile ?: valutaConto,
                 importoCent = cent,
-                descrizione = descrizione,
-                dataOperazione = dOperazione,
-                dataContabile = dContabile,
-                dataValuta = dValuta,
+                descrizione = c.descrizioni.map { cella(it) }.filter { it.isNotBlank() }.distinct().joinToString(" · "),
+                dataOperazione = data,
                 rigaFile = numero
             )
         }
         val avvisi = buildList {
-            val altre = movimenti.map { it.valuta }.filter { it != valutaConto }.distinct()
-            if (altre.isNotEmpty()) add("Valuta del file (${altre.joinToString()}) diversa da quella del conto ($valutaConto)")
+            if (valutaFile != null && valutaFile != valutaConto) add("Valuta del file ($valutaFile) diversa da quella del conto ($valutaConto)")
         }
         return EsitoEstrattoExcel(movimenti, avvisi)
     }
 
     private val PAROLE_USCITE = listOf("dare", "addebit", "uscit")
     private val PAROLE_ENTRATE = listOf("avere", "accredit", "entrat")
-    private val PAROLE_DESCRIZIONE = listOf("descrizion", "causale", "dettagl", "beneficiar", "controparte", "operazione", "note")
+    private val PAROLE_DESCRIZIONE = listOf("descrizion", "causale", "dettagl", "beneficiar", "controparte", "note")
     private val CODICE_VALUTA = Regex("[A-Za-z]{3}")
 
     private fun normalizza(s: String) = s.trim().lowercase().replace(Regex("\\s+"), " ")

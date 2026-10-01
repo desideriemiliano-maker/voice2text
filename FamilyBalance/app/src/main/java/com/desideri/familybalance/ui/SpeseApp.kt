@@ -1,17 +1,11 @@
 package com.desideri.familybalance.ui
 
-import android.net.Uri
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.RadioButton
 import androidx.compose.material3.TextButton
-import com.desideri.familybalance.DatiApp
 import androidx.activity.compose.BackHandler
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -25,12 +19,10 @@ import androidx.compose.material.icons.filled.AccountBalance
 import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.EventRepeat
-import androidx.compose.material.icons.filled.FactCheck
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.TableChart
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.CurrencyExchange
 import androidx.compose.material.icons.automirrored.filled.CompareArrows
@@ -124,16 +116,8 @@ private fun SchermataPrincipale(vm: SpeseViewModel, sezione: Sezione, onSezione:
     val importEstratto by vm.importEstratto.collectAsStateWithLifecycle()
     val testoAttesa by vm.testoAttesa.collectAsStateWithLifecycle()
     val dati by vm.dati.collectAsStateWithLifecycle()
-    // File dell'estratto conto da riscontrare (con Gemini o da Excel), in attesa della scelta del conto.
-    var fileRiscontro by remember { mutableStateOf<Uri?>(null) }
-    var fileRiscontroExcel by remember { mutableStateOf<Uri?>(null) }
-    val sceltaRiscontroExcel = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri != null) fileRiscontroExcel = uri
-    }
-    val sceltaRiscontro = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri != null) fileRiscontro = uri
-    }
     val riscontroEstratto by vm.riscontroEstratto.collectAsStateWithLifecycle()
+    val colonneExcel by vm.colonneExcel.collectAsStateWithLifecycle()
 
     Scaffold(
         topBar = {
@@ -149,20 +133,6 @@ private fun SchermataPrincipale(vm: SpeseViewModel, sezione: Sezione, onSezione:
                             VoceMenu("Calendario ricorrenti", Icons.Filled.CalendarMonth) { menuAperto = false; mostraCalendario = true }
                             HorizontalDivider()
                             VoceMenu("Riscontro spostamenti", Icons.AutoMirrored.Filled.CompareArrows) { menuAperto = false; onApri(Schermata.MappaSpostamenti) }
-                            VoceMenu("Riscontro estratto conto", Icons.Filled.FactCheck) {
-                                menuAperto = false
-                                sceltaRiscontro.launch(arrayOf("*/*"))
-                            }
-                            VoceMenu("Riscontro estratto conto da Excel", Icons.Filled.TableChart) {
-                                menuAperto = false
-                                sceltaRiscontroExcel.launch(
-                                    arrayOf(
-                                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                                        "application/vnd.ms-excel",
-                                        "application/octet-stream"
-                                    )
-                                )
-                            }
                             VoceMenu("Cambi CHF/EUR", Icons.Filled.CurrencyExchange) { menuAperto = false; onApri(Schermata.Cambi) }
                             HorizontalDivider()
                             VoceMenu("Backup Google Drive", Icons.Filled.CloudUpload) { menuAperto = false; onApri(Schermata.Backup) }
@@ -201,27 +171,7 @@ private fun SchermataPrincipale(vm: SpeseViewModel, sezione: Sezione, onSezione:
     if (mostraRegistro) RegistroDialog(onDismiss = { mostraRegistro = false })
     if (mostraCalendario) CalendarioRicorrentiDialog(vm, onChiudi = { mostraCalendario = false })
 
-    fileRiscontro?.let { uri ->
-        SceltaContoDialog(
-            dati = dati,
-            onScelto = { contoValutaId ->
-                fileRiscontro = null
-                vm.riscontraEstratto(uri, contoValutaId)
-            },
-            onAnnulla = { fileRiscontro = null }
-        )
-    }
-
-    fileRiscontroExcel?.let { uri ->
-        SceltaContoDialog(
-            dati = dati,
-            onScelto = { contoValutaId ->
-                fileRiscontroExcel = null
-                vm.riscontraEstrattoExcel(uri, contoValutaId)
-            },
-            onAnnulla = { fileRiscontroExcel = null }
-        )
-    }
+    colonneExcel?.let { ColonneExcelDialog(vm, dati, it) }
 
     riscontroEstratto?.let { RiscontroEstrattoDialog(vm, dati, it, onChiudi = { vm.chiudiRiscontroEstratto() }) }
 
@@ -240,42 +190,6 @@ private fun SchermataPrincipale(vm: SpeseViewModel, sezione: Sezione, onSezione:
             }
         )
     }
-}
-
-/**
- * Scelta del conto corrente E della valuta su cui importare l'estratto conto (es. "LGT CHF"): tutti
- * i movimenti del file vanno lì, senza affidarsi alla valuta letta da Gemini.
- */
-@Composable
-private fun SceltaContoDialog(dati: DatiApp, onScelto: (Long) -> Unit, onAnnulla: () -> Unit) {
-    val contiValuta = dati.contiValutaOrdinati
-    var scelto by remember { mutableStateOf(contiValuta.singleOrNull()?.id) }
-    AlertDialog(
-        onDismissRequest = onAnnulla,
-        title = { Text("Importa estratto conto nel conto") },
-        text = {
-            Column {
-                if (contiValuta.isEmpty()) Text("Nessun conto configurato: crealo in Anagrafica conti.")
-                contiValuta.forEach { cv ->
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.fillMaxWidth().clickable { scelto = cv.id }
-                    ) {
-                        RadioButton(selected = scelto == cv.id, onClick = { scelto = cv.id })
-                        Text(dati.etichetta(cv.id))
-                    }
-                }
-                Text(
-                    "Scegli anche la valuta: tutti i movimenti del file verranno registrati su quel conto/valuta. " +
-                        "Il file viene inviato a Gemini per leggerne i movimenti.",
-                    style = MaterialTheme.typography.bodySmall,
-                    modifier = Modifier.padding(top = 8.dp)
-                )
-            }
-        },
-        confirmButton = { TextButton(onClick = { scelto?.let(onScelto) }, enabled = scelto != null) { Text("Importa") } },
-        dismissButton = { TextButton(onClick = onAnnulla) { Text("Annulla") } }
-    )
 }
 
 @Composable

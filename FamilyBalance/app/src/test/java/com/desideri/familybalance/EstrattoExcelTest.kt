@@ -1,5 +1,6 @@
 package com.desideri.familybalance
 
+import com.desideri.familybalance.estratto.ColonneExcel
 import com.desideri.familybalance.estratto.EstrattoExcel
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -10,50 +11,56 @@ class EstrattoExcelTest {
 
     private fun righe(vararg r: List<String>) = r.mapIndexed { i, celle -> (i + 1) to celle }
 
+    private val estratto = righe(
+        listOf("", "C/C:", "12345"),
+        listOf("", "Divisa C/C:", "EUR"),
+        listOf("", "Data contabile", "Data valuta", "Descrizione", "Dettaglio", "Importo"),
+        listOf("", "Non contabilizzato", "30/9/2026", "Negozio", "Pagamento Con Carta", "-122.8"),
+        listOf("", "30/9/2026", "28/9/2026", "Rimborso", "Rimborso", "-723.39"),
+        listOf("", "29/9/2026", "29/9/2026", "Stipendio", "Bonifico", "2500")
+    )
+
     @Test
-    fun leggeEstrattoConIntestazioneEDivisaSopra() {
-        val esito = EstrattoExcel.leggi(
-            righe(
-                listOf("", "C/C:", "12345"),
-                listOf("", "Divisa C/C:", "EUR"),
-                listOf("", "Saldo Contabile al:", "30/09/2026", "609.68"),
-                listOf("", "Data contabile", "Data valuta", "Descrizione", "Dettaglio", "Importo"),
-                listOf("", "Non contabilizzato", "30/9/2026", "Negozio", "Pagamento Con Carta Di Debito", "-122.8"),
-                listOf("", "30/9/2026", "28/9/2026", "Rimborso", "Rimborso", "-723.39"),
-                listOf("", "29/9/2026", "29/9/2026", "Stipendio", "Bonifico", "2500")
-            ),
-            "EUR"
-        )!!
-        assertEquals(3, esito.movimenti.size)
-        val primo = esito.movimenti[0]
-        assertEquals(-12280L, primo.importoCent)
-        assertNull(primo.dataContabile)
-        assertEquals(LocalDate.of(2026, 9, 30), primo.dataValuta)
-        assertEquals("Negozio · Pagamento Con Carta Di Debito", primo.descrizione)
-        assertEquals("Rimborso", esito.movimenti[1].descrizione)
-        assertEquals(LocalDate.of(2026, 9, 30), esito.movimenti[1].dataContabile)
-        assertEquals(250000L, esito.movimenti[2].importoCent)
-        assertEquals(5, primo.rigaFile)
-        assertEquals(emptyList<String>(), esito.avvisi)
+    fun proponeLeColonneDallIntestazione() {
+        val c = EstrattoExcel.proponi(estratto, null)!!
+        assertEquals(ColonneExcel(rigaIntestazione = 2, data = 1, importo = 5, entrate = null, descrizioni = listOf(3, 4)), c)
     }
 
     @Test
-    fun leggeColonneAddebitiAccrediti() {
-        val esito = EstrattoExcel.leggi(
-            righe(
-                listOf("Data operazione", "Causale", "Addebiti", "Accrediti"),
-                listOf("2026-03-01", "Affitto", "1.200,00", ""),
-                listOf("02.03.26", "Rimborso", "", "35,5")
-            ),
-            "CHF"
-        )!!
+    fun leggeConLeColonneScelteESaltaLeRigheSenzaData() {
+        // Data valuta: tutte e tre le righe hanno la data.
+        val esito = EstrattoExcel.leggi(estratto, ColonneExcel(2, data = 2, importo = 5, descrizioni = listOf(3, 4)), "EUR")
+        assertEquals(listOf(-12280L, -72339L, 250000L), esito.movimenti.map { it.importoCent })
+        assertEquals("Negozio · Pagamento Con Carta", esito.movimenti[0].descrizione)
+        assertEquals("Rimborso", esito.movimenti[1].descrizione)
+        assertEquals(LocalDate.of(2026, 9, 28), esito.movimenti[1].dataOperazione)
+        assertEquals(4, esito.movimenti[0].rigaFile)
+        // Data contabile: "Non contabilizzato" non è una data, la riga si salta.
+        assertEquals(2, EstrattoExcel.leggi(estratto, ColonneExcel(2, data = 1, importo = 5), "EUR").movimenti.size)
+    }
+
+    @Test
+    fun laSceltaMemorizzataPrevaleSuiNomi() {
+        val salvate = EstrattoExcel.daSalvare(estratto, ColonneExcel(2, data = 2, importo = 5, descrizioni = listOf(4)))
+        assertEquals(ColonneExcel(2, data = 2, importo = 5, entrate = null, descrizioni = listOf(4)), EstrattoExcel.proponi(estratto, salvate))
+    }
+
+    @Test
+    fun colonneAddebitiAccrediti() {
+        val r = righe(
+            listOf("Data operazione", "Causale", "Addebiti", "Accrediti"),
+            listOf("2026-03-01", "Affitto", "1.200,00", ""),
+            listOf("02.03.26", "Rimborso", "", "35,5")
+        )
+        val c = EstrattoExcel.proponi(r, null)!!
+        assertEquals(ColonneExcel(0, data = 0, importo = 2, entrate = 3, descrizioni = listOf(1)), c)
+        val esito = EstrattoExcel.leggi(r, c, "CHF")
         assertEquals(listOf(-120000L, 3550L), esito.movimenti.map { it.importoCent })
-        assertEquals(LocalDate.of(2026, 3, 2), esito.movimenti[1].dataOperazione)
         assertEquals("CHF", esito.movimenti[0].valuta)
     }
 
     @Test
-    fun senzaIntestazioneRestituisceNull() {
-        assertNull(EstrattoExcel.leggi(righe(listOf("a", "b"), listOf("1", "2")), "EUR"))
+    fun foglioVuoto() {
+        assertNull(EstrattoExcel.proponi(righe(listOf("", "")), null))
     }
 }

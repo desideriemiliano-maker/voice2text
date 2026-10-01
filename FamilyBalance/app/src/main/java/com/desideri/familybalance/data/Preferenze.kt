@@ -66,6 +66,30 @@ class Preferenze(context: Context) {
         prefs.edit().putString("tipo_data_estratto_$contoId", tipo.name).apply()
     }
 
+    /** Colonne scelte per il riscontro da Excel del conto/valuta [contoValutaId]. */
+    fun caricaColonneExcel(contoValutaId: Long): com.desideri.familybalance.estratto.ColonneSalvate? =
+        prefs.getString("colonne_excel_$contoValutaId", null)?.let { testo ->
+            runCatching {
+                val j = org.json.JSONObject(testo)
+                val descr = j.optJSONArray("descrizioni")
+                com.desideri.familybalance.estratto.ColonneSalvate(
+                    data = j.getString("data"),
+                    importo = j.getString("importo"),
+                    entrate = j.optString("entrate").ifBlank { null },
+                    descrizioni = (0 until (descr?.length() ?: 0)).map { descr!!.getString(it) }
+                )
+            }.getOrNull()
+        }
+
+    fun salvaColonneExcel(contoValutaId: Long, c: com.desideri.familybalance.estratto.ColonneSalvate) {
+        val j = org.json.JSONObject()
+            .put("data", c.data)
+            .put("importo", c.importo)
+            .put("entrate", c.entrate.orEmpty())
+            .put("descrizioni", org.json.JSONArray(c.descrizioni))
+        prefs.edit().putString("colonne_excel_$contoValutaId", j.toString()).apply()
+    }
+
     private companion object {
         const val CHIAVE_TARGET = "target_risparmio_cent"
         const val CHIAVE_CAMBIO = "cambio_chf_eur"

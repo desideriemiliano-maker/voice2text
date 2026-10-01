@@ -27,6 +27,7 @@ import com.desideri.familybalance.importazione.AnalisiImport
 import com.desideri.familybalance.importazione.ImportatoreExcel
 import com.desideri.familybalance.logica.Spostamenti
 import com.desideri.familybalance.estratto.AggiornamentoData
+import com.desideri.familybalance.estratto.ColonneExcel
 import com.desideri.familybalance.estratto.EstrattoExcel
 import com.desideri.familybalance.importazione.LettoreXlsx
 import com.desideri.familybalance.importazione.testo
@@ -94,6 +95,13 @@ data class DatiApp(
 }
 
 /** Estratto conto letto per il riscontro con le operazioni del conto/valuta [contoValutaId]. */
+/** Foglio Excel letto per il riscontro, in attesa della scelta delle colonne (proposta già calcolata). */
+data class StatoColonneExcel(
+    val contoValutaId: Long,
+    val righe: List<Pair<Int, List<String>>>,
+    val proposta: ColonneExcel
+)
+
 data class StatoRiscontroEstratto(
     val contoValutaId: Long,
     val contoId: Long,
@@ -700,38 +708,53 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    private val _colonneExcel = MutableStateFlow<StatoColonneExcel?>(null)
+    val colonneExcel: StateFlow<StatoColonneExcel?> = _colonneExcel.asStateFlow()
+
     /**
-     * Riscontro da un estratto conto Excel esportato dalla banca, letto direttamente (senza Gemini):
-     * vedi [EstrattoExcel]. Si usa il primo foglio in cui si riconosce l'intestazione dei movimenti.
+     * Riscontro da un estratto conto Excel esportato dalla banca, letto senza AI: si legge il primo
+     * foglio non vuoto e si propongono le colonne (quelle memorizzate per il conto, se ci sono),
+     * che l'utente conferma o cambia (vedi [confermaColonneExcel]).
      */
     fun riscontraEstrattoExcel(uri: Uri, contoValutaId: Long) = viewModelScope.launch {
-        val cv = dati.value.contiValutaPerId[contoValutaId] ?: return@launch messaggio("Conto non trovato")
         _testoAttesa.value = "Lettura dell'estratto conto Excel…"
         _importazioneInCorso.value = true
         try {
-            val esito = withContext(Dispatchers.IO) {
+            val righe = withContext(Dispatchers.IO) {
                 val lettore = getApplication<Application>().contentResolver.openInputStream(uri)?.use { LettoreXlsx(it) }
                     ?: error("file non leggibile")
                 lettore.nomiFogli.firstNotNullOfOrNull { nome ->
                     val foglio = lettore.foglio(nome, dateComeTesto = true) ?: return@firstNotNullOfOrNull null
-                    val righe = foglio.keys.sorted().map { r ->
+                    foglio.keys.sorted().map { r ->
                         val celle = foglio.getValue(r)
                         r to (1..(celle.keys.maxOrNull() ?: 0)).map { c -> foglio.testo(r, c).orEmpty() }
-                    }
-                    EstrattoExcel.leggi(righe, cv.valuta)
+                    }.filter { r -> r.second.any { it.isNotBlank() } }.ifEmpty { null }
                 }
             }
-            when {
-                esito == null -> messaggio("Nel file non c'è l'intestazione dei movimenti (colonne Data… e Importo)")
-                esito.movimenti.isEmpty() -> messaggio("Nessun movimento trovato nel file")
-                else -> _riscontroEstratto.value = StatoRiscontroEstratto(contoValutaId, cv.contoId, esito.movimenti, esito.avvisi)
-            }
+            val proposta = righe?.let { EstrattoExcel.proponi(it, preferenze.caricaColonneExcel(contoValutaId)) }
+            if (righe == null || proposta == null) messaggio("Il file non contiene righe")
+            else _colonneExcel.value = StatoColonneExcel(contoValutaId, righe, proposta)
         } catch (e: Exception) {
             messaggio("Lettura dell'estratto conto non riuscita: ${e.message ?: e.javaClass.simpleName}")
         } finally {
             _importazioneInCorso.value = false
             _testoAttesa.value = "Lettura del file…"
         }
+    }
+
+    /** Legge i movimenti con le colonne [colonne], le memorizza per il conto e apre il riscontro. */
+    fun confermaColonneExcel(colonne: ColonneExcel) {
+        val stato = _colonneExcel.value ?: return
+        val cv = dati.value.contiValutaPerId[stato.contoValutaId] ?: return messaggio("Conto non trovato")
+        val esito = EstrattoExcel.leggi(stato.righe, colonne, cv.valuta)
+        if (esito.movimenti.isEmpty()) return messaggio("Nessun movimento con data e importo nelle colonne scelte")
+        preferenze.salvaColonneExcel(stato.contoValutaId, EstrattoExcel.daSalvare(stato.righe, colonne))
+        _colonneExcel.value = null
+        _riscontroEstratto.value = StatoRiscontroEstratto(stato.contoValutaId, cv.contoId, esito.movimenti, esito.avvisi)
+    }
+
+    fun annullaColonneExcel() {
+        _colonneExcel.value = null
     }
 
     fun chiudiRiscontroEstratto() {

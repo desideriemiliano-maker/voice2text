@@ -3,6 +3,7 @@ package com.desideri.familybalance.ui
 import androidx.compose.foundation.clickable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.material3.IconButton
 import androidx.compose.material.icons.automirrored.filled.ShowChart
@@ -16,7 +17,14 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.Box
+import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.FactCheck
+import androidx.compose.material.icons.filled.TableChart
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -45,6 +53,17 @@ fun ContiScreen(vm: SpeseViewModel, onApriConto: (Long) -> Unit, onAnagraficaCon
     val ricaricaInCorso by vm.ricaricaInCorso.collectAsStateWithLifecycle()
     val cambi by vm.cambi.collectAsStateWithLifecycle()
     var mostraGrafico by remember { mutableStateOf(false) }
+    // Riscontro dell'estratto conto direttamente sul conto/valuta: menu aperto e conto del file in scelta.
+    var menuRiscontro by remember { mutableStateOf<Long?>(null) }
+    var contoRiscontro by rememberSaveable { mutableStateOf<Long?>(null) }
+    val sceltaFileAi = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        val cv = contoRiscontro
+        if (uri != null && cv != null) vm.riscontraEstratto(uri, cv)
+    }
+    val sceltaFileExcel = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        val cv = contoRiscontro
+        if (uri != null && cv != null) vm.riscontraEstrattoExcel(uri, cv)
+    }
 
     if (dati.caricati && dati.contiValuta.isEmpty()) {
         Column(
@@ -54,7 +73,7 @@ fun ContiScreen(vm: SpeseViewModel, onApriConto: (Long) -> Unit, onAnagraficaCon
         ) {
             Text("Nessun conto configurato.", style = MaterialTheme.typography.titleMedium)
             Text(
-                "Crea i conti dall'anagrafica oppure importa l'Excel dal menu ⋮ › Importa da Excel.",
+                "Crea i conti dall'anagrafica (menu ⋮ › Anagrafica conti).",
                 style = MaterialTheme.typography.bodyMedium,
                 modifier = Modifier.padding(vertical = 12.dp)
             )
@@ -90,7 +109,7 @@ fun ContiScreen(vm: SpeseViewModel, onApriConto: (Long) -> Unit, onAnagraficaCon
             }
             items(dati.contiValutaOrdinati, key = { it.id }) { cv ->
                 Card(modifier = Modifier.fillMaxWidth().clickable { onApriConto(cv.id) }) {
-                    Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Row(modifier = Modifier.padding(start = 16.dp, top = 12.dp, bottom = 12.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                         Column(modifier = Modifier.weight(1f)) {
                             Text(dati.etichetta(cv.id), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                             ultimaPerConto[cv.id]?.let {
@@ -98,7 +117,37 @@ fun ContiScreen(vm: SpeseViewModel, onApriConto: (Long) -> Unit, onAnagraficaCon
                             }
                         }
                         TestoImporto((saldi[cv.id] ?: 0L) / 100.0, cv.valuta, grassetto = true)
-                        Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null)
+                        Box {
+                            IconButton(onClick = { menuRiscontro = cv.id }) {
+                                Icon(Icons.Filled.FactCheck, contentDescription = "Riscontro estratto conto")
+                            }
+                            DropdownMenu(expanded = menuRiscontro == cv.id, onDismissRequest = { menuRiscontro = null }) {
+                                DropdownMenuItem(
+                                    text = { Text("Riscontro con AI") },
+                                    leadingIcon = { Icon(Icons.Filled.AutoAwesome, contentDescription = null) },
+                                    onClick = {
+                                        menuRiscontro = null
+                                        contoRiscontro = cv.id
+                                        sceltaFileAi.launch(arrayOf("*/*"))
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Riscontro da Excel") },
+                                    leadingIcon = { Icon(Icons.Filled.TableChart, contentDescription = null) },
+                                    onClick = {
+                                        menuRiscontro = null
+                                        contoRiscontro = cv.id
+                                        sceltaFileExcel.launch(
+                                            arrayOf(
+                                                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                                "application/vnd.ms-excel",
+                                                "application/octet-stream"
+                                            )
+                                        )
+                                    }
+                                )
+                            }
+                        }
                     }
                 }
             }
