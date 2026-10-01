@@ -17,6 +17,10 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Close
@@ -212,6 +216,8 @@ fun RiscontroEstrattoDialog(vm: SpeseViewModel, dati: DatiApp, stato: StatoRisco
     }
     var inModifica by remember { mutableStateOf<Operazione?>(null) }
     var confermaDate by remember { mutableStateOf(false) }
+    var confermaAssocia by remember { mutableStateOf(false) }
+    var confermaCrea by remember { mutableStateOf(false) }
     var esitoImporto by remember { mutableStateOf<RiscontroEstratto.EsitoPerImporto?>(null) }
 
     val colAuto = MaterialTheme.colorScheme.primary
@@ -264,29 +270,20 @@ fun RiscontroEstrattoDialog(vm: SpeseViewModel, dati: DatiApp, stato: StatoRisco
                         }
                     }
                 }
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-                    OutlinedButton(onClick = { confermaDate = true }, enabled = daAggiornare.isNotEmpty(), modifier = Modifier.weight(1f)) {
-                        Text("Aggiorna date (${daAggiornare.size})")
-                    }
-                    OutlinedButton(onClick = {
-                        // Operazioni del periodo dell'estratto (con 15 giorni di margine) non ancora collegate.
-                        val esito = RiscontroEstratto.abbinaPerImporto(
-                            opsConto.filter { it.data in (da - 15)..(a + 15) }, movimenti,
-                            esclusiOperazioni = opCollegate.keys, esclusiMovimenti = movCollegati.keys
-                        )
-                        manuali += esito.collegamenti
-                        esitoImporto = esito
-                    }, enabled = mancanti.isNotEmpty(), modifier = Modifier.weight(1f)) {
-                        Text("Associa per importo")
-                    }
-                }
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                    Button(onClick = {
-                        vm.salvaTipoDataEstratto(stato.contoId, tipoData)
-                        vm.creaDaEstratto(mancanti)
-                    }, enabled = mancanti.isNotEmpty(), modifier = Modifier.weight(1f)) {
-                        Text("Crea operazioni (${mancanti.size})")
-                    }
+                // Le tre azioni sulla stessa riga, ciascuna con un popup di conferma che la spiega.
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                    OutlinedButton(
+                        onClick = { confermaDate = true }, enabled = daAggiornare.isNotEmpty(),
+                        contentPadding = PaddingValues(horizontal = 6.dp), modifier = Modifier.weight(1f)
+                    ) { Text("Aggiorna (${daAggiornare.size})", maxLines = 1) }
+                    OutlinedButton(
+                        onClick = { confermaAssocia = true }, enabled = mancanti.isNotEmpty(),
+                        contentPadding = PaddingValues(horizontal = 6.dp), modifier = Modifier.weight(1f)
+                    ) { Text("Associa", maxLines = 1) }
+                    Button(
+                        onClick = { confermaCrea = true }, enabled = mancanti.isNotEmpty(),
+                        contentPadding = PaddingValues(horizontal = 6.dp), modifier = Modifier.weight(1f)
+                    ) { Text("Crea (${mancanti.size})", maxLines = 1) }
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically, modifier = Modifier.horizontalScroll(rememberScrollState())) {
                     Text("Mostra", style = MaterialTheme.typography.labelMedium)
@@ -296,14 +293,32 @@ fun RiscontroEstrattoDialog(vm: SpeseViewModel, dati: DatiApp, stato: StatoRisco
                     Text("Data estratto", style = MaterialTheme.typography.labelMedium)
                     tipiDisponibili.forEach { t -> FilterChip(selected = tipoData == t, onClick = { tipoData = t }, label = { Text(t.etichetta) }) }
                 }
-                Text(
-                    "Estratto intero: ${collegamenti.size} collegate · ${mancanti.size} mancanti sul conto · $senzaRiscontro del conto non nell'estratto. " +
-                        "Nel periodo: ${opsVisibili.size} sul conto, ${movVisibili.size} nell'estratto. " +
-                        "Linea continua: stessa data; tratteggiata: data vicina; colorata diversa: collegata a mano. " +
-                        "Tocca una linea per eliminarla; tieni premuta una riga non collegata e trascinala su una con lo stesso importo per collegarla.",
-                    style = MaterialTheme.typography.bodySmall
+                // Esito dell'estrazione: icona info se tutto a posto, avviso se ci sono problemi o dati incompleti.
+                val problemi = stato.avvisi + listOfNotNull(
+                    stato.movimenti.count { it.descrizione.isBlank() }.takeIf { it > 0 }?.let { "$it movimenti senza descrizione" }
                 )
-                stato.avvisi.firstOrNull()?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
+                Row(verticalAlignment = Alignment.Top, modifier = Modifier.padding(top = 4.dp)) {
+                    Icon(
+                        if (problemi.isEmpty()) Icons.Filled.Info else Icons.Filled.Warning,
+                        contentDescription = if (problemi.isEmpty()) "Informazioni" else "Avvisi",
+                        tint = if (problemi.isEmpty()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                        modifier = Modifier.padding(end = 6.dp).size(18.dp)
+                    )
+                    Column {
+                        Text(
+                            "Letti ${stato.movimenti.size} movimenti. Estratto intero: ${collegamenti.size} collegate · ${mancanti.size} mancanti sul conto · " +
+                                "$senzaRiscontro del conto non nell'estratto. Nel periodo: ${opsVisibili.size} sul conto, ${movVisibili.size} nell'estratto.",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                        problemi.forEach { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
+                        Text(
+                            "Linea continua: stessa data; tratteggiata: data vicina; colorata diversa: collegata a mano. " +
+                                "Tocca una linea per eliminarla; tieni premuta una riga non collegata e trascinala su una con lo stesso importo per collegarla.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
                 Row(modifier = Modifier.fillMaxWidth().padding(top = 6.dp, bottom = 4.dp)) {
                     Text("Data", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, modifier = Modifier.width(44.dp))
                     Text("Sul conto", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, modifier = Modifier.weight(1f))
@@ -417,13 +432,63 @@ fun RiscontroEstrattoDialog(vm: SpeseViewModel, dati: DatiApp, stato: StatoRisco
         )
     }
 
+    if (confermaAssocia) {
+        AlertDialog(
+            onDismissRequest = { confermaAssocia = false },
+            title = { Text("Associa") },
+            text = {
+                Text(
+                    "Collega ogni movimento dell'estratto ancora non collegato (${mancanti.size}) all'operazione del conto con lo stesso " +
+                        "importo, cercata nel periodo dell'estratto con 15 giorni di margine. Se ci sono più operazioni possibili il movimento " +
+                        "viene saltato. I collegamenti creati hanno il colore di quelli manuali e si possono togliere toccando la linea; " +
+                        "nulla viene salvato sul conto."
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    confermaAssocia = false
+                    val esito = RiscontroEstratto.abbinaPerImporto(
+                        opsConto.filter { it.data in (da - 15)..(a + 15) }, movimenti,
+                        esclusiOperazioni = opCollegate.keys, esclusiMovimenti = movCollegati.keys
+                    )
+                    manuali += esito.collegamenti
+                    esitoImporto = esito
+                }) { Text("Associa") }
+            },
+            dismissButton = { TextButton(onClick = { confermaAssocia = false }) { Text("Annulla") } }
+        )
+    }
+    if (confermaCrea) {
+        AlertDialog(
+            onDismissRequest = { confermaCrea = false },
+            title = { Text("Crea") },
+            text = {
+                Text(
+                    "Registra sul conto ${dati.etichetta(stato.contoValutaId)} i ${mancanti.size} movimenti dell'estratto che non sono collegati a " +
+                        "nessuna operazione, con la data (${tipoData.etichetta.lowercase()}) dell'estratto. Prima del salvataggio si apre l'elenco " +
+                        "dove scegliere il tipo di ogni operazione e deselezionare quelle da non creare."
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    confermaCrea = false
+                    vm.salvaTipoDataEstratto(stato.contoId, tipoData)
+                    vm.creaDaEstratto(mancanti)
+                }) { Text("Continua") }
+            },
+            dismissButton = { TextButton(onClick = { confermaCrea = false }) { Text("Annulla") } }
+        )
+    }
     if (confermaDate) {
         AlertDialog(
             onDismissRequest = { confermaDate = false },
-            title = { Text("Aggiorna date") },
+            title = { Text("Aggiorna") },
             text = {
                 Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
-                    Text("Le operazioni collegate con data diversa prendono la data (${tipoData.etichetta.lowercase()}) dell'estratto:")
+                    Text(
+                        "Le ${daAggiornare.size} operazioni del conto collegate a un movimento dell'estratto con data diversa (linee tratteggiate) " +
+                            "prendono la data (${tipoData.etichetta.lowercase()}) dell'estratto. Importi e descrizioni non cambiano:"
+                    )
                     daAggiornare.forEach { (id, nuova) ->
                         val op = perIdOp[id] ?: return@forEach
                         Text(
