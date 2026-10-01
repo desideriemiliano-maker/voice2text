@@ -176,8 +176,20 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
     val personalizzazioni: StateFlow<List<PrevisioneRicorrente>> =
         dao.previsioniFlow().stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
-    val bilancio: StateFlow<List<RigaBilancio>> = combine(dati, _impostazioni, cambi, personalizzazioni) { d, imp, cambi, pers ->
-        Calcoli.bilancio(d.contiValuta, d.voci, d.operazioni, cambi, imp.targetRisparmioCent / 100.0, YearMonth.now(), personalizzazioni = pers)
+    /** Periodo mostrato nella sezione Bilancio (di default da 12 mesi fa a 12 mesi avanti). */
+    private val _periodoBilancio = MutableStateFlow(YearMonth.now().minusMonths(12) to YearMonth.now().plusMonths(12))
+    val periodoBilancio: StateFlow<Pair<YearMonth, YearMonth>> = _periodoBilancio.asStateFlow()
+
+    fun impostaPeriodoBilancio(da: YearMonth, a: YearMonth) {
+        if (da <= a) _periodoBilancio.value = da to a
+    }
+
+    // Il calcolo parte sempre dalla prima operazione (i saldi sono cumulativi); si mostra solo il periodo.
+    val bilancio: StateFlow<List<RigaBilancio>> = combine(dati, _impostazioni, cambi, personalizzazioni, _periodoBilancio) { d, imp, cambi, pers, periodo ->
+        val oggi = YearMonth.now()
+        val mesiFuturi = java.time.temporal.ChronoUnit.MONTHS.between(oggi, periodo.second).toInt().coerceAtLeast(0)
+        Calcoli.bilancio(d.contiValuta, d.voci, d.operazioni, cambi, imp.targetRisparmioCent / 100.0, oggi, mesiFuturi, personalizzazioni = pers)
+            .filter { it.mese >= periodo.first && it.mese <= periodo.second }
     }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     /** Periodo mostrato nella sezione Ricorrenti (di default da 12 mesi fa a 12 mesi avanti). */

@@ -179,7 +179,7 @@ fun RicorrentiScreen(vm: SpeseViewModel) {
 
 /** Mese con frecce per andare avanti e indietro. */
 @Composable
-private fun SceltaMese(etichetta: String, mese: YearMonth, onMese: (YearMonth) -> Unit, modifier: Modifier = Modifier) {
+internal fun SceltaMese(etichetta: String, mese: YearMonth, onMese: (YearMonth) -> Unit, modifier: Modifier = Modifier) {
     Row(verticalAlignment = Alignment.CenterVertically, modifier = modifier) {
         IconButton(onClick = { onMese(mese.minusMonths(1)) }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, contentDescription = "Mese precedente") }
         Column(modifier = Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {

@@ -4,16 +4,19 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -29,21 +32,31 @@ import java.util.Locale
 import kotlin.math.abs
 
 /**
- * Bilancio: il mese corrente separato tra spese correnti, ricorrenti e stipendio/interessi; per i
+ * Bilancio nel periodo scelto (Dal/Al, fisso in alto), in ordine cronologico: il mese corrente separato tra spese correnti, ricorrenti e stipendio/interessi; per i
  * mesi futuri il saldo previsto (saldo precedente + target di risparmio − ricorrenti previste);
  * per i mesi passati saldo a fine mese e scostamento del risparmio dal target.
  */
 @Composable
 fun BilancioScreen(vm: SpeseViewModel) {
     val righe by vm.bilancio.collectAsStateWithLifecycle()
+    val periodo by vm.periodoBilancio.collectAsStateWithLifecycle()
     val impostazioni by vm.impostazioni.collectAsStateWithLifecycle()
-    val corrente = righe.firstOrNull { it.stato == StatoMese.CORRENTE }
-    val futuri = righe.filter { it.stato == StatoMese.FUTURO }
-    val passati = righe.filter { it.stato == StatoMese.PASSATO }.asReversed()
+    val stato = rememberLazyListState()
 
-    LazyColumn(contentPadding = PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        if (impostazioni.targetRisparmioCent == 0L) {
-            item {
+    // All'apertura la lista parte dal mese corrente (i passati sono sopra, i futuri sotto).
+    LaunchedEffect(righe.isNotEmpty()) {
+        val indice = righe.indexOfFirst { it.stato == StatoMese.CORRENTE }
+        if (indice >= 0) stato.scrollToItem(indice)
+    }
+
+    // Periodo fisso in alto; sotto scorre la lista dei mesi in ordine cronologico.
+    Column(modifier = Modifier.fillMaxSize()) {
+        Column(modifier = Modifier.padding(start = 12.dp, end = 12.dp, top = 12.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                SceltaMese("Dal", periodo.first, { vm.impostaPeriodoBilancio(it, periodo.second) }, Modifier.weight(1f))
+                SceltaMese("Al", periodo.second, { vm.impostaPeriodoBilancio(periodo.first, it) }, Modifier.weight(1f))
+            }
+            if (impostazioni.targetRisparmioCent == 0L) {
                 Text(
                     "Imposta il target di risparmio mensile in Impostazioni (menu ⋮) per le previsioni.",
                     style = MaterialTheme.typography.bodySmall,
@@ -51,21 +64,17 @@ fun BilancioScreen(vm: SpeseViewModel) {
                 )
             }
         }
-        corrente?.let { item { CardMeseCorrente(it) } }
-        if (futuri.isNotEmpty()) {
-            item { Titolo("Previsione prossimi mesi") }
-            items(futuri, key = { "f" + it.mese }) { CardMeseFuturo(it) }
-        }
-        if (passati.isNotEmpty()) {
-            item { Titolo("Mesi passati") }
-            items(passati, key = { "p" + it.mese }) { CardMesePassato(it) }
+        LazyColumn(state = stato, contentPadding = PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.weight(1f)) {
+            if (righe.isEmpty()) item { Text("Nessun mese nel periodo scelto.", style = MaterialTheme.typography.bodyMedium) }
+            items(righe, key = { it.mese.toString() }) { r ->
+                when (r.stato) {
+                    StatoMese.CORRENTE -> CardMeseCorrente(r)
+                    StatoMese.FUTURO -> CardMeseFuturo(r)
+                    StatoMese.PASSATO -> CardMesePassato(r)
+                }
+            }
         }
     }
-}
-
-@Composable
-private fun Titolo(testo: String) {
-    Text(testo, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 12.dp, bottom = 4.dp))
 }
 
 @Composable
