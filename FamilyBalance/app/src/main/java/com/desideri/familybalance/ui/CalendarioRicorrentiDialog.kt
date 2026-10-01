@@ -89,7 +89,7 @@ private data class Cella(
  * Calendario delle spese ricorrenti (menu ⋮): per l'anno scelto una riga per mese e una colonna per
  * ogni spesa ricorrente non obsoleta (filtrabili con scelta multipla). In ogni cella il pagato del
  * mese o, se non ci sono operazioni, l'importo stimato (in corsivo); "✕" le scadenze annullate.
- * Come la sezione Ricorrenti: CHF al cambio delle Impostazioni.
+ * Come la sezione Ricorrenti: CHF come nel Bilancio (passati al cambio del mese, corrente e futuri a quello delle Impostazioni).
  */
 @Composable
 fun CalendarioRicorrentiDialog(vm: SpeseViewModel, onChiudi: () -> Unit) {
@@ -112,8 +112,9 @@ fun CalendarioRicorrentiDialog(vm: SpeseViewModel, onChiudi: () -> Unit) {
     val mostrate = scelte?.let { s -> voci.filter { it.id in s } } ?: voci
 
     val mesi = (1..12).map { YearMonth.of(anno, it) }
-    val celle: Map<Pair<Long, YearMonth>, Cella> = remember(dati, impostazioni.cambioChfEur, personalizzazioni, anno) {
-        val righe = Calcoli.ricorrenti(mesi, dati.voci, dati.contiValuta, dati.operazioni, Cambi.fisso(impostazioni.cambioChfEur), YearMonth.now(), personalizzazioni, LocalDate.now().toEpochDay())
+    val cambi by vm.cambi.collectAsStateWithLifecycle()
+    val celle: Map<Pair<Long, YearMonth>, Cella> = remember(dati, cambi, personalizzazioni, anno) {
+        val righe = Calcoli.ricorrenti(mesi, dati.voci, dati.contiValuta, dati.operazioni, cambi, YearMonth.now(), personalizzazioni, LocalDate.now().toEpochDay())
         buildMap {
             righe.forEach { m ->
                 m.righe.groupBy { it.voce.id }.forEach { (voceId, rr) ->
@@ -154,7 +155,7 @@ fun CalendarioRicorrentiDialog(vm: SpeseViewModel, onChiudi: () -> Unit) {
                 Text(
                     "Effettiva (operazioni sul conto) in nero; pianificata (giorno previsto · importo) in verde; stimata con la media in arancio; " +
                         "✕ annullata. Il totale usa l'effettivo e, dove manca, il valore calcolato; tocca \"Totale\" per il dettaglio. " +
-                        "CHF al cambio delle Impostazioni. Tocca una cella per pianificare, aggiungere, modificare o eliminare la spesa di quel mese; " +
+                        "CHF come nel Bilancio (passati al cambio del mese, corrente e futuri a quello delle Impostazioni). Tocca una cella per pianificare, aggiungere, modificare o eliminare la spesa di quel mese; " +
                         "tieni premuta una spesa stimata o pianificata per eliminarla da quel mese.",
                     style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier.padding(vertical = 4.dp)

@@ -264,8 +264,12 @@ object Calcoli {
             val valuta = valutaDi[op.contoValutaId] ?: Valute.EUR
             val movimento = if (valuta == Valute.CHF) movimentoChf else movimentoEur
             movimento[m] = (movimento[m] ?: 0L) + op.importoCent
-            val eur = cambi.inEuro(op.importoCent, valuta, m)
-            val destinazione = when (classifica(op, op.voceId?.let { vociPerId[it] })) {
+            val classe = classifica(op, op.voceId?.let { vociPerId[it] })
+            // Le ricorrenti contano nel mese a cui sono imputate (data per la spesa ricorrente), come
+            // nella sezione Ricorrenti; il saldo resta sul mese del movimento.
+            val mDest = if (classe == Classe.RICORRENTE) mese(op.dataPerRicorrente) else m
+            val eur = cambi.inEuro(op.importoCent, valuta, mDest)
+            val destinazione = when (classe) {
                 Classe.ENTRATA -> entrate
                 Classe.CORRENTE -> correnti
                 Classe.RICORRENTE -> ricorrentiPagati
@@ -274,7 +278,7 @@ object Calcoli {
                     if (altra != null && valutaDi[altra.contoValutaId] != valuta) cambioSpostamenti else null
                 }
             }
-            if (destinazione != null) destinazione[m] = (destinazione[m] ?: 0.0) + eur
+            if (destinazione != null) destinazione[mDest] = (destinazione[mDest] ?: 0.0) + eur
         }
 
         val ultimoMese = oggi.plusMonths(mesiFuturi.toLong())

@@ -25,7 +25,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -62,13 +64,14 @@ private data class MeseCorrenti(val mese: YearMonth, val righe: List<RigaCorrent
 /**
  * Spese correnti (né ricorrenti, né entrate, né spostamenti) raggruppate per mese e per voce, con
  * lo stesso layout delle Ricorrenti: filtro a scelta multipla delle spese e periodo fissi in alto,
- * dal mese più recente. Toccando una riga si vedono le sue operazioni (e si modificano).
+ * dal mese più vecchio al più recente. Toccando una riga si vedono le sue operazioni (e si modificano).
  */
 @Composable
 fun CorrentiScreen(vm: SpeseViewModel) {
     val dati by vm.dati.collectAsStateWithLifecycle()
     val periodo by vm.periodoCorrenti.collectAsStateWithLifecycle()
-    val impostazioni by vm.impostazioni.collectAsStateWithLifecycle()
+    val cambi by vm.cambi.collectAsStateWithLifecycle()
+    val stato = rememberLazyListState()
     var filtroVoci by rememberSaveable { mutableStateOf<List<Long>>(emptyList()) }
     var sceltaVoci by remember { mutableStateOf(false) }
     var mostraGrafico by remember { mutableStateOf(false) }
@@ -78,7 +81,8 @@ fun CorrentiScreen(vm: SpeseViewModel) {
     val vociCorrenti = remember(dati.voci) {
         dati.voci.filter { !it.ricorrente && !it.entrata }.sortedBy { it.descrizione.lowercase() } + Voce(id = SENZA_TIPO, tipo = "Senza tipo")
     }
-    fun inEuro(op: Operazione) = Calcoli.inEuro(op.importoCent, dati.contiValutaPerId[op.contoValutaId]?.valuta ?: "EUR", impostazioni.cambioChfEur)
+    // CHF convertiti come nel Bilancio: passati al cambio del mese, corrente al cambio delle Impostazioni.
+    fun inEuro(op: Operazione) = cambi.inEuro(op.importoCent, dati.contiValutaPerId[op.contoValutaId]?.valuta ?: "EUR", Calcoli.mese(op.data))
     val correnti = remember(dati, periodo, filtroVoci) {
         dati.operazioni.filter { op ->
             val voce = op.voceId?.let { dati.vociPerId[it] }
@@ -87,13 +91,20 @@ fun CorrentiScreen(vm: SpeseViewModel) {
                 (filtroVoci.isEmpty() || (voce?.id ?: SENZA_TIPO) in filtroVoci)
         }
     }
-    val mesi = remember(correnti, periodo, impostazioni.cambioChfEur) {
-        generateSequence(periodo.second) { it.minusMonths(1) }.takeWhile { it >= periodo.first }.map { m ->
+    // Dal mese più vecchio (in alto) al più recente, come nelle altre sezioni.
+    val mesi = remember(correnti, periodo, cambi) {
+        generateSequence(periodo.first) { it.plusMonths(1) }.takeWhile { it <= periodo.second }.map { m ->
             val delMese = correnti.filter { Calcoli.mese(it.data) == m }
             MeseCorrenti(m, delMese.groupBy { it.voceId }.map { (voceId, ops) ->
                 RigaCorrente(voceId?.let { dati.vociPerId[it] }, ops.sumOf { inEuro(it) }, ops.sortedByDescending { it.data })
             }.sortedBy { it.totale })
         }.toList()
+    }
+
+    // All'apertura la lista parte dal mese corrente (o dall'ultimo del periodo).
+    LaunchedEffect(mesi.isNotEmpty()) {
+        val indice = mesi.indexOfFirst { it.mese == YearMonth.now() }.takeIf { it >= 0 } ?: mesi.lastIndex
+        if (indice >= 0) stato.scrollToItem(indice)
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
@@ -119,7 +130,7 @@ fun CorrentiScreen(vm: SpeseViewModel) {
                 SceltaMese("Al", periodo.second, { vm.impostaPeriodoCorrenti(periodo.first, it) }, Modifier.weight(1f))
             }
         }
-        LazyColumn(contentPadding = PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.weight(1f)) {
+        LazyColumn(state = stato, contentPadding = PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.weight(1f)) {
             items(mesi, key = { it.mese.toString() }) { mese -> CardMeseCorrenti(mese, onRiga = { aperta = it to mese.mese }) }
         }
     }

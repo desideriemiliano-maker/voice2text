@@ -89,7 +89,7 @@ fun RicorrentiScreen(vm: SpeseViewModel) {
     var sceltaVoci by remember { mutableStateOf(false) }
     var aperta by remember { mutableStateOf<RigaAperta?>(null) }
     var mostraGrafico by remember { mutableStateOf(false) }
-    val impostazioni by vm.impostazioni.collectAsStateWithLifecycle()
+    val cambi by vm.cambi.collectAsStateWithLifecycle()
 
     LaunchedEffect(mesi.isNotEmpty()) {
         val indice = mesi.indexOfFirst { it.mese == oggi }
@@ -158,7 +158,7 @@ fun RicorrentiScreen(vm: SpeseViewModel) {
             val i = op.voceId?.let { indice[it] } ?: return@mapNotNull null
             val m = Calcoli.mese(op.data)
             if (op.trasferimento || m < periodo.first || m > periodo.second) return@mapNotNull null
-            val eur = Calcoli.inEuro(op.importoCent, dati.contiValutaPerId[op.contoValutaId]?.valuta ?: "EUR", impostazioni.cambioChfEur)
+            val eur = cambi.inEuro(op.importoCent, dati.contiValutaPerId[op.contoValutaId]?.valuta ?: "EUR", m)
             ValoreGrafico(if (perVoce) i else 0, op.data, -eur)
         }
         GraficoSpeseDialog(
