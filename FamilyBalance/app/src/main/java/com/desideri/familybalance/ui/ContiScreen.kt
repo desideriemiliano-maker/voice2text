@@ -24,6 +24,8 @@ import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.FactCheck
 import androidx.compose.material.icons.filled.TableChart
 import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -56,6 +58,7 @@ fun ContiScreen(vm: SpeseViewModel, onApriConto: (Long) -> Unit, onAnagraficaCon
     // Riscontro dell'estratto conto direttamente sul conto/valuta: menu aperto e conto del file in scelta.
     var menuRiscontro by remember { mutableStateOf<Long?>(null) }
     var contoRiscontro by rememberSaveable { mutableStateOf<Long?>(null) }
+    var saldiMensili by remember { mutableStateOf<Long?>(null) }
     val sceltaFileAi = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         val cv = contoRiscontro
         if (uri != null && cv != null) vm.riscontraEstratto(uri, cv)
@@ -119,7 +122,7 @@ fun ContiScreen(vm: SpeseViewModel, onApriConto: (Long) -> Unit, onAnagraficaCon
                         TestoImporto((saldi[cv.id] ?: 0L) / 100.0, cv.valuta, grassetto = true)
                         Box {
                             IconButton(onClick = { menuRiscontro = cv.id }) {
-                                Icon(Icons.Filled.FactCheck, contentDescription = "Riscontro estratto conto")
+                                Icon(Icons.Filled.FactCheck, contentDescription = "Riscontro e saldi")
                             }
                             DropdownMenu(expanded = menuRiscontro == cv.id, onDismissRequest = { menuRiscontro = null }) {
                                 DropdownMenuItem(
@@ -146,6 +149,15 @@ fun ContiScreen(vm: SpeseViewModel, onApriConto: (Long) -> Unit, onAnagraficaCon
                                         )
                                     }
                                 )
+                                HorizontalDivider()
+                                DropdownMenuItem(
+                                    text = { Text("Saldi mensili") },
+                                    leadingIcon = { Icon(Icons.Filled.CalendarMonth, contentDescription = null) },
+                                    onClick = {
+                                        menuRiscontro = null
+                                        saldiMensili = cv.id
+                                    }
+                                )
                             }
                         }
                     }
@@ -153,6 +165,8 @@ fun ContiScreen(vm: SpeseViewModel, onApriConto: (Long) -> Unit, onAnagraficaCon
             }
         }
     }
+
+    saldiMensili?.let { SaldiMensiliDialog(dati, it, onChiudi = { saldiMensili = null }) }
 
     if (mostraGrafico) {
         // Per ogni conto/valuta e per il totale: saldo a fine giorno, entrate e uscite (senza gli
