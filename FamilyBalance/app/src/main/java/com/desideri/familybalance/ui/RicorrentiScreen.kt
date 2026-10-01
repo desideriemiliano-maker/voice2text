@@ -269,13 +269,19 @@ private fun CardMese(mese: MeseRicorrenti, oggi: YearMonth, onRiga: (RigaRicorre
 
 /** Scelta di una o più spese ricorrenti da mostrare; nessuna = tutte. */
 @Composable
-private fun SceltaVociDialog(voci: List<Voce>, selezionate: Set<Long>, onConferma: (Set<Long>) -> Unit, onAnnulla: () -> Unit) {
+internal fun SceltaVociDialog(
+    voci: List<Voce>,
+    selezionate: Set<Long>,
+    onConferma: (Set<Long>) -> Unit,
+    onAnnulla: () -> Unit,
+    titolo: String = "Spese ricorrenti"
+) {
     val scelte = remember { mutableStateListOf<Long>().apply { addAll(selezionate) } }
     var cerca by remember { mutableStateOf("") }
     val mostrate = voci.filter { cerca.isBlank() || it.descrizione.contains(cerca.trim(), ignoreCase = true) }
     AlertDialog(
         onDismissRequest = onAnnulla,
-        title = { Text("Spese ricorrenti") },
+        title = { Text(titolo) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 OutlinedTextField(value = cerca, onValueChange = { cerca = it }, label = { Text("Cerca") }, singleLine = true, modifier = Modifier.fillMaxWidth())

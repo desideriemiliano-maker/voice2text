@@ -176,6 +176,14 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
     val personalizzazioni: StateFlow<List<PrevisioneRicorrente>> =
         dao.previsioniFlow().stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
+    /** Periodo mostrato nella sezione Correnti (di default gli ultimi 12 mesi). */
+    private val _periodoCorrenti = MutableStateFlow(YearMonth.now().minusMonths(11) to YearMonth.now())
+    val periodoCorrenti: StateFlow<Pair<YearMonth, YearMonth>> = _periodoCorrenti.asStateFlow()
+
+    fun impostaPeriodoCorrenti(da: YearMonth, a: YearMonth) {
+        if (da <= a) _periodoCorrenti.value = da to a
+    }
+
     /** Periodo mostrato nella sezione Bilancio (di default da 12 mesi fa a 12 mesi avanti). */
     private val _periodoBilancio = MutableStateFlow(YearMonth.now().minusMonths(12) to YearMonth.now().plusMonths(12))
     val periodoBilancio: StateFlow<Pair<YearMonth, YearMonth>> = _periodoBilancio.asStateFlow()

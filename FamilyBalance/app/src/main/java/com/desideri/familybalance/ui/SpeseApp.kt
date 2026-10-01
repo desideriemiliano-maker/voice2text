@@ -23,6 +23,7 @@ import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.ShoppingCart
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.CurrencyExchange
 import androidx.compose.material.icons.automirrored.filled.CompareArrows
@@ -58,6 +59,7 @@ import com.desideri.familybalance.SpeseViewModel
 
 enum class Sezione(val titolo: String, val icona: ImageVector) {
     CONTI("Conti", Icons.Filled.AccountBalance),
+    CORRENTI("Correnti", Icons.Filled.ShoppingCart),
     RICORRENTI("Ricorrenti", Icons.Filled.EventRepeat),
     BILANCIO("Bilancio", Icons.AutoMirrored.Filled.ShowChart)
 }
@@ -161,6 +163,7 @@ private fun SchermataPrincipale(vm: SpeseViewModel, sezione: Sezione, onSezione:
         Box(modifier = Modifier.padding(padding)) {
             when (sezione) {
                 Sezione.CONTI -> ContiScreen(vm, onApriConto = { onApri(Schermata.Operazioni(it)) }, onAnagraficaConti = { onApri(Schermata.AnagraficaConti) })
+                Sezione.CORRENTI -> CorrentiScreen(vm)
                 Sezione.RICORRENTI -> RicorrentiScreen(vm)
                 Sezione.BILANCIO -> BilancioScreen(vm)
             }
