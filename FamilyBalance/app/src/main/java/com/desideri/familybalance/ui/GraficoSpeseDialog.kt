@@ -21,6 +21,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Fullscreen
+import androidx.compose.material.icons.filled.FullscreenExit
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -29,7 +31,18 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
+import android.content.pm.ActivityInfo
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.window.DialogWindowProvider
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -142,9 +155,84 @@ fun GraficoSpeseDialog(
     }
 }
 
-/** Il grafico: asse Y con gli importi (zero sempre visibile), asse X con fino a 5 etichette. */
+/**
+ * Il grafico con il pulsante per vederlo a schermo pieno: in orizzontale, senza barre di sistema,
+ * solo il grafico e la legenda (come in WorkoutAnalyzer).
+ */
 @Composable
 internal fun GraficoSerie(
+    punti: List<com.desideri.familybalance.logica.PuntoGrafico>,
+    serie: List<SerieGrafico>,
+    tipo: TipoGrafico,
+    tendenza: Boolean,
+    valuta: String,
+    modifier: Modifier
+) {
+    var pieno by remember { mutableStateOf(false) }
+    Box(modifier) {
+        DisegnoGrafico(punti, serie, tipo, tendenza, valuta, Modifier.fillMaxSize())
+        if (punti.isNotEmpty()) {
+            IconButton(onClick = { pieno = true }, modifier = Modifier.align(Alignment.TopEnd)) {
+                Icon(Icons.Filled.Fullscreen, contentDescription = "Schermo pieno")
+            }
+        }
+    }
+    if (pieno) {
+        Dialog(
+            onDismissRequest = { pieno = false },
+            properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
+        ) {
+            val vista = LocalView.current
+            val activity = LocalContext.current.trovaActivity()
+            DisposableEffect(Unit) {
+                // Orizzontale e barre di sistema nascoste finché il grafico è a schermo pieno.
+                val orientamento = activity?.requestedOrientation
+                activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                val finestra = (vista.parent as? DialogWindowProvider)?.window
+                val controllo = finestra?.let { WindowCompat.getInsetsController(it, vista) }
+                controllo?.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                controllo?.hide(WindowInsetsCompat.Type.systemBars())
+                onDispose {
+                    controllo?.show(WindowInsetsCompat.Type.systemBars())
+                    if (activity != null && orientamento != null) activity.requestedOrientation = orientamento
+                }
+            }
+            Surface(modifier = Modifier.fillMaxSize()) {
+                Column(Modifier.fillMaxSize().padding(8.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.weight(1f).horizontalScroll(rememberScrollState())
+                        ) {
+                            serie.forEach { s ->
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Box(Modifier.size(10.dp).background(s.colore, CircleShape))
+                                    Spacer(Modifier.width(4.dp))
+                                    Text(s.nome, style = MaterialTheme.typography.labelMedium)
+                                }
+                            }
+                        }
+                        IconButton(onClick = { pieno = false }) {
+                            Icon(Icons.Filled.FullscreenExit, contentDescription = "Esci dallo schermo pieno")
+                        }
+                    }
+                    DisegnoGrafico(punti, serie, tipo, tendenza, valuta, Modifier.fillMaxWidth().weight(1f))
+                }
+            }
+        }
+    }
+}
+
+private tailrec fun Context.trovaActivity(): Activity? = when (this) {
+    is Activity -> this
+    is ContextWrapper -> baseContext.trovaActivity()
+    else -> null
+}
+
+/** Il grafico: asse Y con gli importi (zero sempre visibile), asse X con fino a 5 etichette. */
+@Composable
+private fun DisegnoGrafico(
     punti: List<com.desideri.familybalance.logica.PuntoGrafico>,
     serie: List<SerieGrafico>,
     tipo: TipoGrafico,
