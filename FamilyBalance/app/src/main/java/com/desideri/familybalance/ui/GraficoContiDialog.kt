@@ -88,7 +88,12 @@ fun GraficoContiDialog(titolo: String, nota: String, conti: List<ContoGrafico>, 
     var tendenza by rememberSaveable { mutableStateOf(false) }
 
     // Una serie per conto e valore scelti.
-    val combinazioni = contiScelti.sorted().flatMap { c -> Misura.entries.filter { it in misure }.map { m -> c to m } }
+    // Nel cumulato il totale è la barra intera: la serie "Totale" non si impila sopra i conti.
+    val cumulato = tipo == TipoGrafico.ISTOGRAMMA_CUMULATO
+    fun eTotale(c: Int) = cumulato && conti[c].nome == "Totale" && conti.size > 1
+    // Con solo "Totale" scelto, nel cumulato si impilano tutti i conti.
+    val contiNelGrafico = contiScelti.sorted().filterNot(::eTotale).ifEmpty { conti.indices.filterNot(::eTotale) }
+    val combinazioni = contiNelGrafico.flatMap { c -> Misura.entries.filter { it in misure }.map { m -> c to m } }
     val serie = combinazioni.mapIndexed { i, (c, m) ->
         val nome = when {
             misure.size == 1 -> conti[c].nome

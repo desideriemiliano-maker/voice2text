@@ -9,6 +9,8 @@ enum class TipoGrafico(val etichetta: String) {
     LINEA("Linea"),
     AREA("Area"),
     ISTOGRAMMA("Istogramma"),
+    /** Barre impilate: per ogni punto le serie una sopra l'altra, la barra intera è la loro somma. */
+    ISTOGRAMMA_CUMULATO("Istogramma cumulato"),
     PUNTI("Punti")
 }
 

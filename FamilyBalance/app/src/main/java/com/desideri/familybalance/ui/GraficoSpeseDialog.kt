@@ -158,11 +158,17 @@ internal fun GraficoSerie(
         }
         return
     }
-    val tutti = punti.flatMap { p -> p.valori.filterNotNull() }
+    val cumulato = tipo == TipoGrafico.ISTOGRAMMA_CUMULATO
+    // Nel cumulato i positivi si impilano sopra lo zero e i negativi sotto: la scala segue le somme.
+    val tutti = if (cumulato) punti.flatMap { p -> listOf(p.valori.filterNotNull().filter { it > 0 }.sum(), p.valori.filterNotNull().filter { it < 0 }.sum()) }
+    else punti.flatMap { p -> p.valori.filterNotNull() }
     val minimo = minOf(0.0, tutti.minOrNull() ?: 0.0)
     val massimo = maxOf(0.0, tutti.maxOrNull() ?: 0.0).let { if (it == minimo) minimo + 1.0 else it }
     val tendenze = remember(punti, serie.size) {
         List(serie.size) { s -> Grafico.regressione(punti.mapIndexedNotNull { i, p -> p.valori[s]?.let { i to it } }) }
+    }
+    val tendenzaTotale = remember(punti) {
+        Grafico.regressione(punti.mapIndexedNotNull { i, p -> p.valori.filterNotNull().takeIf { it.isNotEmpty() }?.let { i to it.sum() } })
     }
     val coloreGriglia = MaterialTheme.colorScheme.outlineVariant
     val coloreTesto = MaterialTheme.colorScheme.onSurfaceVariant
@@ -204,7 +210,34 @@ internal fun GraficoSerie(
 
                 val larghezzaGruppo = (if (punti.size > 1) passo else larghezza / 3) * 0.7f
                 val larghezzaBarra = larghezzaGruppo / serie.size.coerceAtLeast(1)
-                serie.forEachIndexed { s, info ->
+                if (cumulato) {
+                    punti.forEachIndexed { i, p ->
+                        var sopra = 0.0
+                        var sotto = 0.0
+                        serie.forEachIndexed { s, info ->
+                            val v = p.valori[s] ?: return@forEachIndexed
+                            val da = if (v >= 0) sopra else sotto
+                            val a = da + v
+                            if (v >= 0) sopra = a else sotto = a
+                            drawRect(
+                                info.colore,
+                                topLeft = Offset(x(i) - larghezzaGruppo / 2, minOf(y(da), y(a))),
+                                size = Size(larghezzaGruppo, abs(y(a) - y(da)))
+                            )
+                        }
+                    }
+                    if (tendenza && punti.size >= 2) {
+                        val (pendenza, intercetta) = tendenzaTotale
+                        drawLine(
+                            coloreTesto,
+                            Offset(0f, y(intercetta)),
+                            Offset(larghezza, y(intercetta + pendenza * (punti.size - 1))),
+                            strokeWidth = 1.5.dp.toPx(),
+                            pathEffect = PathEffect.dashPathEffect(floatArrayOf(12f, 10f), 0f)
+                        )
+                    }
+                }
+                if (!cumulato) serie.forEachIndexed { s, info ->
                     val coordinate = punti.mapIndexedNotNull { i, p -> p.valori[s]?.let { i to Offset(x(i), y(it)) } }
                     when (tipo) {
                         TipoGrafico.LINEA, TipoGrafico.AREA -> {
@@ -224,6 +257,7 @@ internal fun GraficoSerie(
                             coordinate.forEach { (_, o) -> drawCircle(info.colore, radius = 3.dp.toPx(), center = o) }
                         }
                         TipoGrafico.PUNTI -> coordinate.forEach { (_, o) -> drawCircle(info.colore, radius = 4.dp.toPx(), center = o) }
+                        TipoGrafico.ISTOGRAMMA_CUMULATO -> Unit
                         TipoGrafico.ISTOGRAMMA -> {
                             val base = y(0.0)
                             coordinate.forEach { (i, o) ->
@@ -251,10 +285,13 @@ internal fun GraficoSerie(
                     serie.forEachIndexed { s, info ->
                         punti[i].valori[s]?.let { v ->
                             righe += "${info.nome}: ${formattaImporto(v, valuta)}"
-                            drawCircle(info.colore, radius = 5.dp.toPx(), center = Offset(xs, y(v)))
-                            drawCircle(Color.White, radius = 2.dp.toPx(), center = Offset(xs, y(v)))
+                            if (!cumulato) {
+                                drawCircle(info.colore, radius = 5.dp.toPx(), center = Offset(xs, y(v)))
+                                drawCircle(Color.White, radius = 2.dp.toPx(), center = Offset(xs, y(v)))
+                            }
                         }
                     }
+                    if (cumulato) righe += "Totale: ${formattaImporto(punti[i].valori.filterNotNull().sum(), valuta)}"
                     val testo = misuraTesto.measure(righe.joinToString("\n"), style = TextStyle(fontSize = 12.sp, color = testoTooltip))
                     val pad = 6.dp.toPx()
                     val w = testo.size.width + pad * 2
