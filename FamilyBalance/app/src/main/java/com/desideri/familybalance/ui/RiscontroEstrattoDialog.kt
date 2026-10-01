@@ -240,6 +240,12 @@ fun RiscontroEstrattoDialog(vm: SpeseViewModel, dati: DatiApp, stato: StatoRisco
         manuali += Collegamento(op, mov, manuale = true)
     }
 
+    // Esito dell'estrazione: icona info se tutto a posto, avviso se ci sono problemi o dati incompleti.
+    val problemi = stato.avvisi + listOfNotNull(
+        stato.movimenti.count { it.descrizione.isBlank() }.takeIf { it > 0 }?.let { "$it movimenti senza descrizione" }
+    )
+    var mostraInfo by remember { mutableStateOf(false) }
+
     ScorrimentoAutomatico(trascinata != null, { dito }, { area }, scorrimento)
     LaunchedEffect(periodo, sovrapposizione, filtro) { scorrimento.scrollTo(0) }
 
@@ -249,6 +255,14 @@ fun RiscontroEstrattoDialog(vm: SpeseViewModel, dati: DatiApp, stato: StatoRisco
             Column(modifier = Modifier.fillMaxSize().systemBarsPadding().padding(12.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("Riscontro estratto · ${dati.etichetta(stato.contoValutaId)}", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                    // Esito della lettura e istruzioni: si leggono toccando l'icona.
+                    IconButton(onClick = { mostraInfo = true }) {
+                        Icon(
+                            if (problemi.isEmpty()) Icons.Filled.Info else Icons.Filled.Warning,
+                            contentDescription = if (problemi.isEmpty()) "Informazioni" else "Avvisi",
+                            tint = if (problemi.isEmpty()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
+                        )
+                    }
                     IconButton(onClick = onChiudi) { Icon(Icons.Filled.Close, contentDescription = "Chiudi") }
                 }
                 // Periodo mostrato (due mesi) con frecce e scelta diretta; sovrapposizione ai bordi.
@@ -292,32 +306,6 @@ fun RiscontroEstrattoDialog(vm: SpeseViewModel, dati: DatiApp, stato: StatoRisco
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically, modifier = Modifier.horizontalScroll(rememberScrollState())) {
                     Text("Data estratto", style = MaterialTheme.typography.labelMedium)
                     tipiDisponibili.forEach { t -> FilterChip(selected = tipoData == t, onClick = { tipoData = t }, label = { Text(t.etichetta) }) }
-                }
-                // Esito dell'estrazione: icona info se tutto a posto, avviso se ci sono problemi o dati incompleti.
-                val problemi = stato.avvisi + listOfNotNull(
-                    stato.movimenti.count { it.descrizione.isBlank() }.takeIf { it > 0 }?.let { "$it movimenti senza descrizione" }
-                )
-                Row(verticalAlignment = Alignment.Top, modifier = Modifier.padding(top = 4.dp)) {
-                    Icon(
-                        if (problemi.isEmpty()) Icons.Filled.Info else Icons.Filled.Warning,
-                        contentDescription = if (problemi.isEmpty()) "Informazioni" else "Avvisi",
-                        tint = if (problemi.isEmpty()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
-                        modifier = Modifier.padding(end = 6.dp).size(18.dp)
-                    )
-                    Column {
-                        Text(
-                            "Letti ${stato.movimenti.size} movimenti. Estratto intero: ${collegamenti.size} collegate · ${mancanti.size} mancanti sul conto · " +
-                                "$senzaRiscontro del conto non nell'estratto. Nel periodo: ${opsVisibili.size} sul conto, ${movVisibili.size} nell'estratto.",
-                            style = MaterialTheme.typography.bodySmall
-                        )
-                        problemi.forEach { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
-                        Text(
-                            "Linea continua: stessa data; tratteggiata: data vicina; colorata diversa: collegata a mano. " +
-                                "Tocca una linea per eliminarla; tieni premuta una riga non collegata e trascinala su una con lo stesso importo per collegarla.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
                 }
                 Row(modifier = Modifier.fillMaxWidth().padding(top = 6.dp, bottom = 4.dp)) {
                     Text("Data", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, modifier = Modifier.width(44.dp))
@@ -432,6 +420,34 @@ fun RiscontroEstrattoDialog(vm: SpeseViewModel, dati: DatiApp, stato: StatoRisco
         )
     }
 
+    if (mostraInfo) {
+        AlertDialog(
+            onDismissRequest = { mostraInfo = false },
+            icon = {
+                Icon(
+                    if (problemi.isEmpty()) Icons.Filled.Info else Icons.Filled.Warning, contentDescription = null,
+                    tint = if (problemi.isEmpty()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
+                )
+            },
+            title = { Text(if (problemi.isEmpty()) "Esito della lettura" else "Lettura con avvisi") },
+            text = {
+                Column(modifier = Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(
+                        "Letti ${stato.movimenti.size} movimenti. Estratto intero: ${collegamenti.size} collegate · ${mancanti.size} mancanti sul conto · " +
+                            "$senzaRiscontro del conto non nell'estratto. Nel periodo: ${opsVisibili.size} sul conto, ${movVisibili.size} nell'estratto."
+                    )
+                    problemi.forEach { Text(it, color = MaterialTheme.colorScheme.error) }
+                    Text(
+                        "Linea continua: stessa data; tratteggiata: data vicina; colorata diversa: collegata a mano. " +
+                            "Tocca una linea per eliminarla; tieni premuta una riga non collegata e trascinala su una con lo stesso importo per collegarla.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            },
+            confirmButton = { TextButton(onClick = { mostraInfo = false }) { Text("OK") } }
+        )
+    }
     if (confermaAssocia) {
         AlertDialog(
             onDismissRequest = { confermaAssocia = false },
