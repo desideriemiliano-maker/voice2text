@@ -16,6 +16,7 @@ import com.desideri.familybalance.data.Cambio
 import com.desideri.familybalance.data.Associazione
 import com.desideri.familybalance.data.Conto
 import com.desideri.familybalance.data.ContoValuta
+import com.desideri.familybalance.backup.ImpostazioniBackup
 import com.desideri.familybalance.data.Impostazioni
 import com.desideri.familybalance.data.Operazione
 import com.desideri.familybalance.data.PrevisioneRicorrente
@@ -920,7 +921,11 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
     /** Nuovo backup con un [testo] facoltativo; restano solo gli ultimi N (Impostazioni). */
     fun eseguiBackup(testo: String?) = operazioneDrive("Backup") { drive ->
         val copia = withContext(Dispatchers.IO) {
-            File(getApplication<Application>().cacheDir, "backup.db").also { AppDatabase.fileDatabase(getApplication()).copyTo(it, overwrite = true) }
+            File(getApplication<Application>().cacheDir, "backup.db").also {
+                AppDatabase.fileDatabase(getApplication()).copyTo(it, overwrite = true)
+                // Anche le Impostazioni vanno nel backup.
+                ImpostazioniBackup.scrivi(it, _impostazioni.value)
+            }
         }
         val rimasti = drive.carica(copia, testo?.trim(), _impostazioni.value.backupDaMantenere)
         copia.delete()
@@ -946,6 +951,8 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
             throw IllegalStateException("il file su Drive non è un database valido")
         }
         withContext(Dispatchers.IO) {
+            // Le Impostazioni salvate nel backup (se presenti) sostituiscono quelle attuali.
+            preferenze.salva(ImpostazioniBackup.leggi(scaricato, _impostazioni.value), subito = true)
             AppDatabase.chiudi()
             val destinazione = AppDatabase.fileDatabase(app)
             scaricato.copyTo(destinazione, overwrite = true)

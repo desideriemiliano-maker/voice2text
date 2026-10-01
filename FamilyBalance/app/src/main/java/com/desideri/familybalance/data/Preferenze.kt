@@ -12,7 +12,9 @@ data class Impostazioni(
     /** Richiede impronta/volto/PIN del dispositivo all'apertura dell'app. */
     val bloccoBiometrico: Boolean = true,
     /** Quanti backup su Google Drive conservare: dopo ogni backup i più vecchi vengono eliminati. */
-    val backupDaMantenere: Int = 3
+    val backupDaMantenere: Int = 3,
+    /** Minuti in background dopo cui, al ritorno, si richiede di nuovo lo sblocco. */
+    val minutiBlocco: Int = 3
 )
 
 class Preferenze(context: Context) {
@@ -23,17 +25,20 @@ class Preferenze(context: Context) {
         cambioChfEur = prefs.getString(CHIAVE_CAMBIO, null)?.toDoubleOrNull() ?: 1.0,
         emailBackup = prefs.getString(CHIAVE_EMAIL_BACKUP, null),
         bloccoBiometrico = prefs.getBoolean(CHIAVE_BLOCCO_BIOMETRICO, true),
-        backupDaMantenere = prefs.getInt(CHIAVE_BACKUP_DA_MANTENERE, 3)
+        backupDaMantenere = prefs.getInt(CHIAVE_BACKUP_DA_MANTENERE, 3),
+        minutiBlocco = prefs.getInt(CHIAVE_MINUTI_BLOCCO, 3)
     )
 
-    fun salva(impostazioni: Impostazioni) {
-        prefs.edit()
+    /** Con [subito] la scrittura è sincrona (es. prima di riavviare l'app dopo un ripristino). */
+    fun salva(impostazioni: Impostazioni, subito: Boolean = false) {
+        val editor = prefs.edit()
             .putLong(CHIAVE_TARGET, impostazioni.targetRisparmioCent)
             .putString(CHIAVE_CAMBIO, impostazioni.cambioChfEur.toString())
             .putString(CHIAVE_EMAIL_BACKUP, impostazioni.emailBackup)
             .putBoolean(CHIAVE_BLOCCO_BIOMETRICO, impostazioni.bloccoBiometrico)
             .putInt(CHIAVE_BACKUP_DA_MANTENERE, impostazioni.backupDaMantenere)
-            .apply()
+            .putInt(CHIAVE_MINUTI_BLOCCO, impostazioni.minutiBlocco)
+        if (subito) editor.commit() else editor.apply()
     }
 
     private val mappature = context.applicationContext.getSharedPreferences("mappature_bollette", Context.MODE_PRIVATE)
@@ -67,5 +72,6 @@ class Preferenze(context: Context) {
         const val CHIAVE_EMAIL_BACKUP = "email_backup"
         const val CHIAVE_BLOCCO_BIOMETRICO = "blocco_biometrico"
         const val CHIAVE_BACKUP_DA_MANTENERE = "backup_da_mantenere"
+        const val CHIAVE_MINUTI_BLOCCO = "minuti_blocco"
     }
 }

@@ -38,6 +38,7 @@ fun ImpostazioniScreen(vm: SpeseViewModel, onIndietro: () -> Unit) {
     var cambio by remember { mutableStateOf(impostazioni.cambioChfEur.toString().replace('.', ',')) }
     var bloccoBiometrico by remember { mutableStateOf(impostazioni.bloccoBiometrico) }
     var backupDaMantenere by remember { mutableStateOf(impostazioni.backupDaMantenere.toString()) }
+    var minutiBlocco by remember { mutableStateOf(impostazioni.minutiBlocco.toString()) }
     val bloccoPossibile = bloccoDisponibile(LocalContext.current)
     var errore by remember { mutableStateOf<String?>(null) }
 
@@ -82,30 +83,43 @@ fun ImpostazioniScreen(vm: SpeseViewModel, onIndietro: () -> Unit) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text("Sblocco biometrico all'apertura", style = MaterialTheme.typography.bodyLarge)
                     Text(
-                        if (bloccoPossibile) "Impronta, volto o PIN del dispositivo; richiesto di nuovo dopo 3 minuti in background."
+                        if (bloccoPossibile) "Impronta, volto o PIN del dispositivo; richiesto di nuovo dopo i minuti in background indicati sotto."
                         else "Nessun blocco schermo configurato sul telefono: lo sblocco non è disponibile.",
                         style = MaterialTheme.typography.bodySmall
                     )
                 }
                 Switch(checked = bloccoBiometrico && bloccoPossibile, onCheckedChange = { bloccoBiometrico = it }, enabled = bloccoPossibile)
             }
+            OutlinedTextField(
+                value = minutiBlocco,
+                onValueChange = { minutiBlocco = it },
+                label = { Text("Minuti prima di richiedere di nuovo lo sblocco") },
+                supportingText = { Text("Tempo in background dopo cui, tornando nell'app, si chiede di nuovo impronta o PIN (0-120, predefinito 3). Con 0 lo chiede anche dopo la scelta di un file o dell'account Google.") },
+                singleLine = true,
+                enabled = bloccoBiometrico && bloccoPossibile,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                modifier = Modifier.fillMaxWidth()
+            )
             errore?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             Button(
                 onClick = {
                     val targetCent = testoInCent(target)
                     val tasso = cambio.trim().replace(',', '.').toDoubleOrNull()
                     val numeroBackup = backupDaMantenere.trim().toIntOrNull()
+                    val minuti = minutiBlocco.trim().toIntOrNull()
                     errore = when {
                         targetCent == null -> "Target non valido"
                         tasso == null || tasso <= 0 -> "Cambio non valido"
                         numeroBackup == null || numeroBackup !in 1..20 -> "Numero di backup non valido (1-20)"
+                        minuti == null || minuti !in 0..120 -> "Minuti non validi (0-120)"
                         else -> {
                             vm.salvaImpostazioni(
                                 impostazioni.copy(
                                     targetRisparmioCent = targetCent,
                                     cambioChfEur = tasso,
                                     bloccoBiometrico = bloccoBiometrico,
-                                    backupDaMantenere = numeroBackup
+                                    backupDaMantenere = numeroBackup,
+                                    minutiBlocco = minuti
                                 )
                             )
                             onIndietro()

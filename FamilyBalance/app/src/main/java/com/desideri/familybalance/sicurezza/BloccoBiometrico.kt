@@ -40,13 +40,6 @@ import com.desideri.familybalance.data.Preferenze
 private const val AUTENTICATORI = BiometricManager.Authenticators.BIOMETRIC_WEAK or BiometricManager.Authenticators.DEVICE_CREDENTIAL
 
 /**
- * Tempo in background dopo cui, al ritorno, si richiede di nuovo lo sblocco: abbastanza da non
- * riproporlo dopo la scelta del file Excel, dell'account Google o il consenso a Drive, che portano
- * momentaneamente l'app in background.
- */
-private const val MINUTI_GRAZIA = 3L
-
-/**
  * True se il dispositivo ha un metodo di sblocco configurato (biometria o PIN/sequenza/password):
  * altrimenti il blocco non può essere mostrato e viene saltato (mai un lucchetto senza chiave).
  */
@@ -56,7 +49,8 @@ fun bloccoDisponibile(context: Context): Boolean =
 /**
  * Blocco dell'intera app dietro impronta/volto/PIN di sistema all'apertura, disattivabile in
  * Impostazioni. Stessa logica di BloccoAppGate in WorkoutAnalyzer: si ripropone al ritorno in
- * primo piano dopo più di [MINUTI_GRAZIA] minuti in background; [autenticazioneInCorso] evita che
+ * primo piano dopo più dei minuti in background indicati in Impostazioni (predefiniti 3: abbastanza da
+ * non riproporlo dopo la scelta di un file o dell'account Google); [autenticazioneInCorso] evita che
  * l'ON_STOP causato dal prompt di sistema stesso (es. schermata del PIN) conti come uscita
  * dall'app. L'impostazione è riletta a ogni ritorno in primo piano.
  */
@@ -112,7 +106,7 @@ fun BloccoBiometrico(activity: FragmentActivity, content: @Composable () -> Unit
                 Lifecycle.Event.ON_START -> {
                     attivo = bloccoAttivo()
                     if (attivo && sbloccato && !autenticazioneInCorso &&
-                        System.currentTimeMillis() - ultimoBackgroundMs > MINUTI_GRAZIA * 60_000L
+                        System.currentTimeMillis() - ultimoBackgroundMs > preferenze.carica().minutiBlocco * 60_000L
                     ) {
                         sbloccato = false
                     }
