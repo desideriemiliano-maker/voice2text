@@ -93,7 +93,7 @@ fun RicorrentiScreen(vm: SpeseViewModel) {
 
     LaunchedEffect(mesi.isNotEmpty()) {
         val indice = mesi.indexOfFirst { it.mese == oggi }
-        if (indice >= 0) stato.scrollToItem(indice + 1)
+        if (indice >= 0) stato.scrollToItem(indice)
     }
 
     val vociRicorrenti = remember(dati.voci) { dati.voci.filter { it.ricorrente && !it.entrata }.sortedBy { it.descrizione.lowercase() } }
@@ -107,9 +107,9 @@ fun RicorrentiScreen(vm: SpeseViewModel) {
         return
     }
 
-    LazyColumn(state = stato, contentPadding = PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        item(key = "filtri") {
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+    // Filtri fissi in alto; sotto scorre la lista dei mesi.
+    Column(modifier = Modifier.fillMaxSize()) {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.padding(start = 12.dp, end = 12.dp, top = 12.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(modifier = Modifier.weight(1f)) {
                     OutlinedTextField(
@@ -131,8 +131,9 @@ fun RicorrentiScreen(vm: SpeseViewModel) {
                     SceltaMese("Al", periodo.second, { vm.impostaPeriodoRicorrenti(periodo.first, it) }, Modifier.weight(1f))
                 }
             }
+        LazyColumn(state = stato, contentPadding = PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.weight(1f)) {
+            items(filtrati, key = { it.mese.toString() }) { mese -> CardMese(mese, oggi, onRiga = { aperta = RigaAperta(it, mese.mese) }) }
         }
-        items(filtrati, key = { it.mese.toString() }) { mese -> CardMese(mese, oggi, onRiga = { aperta = RigaAperta(it, mese.mese) }) }
     }
 
     if (sceltaVoci) {
