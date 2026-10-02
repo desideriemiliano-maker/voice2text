@@ -21,6 +21,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.TableChart
 import androidx.compose.material.icons.automirrored.filled.ShowChart
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -50,6 +51,7 @@ fun BilancioScreen(vm: SpeseViewModel) {
     val impostazioni by vm.impostazioni.collectAsStateWithLifecycle()
     val stato = rememberLazyListState()
     var mostraGrafico by remember { mutableStateOf(false) }
+    var mostraReport by remember { mutableStateOf(false) }
 
     // All'apertura la lista parte dal mese corrente (i passati sono sopra, i futuri sotto).
     LaunchedEffect(righe.isNotEmpty()) {
@@ -63,9 +65,12 @@ fun BilancioScreen(vm: SpeseViewModel) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                 SceltaMese("Dal", periodo.first, { vm.impostaPeriodoBilancio(it, periodo.second) }, Modifier.weight(1f))
                 SceltaMese("Al", periodo.second, { vm.impostaPeriodoBilancio(periodo.first, it) }, Modifier.weight(1f))
-                IconButton(onClick = { mostraGrafico = true }, enabled = righe.isNotEmpty()) {
-                    Icon(Icons.AutoMirrored.Filled.ShowChart, contentDescription = "Grafico del bilancio")
-                }
+                MenuSezione(
+                    listOf(
+                        VoceMenuSezione("Grafico", Icons.AutoMirrored.Filled.ShowChart, abilitata = righe.isNotEmpty()) { mostraGrafico = true },
+                        VoceMenuSezione("Report", Icons.Filled.TableChart) { mostraReport = true }
+                    )
+                )
             }
             if (impostazioni.targetRisparmioCent == 0L) {
                 Text(
@@ -87,6 +92,7 @@ fun BilancioScreen(vm: SpeseViewModel) {
         }
     }
     if (mostraGrafico) GraficoBilancioDialog(righe, onChiudi = { mostraGrafico = false })
+    if (mostraReport) ReportBilancioDialog(vm, onChiudi = { mostraReport = false })
 }
 
 @Composable

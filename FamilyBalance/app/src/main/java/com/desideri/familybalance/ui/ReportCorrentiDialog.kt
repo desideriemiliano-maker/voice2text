@@ -196,7 +196,7 @@ private fun importo(v: Double) = if (abs(v) < 0.005) "" else formattaImporto(v)
 
 /** Cella della tabella: testo (importo o intestazione) e, sotto, l'eventuale variazione colorata. */
 @Composable
-private fun CellaReport(
+internal fun CellaReport(
     testo: String,
     delta: Pair<String, Color>?,
     larghezza: Dp,
