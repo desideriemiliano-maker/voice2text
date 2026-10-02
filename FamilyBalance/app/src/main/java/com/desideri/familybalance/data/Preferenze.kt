@@ -14,7 +14,9 @@ data class Impostazioni(
     /** Quanti backup su Google Drive conservare: dopo ogni backup i più vecchi vengono eliminati. */
     val backupDaMantenere: Int = 3,
     /** Minuti in background dopo cui, al ritorno, si richiede di nuovo lo sblocco. */
-    val minutiBlocco: Int = 3
+    val minutiBlocco: Int = 3,
+    /** Giorni entro cui due operazioni dello stesso importo sullo stesso conto sono possibili duplicati. */
+    val giorniDuplicati: Int = 3
 )
 
 class Preferenze(context: Context) {
@@ -26,7 +28,8 @@ class Preferenze(context: Context) {
         emailBackup = prefs.getString(CHIAVE_EMAIL_BACKUP, null),
         bloccoBiometrico = prefs.getBoolean(CHIAVE_BLOCCO_BIOMETRICO, true),
         backupDaMantenere = prefs.getInt(CHIAVE_BACKUP_DA_MANTENERE, 3),
-        minutiBlocco = prefs.getInt(CHIAVE_MINUTI_BLOCCO, 3)
+        minutiBlocco = prefs.getInt(CHIAVE_MINUTI_BLOCCO, 3),
+        giorniDuplicati = prefs.getInt(CHIAVE_GIORNI_DUPLICATI, 3)
     )
 
     /** Con [subito] la scrittura è sincrona (es. prima di riavviare l'app dopo un ripristino). */
@@ -38,6 +41,7 @@ class Preferenze(context: Context) {
             .putBoolean(CHIAVE_BLOCCO_BIOMETRICO, impostazioni.bloccoBiometrico)
             .putInt(CHIAVE_BACKUP_DA_MANTENERE, impostazioni.backupDaMantenere)
             .putInt(CHIAVE_MINUTI_BLOCCO, impostazioni.minutiBlocco)
+            .putInt(CHIAVE_GIORNI_DUPLICATI, impostazioni.giorniDuplicati)
         if (subito) editor.commit() else editor.apply()
     }
 
@@ -117,5 +121,6 @@ class Preferenze(context: Context) {
         const val CHIAVE_BLOCCO_BIOMETRICO = "blocco_biometrico"
         const val CHIAVE_BACKUP_DA_MANTENERE = "backup_da_mantenere"
         const val CHIAVE_MINUTI_BLOCCO = "minuti_blocco"
+        const val CHIAVE_GIORNI_DUPLICATI = "giorni_duplicati"
     }
 }

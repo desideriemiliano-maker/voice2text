@@ -22,7 +22,8 @@ object ImpostazioniBackup {
                 "cambioChfEur" to imp.cambioChfEur.toString(),
                 "bloccoBiometrico" to imp.bloccoBiometrico.toString(),
                 "backupDaMantenere" to imp.backupDaMantenere.toString(),
-                "minutiBlocco" to imp.minutiBlocco.toString()
+                "minutiBlocco" to imp.minutiBlocco.toString(),
+                "giorniDuplicati" to imp.giorniDuplicati.toString()
             ).plus(altre).forEach { (k, v) -> db.execSQL("INSERT INTO $TABELLA (chiave, valore) VALUES (?, ?)", arrayOf(k, v)) }
         }
     }
@@ -50,7 +51,8 @@ object ImpostazioniBackup {
             cambioChfEur = valori["cambioChfEur"]?.toDoubleOrNull() ?: attuali.cambioChfEur,
             bloccoBiometrico = valori["bloccoBiometrico"]?.toBooleanStrictOrNull() ?: attuali.bloccoBiometrico,
             backupDaMantenere = valori["backupDaMantenere"]?.toIntOrNull() ?: attuali.backupDaMantenere,
-            minutiBlocco = valori["minutiBlocco"]?.toIntOrNull() ?: attuali.minutiBlocco
+            minutiBlocco = valori["minutiBlocco"]?.toIntOrNull() ?: attuali.minutiBlocco,
+            giorniDuplicati = valori["giorniDuplicati"]?.toIntOrNull() ?: attuali.giorniDuplicati
         )
     }
 }

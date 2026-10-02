@@ -39,6 +39,7 @@ fun ImpostazioniScreen(vm: SpeseViewModel, onIndietro: () -> Unit) {
     var bloccoBiometrico by remember { mutableStateOf(impostazioni.bloccoBiometrico) }
     var backupDaMantenere by remember { mutableStateOf(impostazioni.backupDaMantenere.toString()) }
     var minutiBlocco by remember { mutableStateOf(impostazioni.minutiBlocco.toString()) }
+    var giorniDuplicati by remember { mutableStateOf(impostazioni.giorniDuplicati.toString()) }
     val bloccoPossibile = bloccoDisponibile(LocalContext.current)
     var errore by remember { mutableStateOf<String?>(null) }
 
@@ -68,6 +69,15 @@ fun ImpostazioniScreen(vm: SpeseViewModel, onIndietro: () -> Unit) {
                 },
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                modifier = Modifier.fillMaxWidth()
+            )
+            OutlinedTextField(
+                value = giorniDuplicati,
+                onValueChange = { giorniDuplicati = it },
+                label = { Text("Giorni per rilevare i duplicati") },
+                supportingText = { Text("Operazioni dello stesso conto con lo stesso importo entro questi giorni sono segnalate in \"Rileva duplicati\" (0-30, predefinito 3).") },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                 modifier = Modifier.fillMaxWidth()
             )
             OutlinedTextField(
@@ -107,11 +117,13 @@ fun ImpostazioniScreen(vm: SpeseViewModel, onIndietro: () -> Unit) {
                     val tasso = cambio.trim().replace(',', '.').toDoubleOrNull()
                     val numeroBackup = backupDaMantenere.trim().toIntOrNull()
                     val minuti = minutiBlocco.trim().toIntOrNull()
+                    val giorni = giorniDuplicati.trim().toIntOrNull()
                     errore = when {
                         targetCent == null -> "Target non valido"
                         tasso == null || tasso <= 0 -> "Cambio non valido"
                         numeroBackup == null || numeroBackup !in 1..20 -> "Numero di backup non valido (1-20)"
                         minuti == null || minuti !in 0..120 -> "Minuti non validi (0-120)"
+                        giorni == null || giorni !in 0..30 -> "Giorni per i duplicati non validi (0-30)"
                         else -> {
                             vm.salvaImpostazioni(
                                 impostazioni.copy(
@@ -119,7 +131,8 @@ fun ImpostazioniScreen(vm: SpeseViewModel, onIndietro: () -> Unit) {
                                     cambioChfEur = tasso,
                                     bloccoBiometrico = bloccoBiometrico,
                                     backupDaMantenere = numeroBackup,
-                                    minutiBlocco = minuti
+                                    minutiBlocco = minuti,
+                                    giorniDuplicati = giorni
                                 )
                             )
                             onIndietro()

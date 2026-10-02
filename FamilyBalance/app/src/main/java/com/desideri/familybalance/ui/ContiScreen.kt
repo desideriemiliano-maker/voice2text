@@ -26,6 +26,7 @@ import androidx.compose.material.icons.filled.TableChart
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material.icons.filled.CalendarMonth
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -59,6 +60,7 @@ fun ContiScreen(vm: SpeseViewModel, onApriConto: (Long) -> Unit, onAnagraficaCon
     var menuRiscontro by remember { mutableStateOf<Long?>(null) }
     var contoRiscontro by rememberSaveable { mutableStateOf<Long?>(null) }
     var saldiMensili by remember { mutableStateOf<Long?>(null) }
+    var duplicati by remember { mutableStateOf<Long?>(null) }
     val sceltaFileAi = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         val cv = contoRiscontro
         if (uri != null && cv != null) vm.riscontraEstratto(uri, cv)
@@ -158,6 +160,14 @@ fun ContiScreen(vm: SpeseViewModel, onApriConto: (Long) -> Unit, onAnagraficaCon
                                         saldiMensili = cv.id
                                     }
                                 )
+                                DropdownMenuItem(
+                                    text = { Text("Rileva duplicati") },
+                                    leadingIcon = { Icon(Icons.Filled.ContentCopy, contentDescription = null) },
+                                    onClick = {
+                                        menuRiscontro = null
+                                        duplicati = cv.id
+                                    }
+                                )
                             }
                         }
                     }
@@ -166,6 +176,7 @@ fun ContiScreen(vm: SpeseViewModel, onApriConto: (Long) -> Unit, onAnagraficaCon
         }
     }
 
+    duplicati?.let { DuplicatiDialog(vm, it, onChiudi = { duplicati = null }) }
     saldiMensili?.let { SaldiMensiliDialog(dati, it, onChiudi = { saldiMensili = null }) }
 
     if (mostraGrafico) {
