@@ -89,8 +89,10 @@ private data class StatoRiga(
 
 private fun destinazionePredefinita(riga: RigaEstratto, dati: DatiApp): Long? {
     val propria = dati.contiValutaPerId[riga.contoValutaId]
-    val altri = dati.contiValutaOrdinati.filter { it.contoId != propria?.contoId }
-    return (altri.firstOrNull { it.valuta == propria?.valuta } ?: altri.firstOrNull())?.id
+    // Proposta: un altro conto nella stessa valuta, poi l'altra valuta dello stesso conto, poi qualsiasi.
+    val altri = dati.contiValutaOrdinati.filter { it.id != riga.contoValutaId }
+    return (altri.firstOrNull { it.contoId != propria?.contoId && it.valuta == propria?.valuta }
+        ?: altri.firstOrNull { it.contoId == propria?.contoId } ?: altri.firstOrNull())?.id
 }
 
 /** Applica un'associazione (tipo/sottotipo o spostamento) allo stato di una riga. */
@@ -401,8 +403,8 @@ private fun CardMovimento(
                     })
                 }
                 if (stato.spostamento) {
-                    val propria = dati.contiValutaPerId[riga.contoValutaId]
-                    val altri = dati.contiValutaOrdinati.filter { it.id != riga.contoValutaId && it.contoId != propria?.contoId }
+                    // Anche l'altra valuta dello stesso conto (es. cambio EUR → CHF).
+                    val altri = dati.contiValutaOrdinati.filter { it.id != riga.contoValutaId }
                     CampoScelta(
                         etichetta = if (m.importoCent < 0) "Conto di destinazione" else "Conto di provenienza",
                         selezionato = altri.firstOrNull { it.id == stato.destinazione },
