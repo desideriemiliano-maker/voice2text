@@ -384,10 +384,22 @@ private fun CardMovimento(
                         }
                     }
                 }
-                CampoAutocompletamento("Tipo", stato.tipo, tipi, { t ->
-                    val nuovo = stato.copy(tipo = t, sottotipo = "")
-                    onStato(if (nuovo.spostamento) nuovo.copy(destinazione = stato.destinazione ?: destinazionePredefinita(riga, dati)) else nuovo)
-                })
+                // Come nella creazione di un'operazione: spostamento tra conti con la sua casella.
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(checked = stato.spostamento, onCheckedChange = { attivo ->
+                        onStato(
+                            if (attivo) stato.copy(tipo = Associazione.TIPO_SPOSTAMENTO, sottotipo = "", destinazione = stato.destinazione ?: destinazionePredefinita(riga, dati))
+                            else stato.copy(tipo = "", sottotipo = "")
+                        )
+                    })
+                    Text("Spostamento tra conti", style = MaterialTheme.typography.bodyMedium)
+                }
+                if (!stato.spostamento) {
+                    CampoAutocompletamento("Tipo", stato.tipo, tipi, { t ->
+                        val nuovo = stato.copy(tipo = t, sottotipo = "")
+                        onStato(if (nuovo.spostamento) nuovo.copy(destinazione = stato.destinazione ?: destinazionePredefinita(riga, dati)) else nuovo)
+                    })
+                }
                 if (stato.spostamento) {
                     val propria = dati.contiValutaPerId[riga.contoValutaId]
                     val altri = dati.contiValutaOrdinati.filter { it.id != riga.contoValutaId && it.contoId != propria?.contoId }
