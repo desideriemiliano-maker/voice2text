@@ -19,6 +19,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.material.icons.automirrored.filled.ShowChart
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -60,6 +64,7 @@ fun SaldiMensiliDialog(dati: DatiApp, contoValutaId: Long, onChiudi: () -> Unit)
         }.toList()
     }
     val stato = rememberLazyListState()
+    var mostraGrafico by remember { mutableStateOf(false) }
     LaunchedEffect(mesi.size) { if (mesi.isNotEmpty()) stato.scrollToItem(mesi.lastIndex) }
     val zebra = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
 
@@ -68,6 +73,9 @@ fun SaldiMensiliDialog(dati: DatiApp, contoValutaId: Long, onChiudi: () -> Unit)
             Column(modifier = Modifier.fillMaxSize().systemBarsPadding().padding(12.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("Saldi mensili · ${dati.etichetta(contoValutaId)}", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                    IconButton(onClick = { mostraGrafico = true }, enabled = mesi.isNotEmpty()) {
+                        Icon(Icons.AutoMirrored.Filled.ShowChart, contentDescription = "Grafico dei saldi")
+                    }
                     IconButton(onClick = onChiudi) { Icon(Icons.Filled.Close, contentDescription = "Chiudi") }
                 }
                 Text(
@@ -93,6 +101,30 @@ fun SaldiMensiliDialog(dati: DatiApp, contoValutaId: Long, onChiudi: () -> Unit)
                 }
             }
         }
+    }
+
+    if (mostraGrafico) {
+        // Saldo a fine giorno, entrate e uscite (positive) delle singole operazioni, nella valuta del conto.
+        val conto = remember(dati.operazioni, contoValutaId) {
+            val ops = dati.operazioni.filter { it.contoValutaId == contoValutaId }.sortedBy { it.data }
+            var saldo = cv.saldoInizialeCent
+            val saldi = ops.groupBy { it.data }.toSortedMap().map { (giorno, del) ->
+                saldo += del.sumOf { it.importoCent }
+                giorno to saldo / 100.0
+            }
+            ContoGrafico(
+                dati.etichetta(contoValutaId), saldi,
+                ops.filter { it.importoCent > 0 }.map { it.data to it.importoCent / 100.0 },
+                ops.filter { it.importoCent < 0 }.map { it.data to -it.importoCent / 100.0 }
+            )
+        }
+        GraficoContiDialog(
+            titolo = "Saldi · ${dati.etichetta(contoValutaId)}",
+            nota = "Tutte le operazioni del conto, spostamenti compresi, in ${cv.valuta}. Saldo a fine periodo, entrate e uscite sommate nel periodo.",
+            conti = listOf(conto),
+            valuta = cv.valuta,
+            onChiudi = { mostraGrafico = false }
+        )
     }
 }
 
