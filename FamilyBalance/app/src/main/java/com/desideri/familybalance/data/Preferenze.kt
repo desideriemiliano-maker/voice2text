@@ -16,7 +16,9 @@ data class Impostazioni(
     /** Minuti in background dopo cui, al ritorno, si richiede di nuovo lo sblocco. */
     val minutiBlocco: Int = 3,
     /** Giorni entro cui due operazioni dello stesso importo sullo stesso conto sono possibili duplicati. */
-    val giorniDuplicati: Int = 3
+    val giorniDuplicati: Int = 3,
+    /** Conferma del controllo duplicati: fino a oggi meno questi giorni. */
+    val giorniConfermaDuplicati: Int = 7
 )
 
 class Preferenze(context: Context) {
@@ -29,7 +31,8 @@ class Preferenze(context: Context) {
         bloccoBiometrico = prefs.getBoolean(CHIAVE_BLOCCO_BIOMETRICO, true),
         backupDaMantenere = prefs.getInt(CHIAVE_BACKUP_DA_MANTENERE, 3),
         minutiBlocco = prefs.getInt(CHIAVE_MINUTI_BLOCCO, 3),
-        giorniDuplicati = prefs.getInt(CHIAVE_GIORNI_DUPLICATI, 3)
+        giorniDuplicati = prefs.getInt(CHIAVE_GIORNI_DUPLICATI, 3),
+        giorniConfermaDuplicati = prefs.getInt(CHIAVE_GIORNI_CONFERMA_DUPLICATI, 7)
     )
 
     /** Con [subito] la scrittura è sincrona (es. prima di riavviare l'app dopo un ripristino). */
@@ -42,6 +45,7 @@ class Preferenze(context: Context) {
             .putInt(CHIAVE_BACKUP_DA_MANTENERE, impostazioni.backupDaMantenere)
             .putInt(CHIAVE_MINUTI_BLOCCO, impostazioni.minutiBlocco)
             .putInt(CHIAVE_GIORNI_DUPLICATI, impostazioni.giorniDuplicati)
+            .putInt(CHIAVE_GIORNI_CONFERMA_DUPLICATI, impostazioni.giorniConfermaDuplicati)
         if (subito) editor.commit() else editor.apply()
     }
 
@@ -78,14 +82,22 @@ class Preferenze(context: Context) {
         prefs.edit().putString(PREFISSO_ORDINE + report, chiavi.joinToString("|")).apply()
     }
 
-    /** Tutti gli ordini di colonne memorizzati (chiave della preferenza -> valore), per il backup. */
-    fun ordiniColonne(): Map<String, String> =
-        prefs.all.filterKeys { it.startsWith(PREFISSO_ORDINE) }.mapNotNull { (k, v) -> (v as? String)?.let { k to it } }.toMap()
+    /** Giorno (epochDay) fino a cui il controllo duplicati del conto/valuta è confermato, null se mai. */
+    fun duplicatiConfermatiFino(contoValutaId: Long): Long? =
+        prefs.getString(PREFISSO_DUPLICATI + contoValutaId, null)?.toLongOrNull()
 
-    /** Ripristina gli ordini di colonne [valori] (come da [ordiniColonne]); scrittura sincrona. */
-    fun ripristinaOrdiniColonne(valori: Map<String, String>) {
+    fun salvaDuplicatiConfermatiFino(contoValutaId: Long, giorno: Long?) {
+        prefs.edit().apply { if (giorno == null) remove(PREFISSO_DUPLICATI + contoValutaId) else putString(PREFISSO_DUPLICATI + contoValutaId, giorno.toString()) }.apply()
+    }
+
+    /** Preferenze da includere nel backup oltre alle Impostazioni: ordine delle colonne e conferme dei duplicati. */
+    fun altrePerBackup(): Map<String, String> =
+        prefs.all.filterKeys { k -> PREFISSI_BACKUP.any { k.startsWith(it) } }.mapNotNull { (k, v) -> (v as? String)?.let { k to it } }.toMap()
+
+    /** Ripristina le preferenze [valori] (come da [altrePerBackup]); scrittura sincrona. */
+    fun ripristinaAltre(valori: Map<String, String>) {
         val editor = prefs.edit()
-        valori.filterKeys { it.startsWith(PREFISSO_ORDINE) }.forEach { (k, v) -> editor.putString(k, v) }
+        valori.filterKeys { k -> PREFISSI_BACKUP.any { k.startsWith(it) } }.forEach { (k, v) -> editor.putString(k, v) }
         editor.commit()
     }
 
@@ -115,6 +127,7 @@ class Preferenze(context: Context) {
 
     private companion object {
         const val PREFISSO_ORDINE = "ordine_colonne_"
+        val PREFISSI_BACKUP = listOf(PREFISSO_ORDINE, "duplicati_fino_")
         const val CHIAVE_TARGET = "target_risparmio_cent"
         const val CHIAVE_CAMBIO = "cambio_chf_eur"
         const val CHIAVE_EMAIL_BACKUP = "email_backup"
@@ -122,5 +135,7 @@ class Preferenze(context: Context) {
         const val CHIAVE_BACKUP_DA_MANTENERE = "backup_da_mantenere"
         const val CHIAVE_MINUTI_BLOCCO = "minuti_blocco"
         const val CHIAVE_GIORNI_DUPLICATI = "giorni_duplicati"
+        const val CHIAVE_GIORNI_CONFERMA_DUPLICATI = "giorni_conferma_duplicati"
+        const val PREFISSO_DUPLICATI = "duplicati_fino_"
     }
 }

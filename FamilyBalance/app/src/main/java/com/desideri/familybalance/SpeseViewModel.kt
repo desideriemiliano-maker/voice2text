@@ -778,6 +778,11 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
 
     fun salvaOrdineColonne(report: String, chiavi: List<String>) = preferenze.salvaOrdineColonne(report, chiavi)
 
+    /** Giorno fino a cui il controllo duplicati del conto/valuta è confermato (null = mai). */
+    fun duplicatiConfermatiFino(contoValutaId: Long): Long? = preferenze.duplicatiConfermatiFino(contoValutaId)
+
+    fun confermaDuplicatiFino(contoValutaId: Long, giorno: Long?) = preferenze.salvaDuplicatiConfermatiFino(contoValutaId, giorno)
+
     fun annullaColonneExcel() {
         _colonneExcel.value = null
     }
@@ -972,7 +977,7 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
             File(getApplication<Application>().cacheDir, "backup.db").also {
                 AppDatabase.fileDatabase(getApplication()).copyTo(it, overwrite = true)
                 // Anche le Impostazioni vanno nel backup.
-                ImpostazioniBackup.scrivi(it, _impostazioni.value, preferenze.ordiniColonne())
+                ImpostazioniBackup.scrivi(it, _impostazioni.value, preferenze.altrePerBackup())
             }
         }
         val rimasti = drive.carica(copia, testo?.trim(), _impostazioni.value.backupDaMantenere)
@@ -1001,7 +1006,7 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
         withContext(Dispatchers.IO) {
             // Le Impostazioni salvate nel backup (se presenti) sostituiscono quelle attuali.
             preferenze.salva(ImpostazioniBackup.leggi(scaricato, _impostazioni.value), subito = true)
-            preferenze.ripristinaOrdiniColonne(ImpostazioniBackup.leggiAltre(scaricato, "ordine_colonne_"))
+            preferenze.ripristinaAltre(ImpostazioniBackup.leggiAltre(scaricato, listOf("ordine_colonne_", "duplicati_fino_")))
             AppDatabase.chiudi()
             val destinazione = AppDatabase.fileDatabase(app)
             scaricato.copyTo(destinazione, overwrite = true)

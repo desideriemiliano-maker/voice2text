@@ -21,7 +21,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Box
 import androidx.compose.material.icons.filled.AutoAwesome
-import androidx.compose.material.icons.filled.FactCheck
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.TableChart
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.HorizontalDivider
@@ -124,7 +124,7 @@ fun ContiScreen(vm: SpeseViewModel, onApriConto: (Long) -> Unit, onAnagraficaCon
                         TestoImporto((saldi[cv.id] ?: 0L) / 100.0, cv.valuta, grassetto = true)
                         Box {
                             IconButton(onClick = { menuRiscontro = cv.id }) {
-                                Icon(Icons.Filled.FactCheck, contentDescription = "Riscontro e saldi")
+                                Icon(Icons.Filled.MoreVert, contentDescription = "Menu del conto")
                             }
                             DropdownMenu(expanded = menuRiscontro == cv.id, onDismissRequest = { menuRiscontro = null }) {
                                 DropdownMenuItem(

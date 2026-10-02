@@ -23,16 +23,17 @@ object ImpostazioniBackup {
                 "bloccoBiometrico" to imp.bloccoBiometrico.toString(),
                 "backupDaMantenere" to imp.backupDaMantenere.toString(),
                 "minutiBlocco" to imp.minutiBlocco.toString(),
-                "giorniDuplicati" to imp.giorniDuplicati.toString()
+                "giorniDuplicati" to imp.giorniDuplicati.toString(),
+                "giorniConfermaDuplicati" to imp.giorniConfermaDuplicati.toString()
             ).plus(altre).forEach { (k, v) -> db.execSQL("INSERT INTO $TABELLA (chiave, valore) VALUES (?, ?)", arrayOf(k, v)) }
         }
     }
 
     /** Le altre preferenze salvate nel backup [file] (es. ordine delle colonne dei report) con chiave che inizia per [prefisso]. */
-    fun leggiAltre(file: File, prefisso: String): Map<String, String> = runCatching {
+    fun leggiAltre(file: File, prefissi: List<String>): Map<String, String> = runCatching {
         SQLiteDatabase.openDatabase(file.path, null, SQLiteDatabase.OPEN_READONLY).use { db ->
             db.rawQuery("SELECT chiave, valore FROM $TABELLA", null).use { c ->
-                buildMap { while (c.moveToNext()) if (c.getString(0).startsWith(prefisso)) put(c.getString(0), c.getString(1)) }
+                buildMap { while (c.moveToNext()) if (prefissi.any { c.getString(0).startsWith(it) }) put(c.getString(0), c.getString(1)) }
             }
         }
     }.getOrDefault(emptyMap())
@@ -52,7 +53,8 @@ object ImpostazioniBackup {
             bloccoBiometrico = valori["bloccoBiometrico"]?.toBooleanStrictOrNull() ?: attuali.bloccoBiometrico,
             backupDaMantenere = valori["backupDaMantenere"]?.toIntOrNull() ?: attuali.backupDaMantenere,
             minutiBlocco = valori["minutiBlocco"]?.toIntOrNull() ?: attuali.minutiBlocco,
-            giorniDuplicati = valori["giorniDuplicati"]?.toIntOrNull() ?: attuali.giorniDuplicati
+            giorniDuplicati = valori["giorniDuplicati"]?.toIntOrNull() ?: attuali.giorniDuplicati,
+            giorniConfermaDuplicati = valori["giorniConfermaDuplicati"]?.toIntOrNull() ?: attuali.giorniConfermaDuplicati
         )
     }
 }
