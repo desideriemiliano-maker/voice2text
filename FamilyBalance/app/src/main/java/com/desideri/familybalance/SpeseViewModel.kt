@@ -773,6 +773,11 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
         _riscontroEstratto.value = StatoRiscontroEstratto(stato.contoValutaId, cv.contoId, esito.movimenti, esito.avvisi)
     }
 
+    /** Ordine memorizzato delle colonne del report [report] (chiavi), vuoto se mai cambiato. */
+    fun ordineColonne(report: String): List<String> = preferenze.caricaOrdineColonne(report)
+
+    fun salvaOrdineColonne(report: String, chiavi: List<String>) = preferenze.salvaOrdineColonne(report, chiavi)
+
     fun annullaColonneExcel() {
         _colonneExcel.value = null
     }
@@ -967,7 +972,7 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
             File(getApplication<Application>().cacheDir, "backup.db").also {
                 AppDatabase.fileDatabase(getApplication()).copyTo(it, overwrite = true)
                 // Anche le Impostazioni vanno nel backup.
-                ImpostazioniBackup.scrivi(it, _impostazioni.value)
+                ImpostazioniBackup.scrivi(it, _impostazioni.value, preferenze.ordiniColonne())
             }
         }
         val rimasti = drive.carica(copia, testo?.trim(), _impostazioni.value.backupDaMantenere)
@@ -996,6 +1001,7 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
         withContext(Dispatchers.IO) {
             // Le Impostazioni salvate nel backup (se presenti) sostituiscono quelle attuali.
             preferenze.salva(ImpostazioniBackup.leggi(scaricato, _impostazioni.value), subito = true)
+            preferenze.ripristinaOrdiniColonne(ImpostazioniBackup.leggiAltre(scaricato, "ordine_colonne_"))
             AppDatabase.chiudi()
             val destinazione = AppDatabase.fileDatabase(app)
             scaricato.copyTo(destinazione, overwrite = true)

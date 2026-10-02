@@ -53,15 +53,43 @@ private data class RigaReport(
     val saldo: Double?,
     val entrate: Double,
     val correnti: Double,
-    val ricorrenti: Double
+    val ricorrenti: Double,
+    /** Variazione del saldo rispetto alla fine del periodo prima (null per il primo). */
+    val variazioneSaldo: Double? = null
 ) {
-    val risparmio: Double get() = entrate + correnti
+    /** Risparmio del solo periodo: entrate meno tutte le spese (correnti e ricorrenti). */
+    val risparmio: Double get() = entrate + correnti + ricorrenti
+
+    /** Movimenti del saldo non spiegati dal risparmio: spostamenti verso conti fuori dall'app, effetto cambio… */
+    val altro: Double? get() = variazioneSaldo?.let { it - risparmio }
+
+    fun valore(colonna: String): Double? = when (colonna) {
+        "saldo" -> saldo
+        "entrate" -> entrate
+        "correnti" -> correnti
+        "ricorrenti" -> ricorrenti
+        "risparmio" -> risparmio
+        else -> altro
+    }
 }
+
+/** Colonne del report (chiave e titolo), nell'ordine di partenza. */
+private val COLONNE = listOf(
+    "saldo" to "Saldo",
+    "entrate" to "Entrate",
+    "correnti" to "Correnti",
+    "ricorrenti" to "Ricorrenti",
+    "risparmio" to "Risparmio",
+    "altro" to "Altro"
+)
+private const val REPORT_BILANCIO = "report_bilancio"
 
 /**
  * Report del bilancio dalla prima operazione al mese corrente, per anno (default) o per mese:
- * saldo totale a fine periodo, entrate, spese correnti, spese ricorrenti e risparmio (entrate +
- * correnti, come nel Bilancio), ciascuno con la variazione percentuale rispetto alla riga prima.
+ * saldo totale a fine periodo (l'unico valore cumulato), entrate, spese correnti e ricorrenti del
+ * periodo, risparmio del periodo (entrate − spese) e "altro" (variazione del saldo non spiegata dal
+ * risparmio), ciascuno con la variazione percentuale rispetto alla riga prima. Le colonne si
+ * spostano trascinando le intestazioni; l'ordine è memorizzato (e incluso nel backup).
  */
 @Composable
 fun ReportBilancioDialog(vm: SpeseViewModel, onChiudi: () -> Unit) {
@@ -77,13 +105,24 @@ fun ReportBilancioDialog(vm: SpeseViewModel, onChiudi: () -> Unit) {
             YearMonth.now(), mesiFuturi = 0, personalizzazioni = personalizzazioni
         )
     }
+    // Entrate e spese sono solo del periodo (mese o anno); il saldo è quello a fine periodo.
     val righe = remember(mesi, aggregazione) {
-        when (aggregazione) {
+        val base = when (aggregazione) {
             AggregazioneReport.MESE -> mesi.map { RigaReport(formattaMeseBreve(it.mese), it.saldoFine, it.entrate, it.correnti, it.ricorrentiTotali) }
             AggregazioneReport.ANNO -> mesi.groupBy { it.mese.year }.toSortedMap().map { (anno, rr) ->
                 RigaReport(anno.toString(), rr.last().saldoFine, rr.sumOf { it.entrate }, rr.sumOf { it.correnti }, rr.sumOf { it.ricorrentiTotali })
             }
         }
+        base.mapIndexed { i, r ->
+            val prima = base.getOrNull(i - 1)?.saldo
+            r.copy(variazioneSaldo = if (prima != null && r.saldo != null) r.saldo - prima else null)
+        }
+    }
+    var ordine by remember { mutableStateOf(vm.ordineColonne(REPORT_BILANCIO)) }
+    val colonne = ordinaColonne(COLONNE, ordine) { it.first }
+    fun sposta(da: Int, a: Int) {
+        ordine = colonne.spostato(da, a).map { it.first }
+        vm.salvaOrdineColonne(REPORT_BILANCIO, ordine)
     }
 
     val scuro = MaterialTheme.colorScheme.surface.luminance() < 0.5f
@@ -117,9 +156,11 @@ fun ReportBilancioDialog(vm: SpeseViewModel, onChiudi: () -> Unit) {
                     }
                 }
                 Text(
-                    "Dalla prima operazione al mese corrente, in EUR (CHF come nel Bilancio). Saldo: totale a fine periodo; " +
-                        "risparmio: entrate + spese correnti. Tra parentesi la variazione rispetto alla riga prima " +
-                        "(verde: migliora, rosso: peggiora).",
+                    "Dalla prima operazione al mese corrente, in EUR (CHF come nel Bilancio). Saldo: totale dei conti a fine periodo; " +
+                        "entrate e spese solo del periodo; risparmio: entrate − spese correnti e ricorrenti del periodo; altro: la parte della " +
+                        "variazione del saldo non spiegata dal risparmio (spostamenti verso conti non nell'app, effetto cambio…). " +
+                        "Tra parentesi la variazione rispetto alla riga prima (verde: migliora, rosso: peggiora). " +
+                        "Tieni premuta un'intestazione e trascinala per spostare la colonna.",
                     style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier.padding(vertical = 4.dp)
                 )
@@ -131,12 +172,11 @@ fun ReportBilancioDialog(vm: SpeseViewModel, onChiudi: () -> Unit) {
                     val verticale = rememberScrollState()
                     LaunchedEffect(righe.size, aggregazione) { verticale.scrollTo(verticale.maxValue) }
                     fun sfondo(i: Int) = if (i % 2 == 1) zebra else Color.Transparent
-                    val titoli = listOf("Saldo", "Entrate", "Correnti", "Ricorrenti", "Risparmio")
                     Column(modifier = Modifier.weight(1f)) {
                         Row {
                             CellaReport(aggregazione.etichetta, null, L_PERIODO, grassetto = true, alta = true)
                             Row(modifier = Modifier.horizontalScroll(orizzontale)) {
-                                titoli.forEach { CellaReport(it, null, L_VALORE, grassetto = true, alta = true) }
+                                colonne.forEachIndexed { c, (_, titolo) -> IntestazioneSpostabile(titolo, c, colonne.size, L_VALORE, onSposta = ::sposta) }
                             }
                         }
                         Row(modifier = Modifier.weight(1f)) {
@@ -147,11 +187,12 @@ fun ReportBilancioDialog(vm: SpeseViewModel, onChiudi: () -> Unit) {
                                 righe.forEachIndexed { i, r ->
                                     val p = righe.getOrNull(i - 1)
                                     Row {
-                                        CellaReport(importo(r.saldo), delta(r.saldo, p?.saldo), L_VALORE, grassetto = true, alta = true, sfondo = sfondo(i))
-                                        CellaReport(importo(r.entrate), delta(r.entrate, p?.entrate), L_VALORE, alta = true, sfondo = sfondo(i))
-                                        CellaReport(importo(r.correnti), delta(r.correnti, p?.correnti), L_VALORE, alta = true, sfondo = sfondo(i))
-                                        CellaReport(importo(r.ricorrenti), delta(r.ricorrenti, p?.ricorrenti), L_VALORE, alta = true, sfondo = sfondo(i))
-                                        CellaReport(importo(r.risparmio), delta(r.risparmio, p?.risparmio), L_VALORE, grassetto = true, alta = true, sfondo = sfondo(i))
+                                        colonne.forEach { (k, _) ->
+                                            CellaReport(
+                                                importo(r.valore(k)), delta(r.valore(k), p?.valore(k)), L_VALORE,
+                                                grassetto = k == "saldo" || k == "risparmio", alta = true, sfondo = sfondo(i)
+                                            )
+                                        }
                                     }
                                 }
                             }

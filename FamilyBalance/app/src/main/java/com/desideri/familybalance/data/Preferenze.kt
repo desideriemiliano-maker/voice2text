@@ -66,6 +66,25 @@ class Preferenze(context: Context) {
         prefs.edit().putString("tipo_data_estratto_$contoId", tipo.name).apply()
     }
 
+    /** Ordine delle colonne del report [report] (chiavi delle colonne), vuoto se mai cambiato. */
+    fun caricaOrdineColonne(report: String): List<String> =
+        prefs.getString(PREFISSO_ORDINE + report, null)?.split('|')?.filter { it.isNotEmpty() }.orEmpty()
+
+    fun salvaOrdineColonne(report: String, chiavi: List<String>) {
+        prefs.edit().putString(PREFISSO_ORDINE + report, chiavi.joinToString("|")).apply()
+    }
+
+    /** Tutti gli ordini di colonne memorizzati (chiave della preferenza -> valore), per il backup. */
+    fun ordiniColonne(): Map<String, String> =
+        prefs.all.filterKeys { it.startsWith(PREFISSO_ORDINE) }.mapNotNull { (k, v) -> (v as? String)?.let { k to it } }.toMap()
+
+    /** Ripristina gli ordini di colonne [valori] (come da [ordiniColonne]); scrittura sincrona. */
+    fun ripristinaOrdiniColonne(valori: Map<String, String>) {
+        val editor = prefs.edit()
+        valori.filterKeys { it.startsWith(PREFISSO_ORDINE) }.forEach { (k, v) -> editor.putString(k, v) }
+        editor.commit()
+    }
+
     /** Colonne scelte per il riscontro da Excel del conto/valuta [contoValutaId]. */
     fun caricaColonneExcel(contoValutaId: Long): com.desideri.familybalance.estratto.ColonneSalvate? =
         prefs.getString("colonne_excel_$contoValutaId", null)?.let { testo ->
@@ -91,6 +110,7 @@ class Preferenze(context: Context) {
     }
 
     private companion object {
+        const val PREFISSO_ORDINE = "ordine_colonne_"
         const val CHIAVE_TARGET = "target_risparmio_cent"
         const val CHIAVE_CAMBIO = "cambio_chf_eur"
         const val CHIAVE_EMAIL_BACKUP = "email_backup"

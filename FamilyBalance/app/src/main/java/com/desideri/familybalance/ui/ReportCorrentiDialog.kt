@@ -22,7 +22,12 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.zIndex
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -57,6 +62,10 @@ private val L_COLONNA: Dp = 112.dp
 
 /** Id per le operazioni senza tipo (colonna e filtro). */
 private const val SENZA_TIPO = 0L
+
+/** Chiave della colonna del totale e nome del report per l'ordine delle colonne. */
+private const val COLONNA_TOTALE = -1L
+private const val REPORT_CORRENTI = "report_correnti"
 
 /**
  * Report delle spese correnti dell'anno scelto: una riga per mese (più il totale dell'anno), la
@@ -97,6 +106,16 @@ fun ReportCorrentiDialog(vm: SpeseViewModel, onChiudi: () -> Unit) {
     val mostrate = scelte?.let { s -> colonne.filter { it.first in s } } ?: colonne
     fun valore(id: Long, m: YearMonth) = spese[id to m] ?: 0.0
     fun totale(m: YearMonth) = mostrate.sumOf { valore(it.first, m) }
+    fun nome(id: Long) = if (id == COLONNA_TOTALE) "Totale" else colonne.firstOrNull { it.first == id }?.second.orEmpty()
+
+    // Colonne nell'ordine scelto dall'utente (trascinando le intestazioni), memorizzato e nel backup.
+    var ordine by remember { mutableStateOf(vm.ordineColonne(REPORT_CORRENTI)) }
+    val colonneTabella = ordinaColonne(listOf(COLONNA_TOTALE) + mostrate.map { it.first }, ordine) { it.toString() }
+    fun sposta(da: Int, a: Int) {
+        val nuove = colonneTabella.spostato(da, a).map { it.toString() }
+        ordine = nuove + ordine.filter { it !in nuove }
+        vm.salvaOrdineColonne(REPORT_CORRENTI, ordine)
+    }
 
     val scuro = MaterialTheme.colorScheme.surface.luminance() < 0.5f
     val coloreAumento = if (scuro) Color(0xFFFF8A80) else Color(0xFFC62828)
@@ -136,7 +155,7 @@ fun ReportCorrentiDialog(vm: SpeseViewModel, onChiudi: () -> Unit) {
                 }
                 Text(
                     "Spese del mese in EUR (CHF come nel Bilancio); tra parentesi la variazione rispetto al mese prima " +
-                        "(rosso: si è speso di più, verde: di meno).",
+                        "(rosso: si è speso di più, verde: di meno). Tieni premuta un'intestazione e trascinala per spostare la colonna.",
                     style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier.padding(vertical = 4.dp)
                 )
@@ -152,8 +171,12 @@ fun ReportCorrentiDialog(vm: SpeseViewModel, onChiudi: () -> Unit) {
                         Row {
                             CellaReport("Mese", null, L_MESE, grassetto = true, alta = true)
                             Row(modifier = Modifier.horizontalScroll(orizzontale)) {
-                                CellaReport("Totale", null, L_COLONNA, grassetto = true, alta = true, sfondo = coloreTotali)
-                                mostrate.forEach { (_, nome) -> CellaReport(nome, null, L_COLONNA, grassetto = true, alta = true) }
+                                colonneTabella.forEachIndexed { c, id ->
+                                    IntestazioneSpostabile(
+                                        nome(id), c, colonneTabella.size, L_COLONNA,
+                                        sfondo = if (id == COLONNA_TOTALE) coloreTotali else Color.Transparent, onSposta = ::sposta
+                                    )
+                                }
                             }
                         }
                         Row(modifier = Modifier.weight(1f)) {
@@ -168,17 +191,14 @@ fun ReportCorrentiDialog(vm: SpeseViewModel, onChiudi: () -> Unit) {
                             Column(modifier = Modifier.verticalScroll(verticale).horizontalScroll(orizzontale)) {
                                 righe.forEachIndexed { i, m ->
                                     Row {
-                                        if (m != null) {
-                                            val t = totale(m)
-                                            CellaReport(importo(t), delta(t, totale(m.minusMonths(1))), L_COLONNA, grassetto = true, alta = true, sfondo = coloreTotali)
-                                            mostrate.forEach { (id, _) ->
-                                                val v = valore(id, m)
-                                                CellaReport(importo(v), delta(v, valore(id, m.minusMonths(1))), L_COLONNA, alta = true, sfondo = sfondo(i))
-                                            }
-                                        } else {
-                                            CellaReport(importo(mesi.sumOf { totale(it) }), null, L_COLONNA, grassetto = true, alta = true, sfondo = coloreTotali)
-                                            mostrate.forEach { (id, _) ->
-                                                CellaReport(importo(mesi.sumOf { valore(id, it) }), null, L_COLONNA, grassetto = true, alta = true, sfondo = sfondo(i))
+                                        colonneTabella.forEach { id ->
+                                            val eTotale = id == COLONNA_TOTALE
+                                            fun v(mm: YearMonth) = if (eTotale) totale(mm) else valore(id, mm)
+                                            val sf = if (eTotale) coloreTotali else sfondo(i)
+                                            if (m != null) {
+                                                CellaReport(importo(v(m)), delta(v(m), v(m.minusMonths(1))), L_COLONNA, grassetto = eTotale, alta = true, sfondo = sf)
+                                            } else {
+                                                CellaReport(importo(mesi.sumOf { v(it) }), null, L_COLONNA, grassetto = true, alta = true, sfondo = sf)
                                             }
                                         }
                                     }
@@ -202,11 +222,12 @@ internal fun CellaReport(
     larghezza: Dp,
     grassetto: Boolean = false,
     alta: Boolean = false,
-    sfondo: Color = Color.Transparent
+    sfondo: Color = Color.Transparent,
+    modifier: Modifier = Modifier
 ) {
     Column(
         horizontalAlignment = Alignment.End,
-        modifier = Modifier
+        modifier = modifier
             .width(larghezza)
             .height(if (alta) 40.dp else 28.dp)
             .background(sfondo)
@@ -224,3 +245,53 @@ internal fun CellaReport(
         delta?.let { (d, colore) -> Text("($d)", style = MaterialTheme.typography.labelSmall, color = colore, maxLines = 1) }
     }
 }
+
+/** Le colonne [chiavi] nell'ordine memorizzato [salvato]; quelle nuove in coda nell'ordine di partenza. */
+internal fun <T> ordinaColonne(colonne: List<T>, salvato: List<String>, chiave: (T) -> String): List<T> {
+    val posizione = salvato.withIndex().associate { (i, k) -> k to i }
+    return colonne.withIndex().sortedWith(compareBy({ posizione[chiave(it.value)] ?: Int.MAX_VALUE }, { it.index })).map { it.value }
+}
+
+/**
+ * Intestazione di una colonna spostabile: tenendola premuta la si trascina a destra o a sinistra e,
+ * rilasciandola, [onSposta] riceve la posizione di partenza e quella di arrivo (colonne di [larghezza] fissa).
+ */
+@Composable
+internal fun IntestazioneSpostabile(
+    testo: String,
+    indice: Int,
+    numeroColonne: Int,
+    larghezza: Dp,
+    sfondo: Color = Color.Transparent,
+    onSposta: (Int, Int) -> Unit
+) {
+    var spostamento by remember { mutableStateOf(0f) }
+    var trascinata by remember { mutableStateOf(false) }
+    val sposta by rememberUpdatedState(onSposta)
+    val indiceAttuale by rememberUpdatedState(indice)
+    val colori = MaterialTheme.colorScheme
+    CellaReport(
+        testo, null, larghezza, grassetto = true, alta = true,
+        sfondo = if (trascinata) colori.primaryContainer else sfondo,
+        modifier = Modifier
+            .zIndex(if (trascinata) 1f else 0f)
+            .graphicsLayer { translationX = spostamento }
+            .pointerInput(Unit) {
+                detectDragGesturesAfterLongPress(
+                    onDragStart = { trascinata = true },
+                    onDrag = { change, delta -> change.consume(); spostamento += delta.x },
+                    onDragEnd = {
+                        val passi = (spostamento / larghezza.toPx()).roundToInt()
+                        val arrivo = (indiceAttuale + passi).coerceIn(0, numeroColonne - 1)
+                        trascinata = false
+                        spostamento = 0f
+                        if (arrivo != indiceAttuale) sposta(indiceAttuale, arrivo)
+                    },
+                    onDragCancel = { trascinata = false; spostamento = 0f }
+                )
+            }
+    )
+}
+
+/** [lista] con l'elemento in posizione [da] spostato in posizione [a]. */
+internal fun <T> List<T>.spostato(da: Int, a: Int): List<T> = toMutableList().apply { add(a, removeAt(da)) }
