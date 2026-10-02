@@ -18,7 +18,9 @@ data class Impostazioni(
     /** Giorni entro cui due operazioni dello stesso importo sullo stesso conto sono possibili duplicati. */
     val giorniDuplicati: Int = 3,
     /** Conferma del controllo duplicati: fino a oggi meno questi giorni. */
-    val giorniConfermaDuplicati: Int = 7
+    val giorniConfermaDuplicati: Int = 7,
+    /** Intorno (giorni) in cui mostrare, per ogni possibile duplicato, le altre operazioni dello stesso importo. */
+    val giorniIntornoDuplicati: Int = 10
 )
 
 class Preferenze(context: Context) {
@@ -32,7 +34,8 @@ class Preferenze(context: Context) {
         backupDaMantenere = prefs.getInt(CHIAVE_BACKUP_DA_MANTENERE, 3),
         minutiBlocco = prefs.getInt(CHIAVE_MINUTI_BLOCCO, 3),
         giorniDuplicati = prefs.getInt(CHIAVE_GIORNI_DUPLICATI, 3),
-        giorniConfermaDuplicati = prefs.getInt(CHIAVE_GIORNI_CONFERMA_DUPLICATI, 7)
+        giorniConfermaDuplicati = prefs.getInt(CHIAVE_GIORNI_CONFERMA_DUPLICATI, 7),
+        giorniIntornoDuplicati = prefs.getInt(CHIAVE_GIORNI_INTORNO_DUPLICATI, 10)
     )
 
     /** Con [subito] la scrittura è sincrona (es. prima di riavviare l'app dopo un ripristino). */
@@ -46,6 +49,7 @@ class Preferenze(context: Context) {
             .putInt(CHIAVE_MINUTI_BLOCCO, impostazioni.minutiBlocco)
             .putInt(CHIAVE_GIORNI_DUPLICATI, impostazioni.giorniDuplicati)
             .putInt(CHIAVE_GIORNI_CONFERMA_DUPLICATI, impostazioni.giorniConfermaDuplicati)
+            .putInt(CHIAVE_GIORNI_INTORNO_DUPLICATI, impostazioni.giorniIntornoDuplicati)
         if (subito) editor.commit() else editor.apply()
     }
 
@@ -136,6 +140,7 @@ class Preferenze(context: Context) {
         const val CHIAVE_MINUTI_BLOCCO = "minuti_blocco"
         const val CHIAVE_GIORNI_DUPLICATI = "giorni_duplicati"
         const val CHIAVE_GIORNI_CONFERMA_DUPLICATI = "giorni_conferma_duplicati"
+        const val CHIAVE_GIORNI_INTORNO_DUPLICATI = "giorni_intorno_duplicati"
         const val PREFISSO_DUPLICATI = "duplicati_fino_"
     }
 }

@@ -41,6 +41,7 @@ fun ImpostazioniScreen(vm: SpeseViewModel, onIndietro: () -> Unit) {
     var minutiBlocco by remember { mutableStateOf(impostazioni.minutiBlocco.toString()) }
     var giorniDuplicati by remember { mutableStateOf(impostazioni.giorniDuplicati.toString()) }
     var giorniConferma by remember { mutableStateOf(impostazioni.giorniConfermaDuplicati.toString()) }
+    var giorniIntorno by remember { mutableStateOf(impostazioni.giorniIntornoDuplicati.toString()) }
     val bloccoPossibile = bloccoDisponibile(LocalContext.current)
     var errore by remember { mutableStateOf<String?>(null) }
 
@@ -77,6 +78,15 @@ fun ImpostazioniScreen(vm: SpeseViewModel, onIndietro: () -> Unit) {
                 onValueChange = { giorniDuplicati = it },
                 label = { Text("Giorni per rilevare i duplicati") },
                 supportingText = { Text("Operazioni dello stesso conto con lo stesso importo entro questi giorni sono segnalate in \"Rileva duplicati\" (0-30, predefinito 3).") },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                modifier = Modifier.fillMaxWidth()
+            )
+            OutlinedTextField(
+                value = giorniIntorno,
+                onValueChange = { giorniIntorno = it },
+                label = { Text("Intorno dei duplicati (giorni)") },
+                supportingText = { Text("Per ogni possibile duplicato si mostrano anche le operazioni dello stesso importo entro questi giorni (0-90, predefinito 10).") },
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                 modifier = Modifier.fillMaxWidth()
@@ -129,6 +139,7 @@ fun ImpostazioniScreen(vm: SpeseViewModel, onIndietro: () -> Unit) {
                     val minuti = minutiBlocco.trim().toIntOrNull()
                     val giorni = giorniDuplicati.trim().toIntOrNull()
                     val conferma = giorniConferma.trim().toIntOrNull()
+                    val intorno = giorniIntorno.trim().toIntOrNull()
                     errore = when {
                         targetCent == null -> "Target non valido"
                         tasso == null || tasso <= 0 -> "Cambio non valido"
@@ -136,6 +147,7 @@ fun ImpostazioniScreen(vm: SpeseViewModel, onIndietro: () -> Unit) {
                         minuti == null || minuti !in 0..120 -> "Minuti non validi (0-120)"
                         giorni == null || giorni !in 0..30 -> "Giorni per i duplicati non validi (0-30)"
                         conferma == null || conferma !in 0..90 -> "Giorni esclusi dalla conferma non validi (0-90)"
+                        intorno == null || intorno !in 0..90 -> "Intorno dei duplicati non valido (0-90)"
                         else -> {
                             vm.salvaImpostazioni(
                                 impostazioni.copy(
@@ -145,7 +157,8 @@ fun ImpostazioniScreen(vm: SpeseViewModel, onIndietro: () -> Unit) {
                                     backupDaMantenere = numeroBackup,
                                     minutiBlocco = minuti,
                                     giorniDuplicati = giorni,
-                                    giorniConfermaDuplicati = conferma
+                                    giorniConfermaDuplicati = conferma,
+                                    giorniIntornoDuplicati = intorno
                                 )
                             )
                             onIndietro()

@@ -24,7 +24,8 @@ object ImpostazioniBackup {
                 "backupDaMantenere" to imp.backupDaMantenere.toString(),
                 "minutiBlocco" to imp.minutiBlocco.toString(),
                 "giorniDuplicati" to imp.giorniDuplicati.toString(),
-                "giorniConfermaDuplicati" to imp.giorniConfermaDuplicati.toString()
+                "giorniConfermaDuplicati" to imp.giorniConfermaDuplicati.toString(),
+                "giorniIntornoDuplicati" to imp.giorniIntornoDuplicati.toString()
             ).plus(altre).forEach { (k, v) -> db.execSQL("INSERT INTO $TABELLA (chiave, valore) VALUES (?, ?)", arrayOf(k, v)) }
         }
     }
@@ -54,7 +55,8 @@ object ImpostazioniBackup {
             backupDaMantenere = valori["backupDaMantenere"]?.toIntOrNull() ?: attuali.backupDaMantenere,
             minutiBlocco = valori["minutiBlocco"]?.toIntOrNull() ?: attuali.minutiBlocco,
             giorniDuplicati = valori["giorniDuplicati"]?.toIntOrNull() ?: attuali.giorniDuplicati,
-            giorniConfermaDuplicati = valori["giorniConfermaDuplicati"]?.toIntOrNull() ?: attuali.giorniConfermaDuplicati
+            giorniConfermaDuplicati = valori["giorniConfermaDuplicati"]?.toIntOrNull() ?: attuali.giorniConfermaDuplicati,
+            giorniIntornoDuplicati = valori["giorniIntornoDuplicati"]?.toIntOrNull() ?: attuali.giorniIntornoDuplicati
         )
     }
 }

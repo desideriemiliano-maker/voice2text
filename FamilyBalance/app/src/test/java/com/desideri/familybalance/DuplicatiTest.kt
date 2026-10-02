@@ -25,4 +25,11 @@ class DuplicatiTest {
         val ops = listOf(op(1, 100, -5000), op(2, 101, -5000), op(3, 101, -5000))
         assertEquals(listOf(listOf(2L, 3L)), Duplicati.gruppi(ops, 0).map { gr -> gr.map { it.id } })
     }
+
+    @Test
+    fun intornoStessoImportoEntroIGiorni() {
+        val ops = listOf(op(1, 100, -5000), op(2, 102, -5000), op(3, 92, -5000), op(4, 111, -5000), op(5, 113, -5000), op(6, 105, -100))
+        val gruppo = ops.filter { it.id == 1L || it.id == 2L }
+        assertEquals(listOf(3L, 4L), Duplicati.intorno(ops, gruppo, 10).map { it.id })
+    }
 }

@@ -10,6 +10,9 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
+import androidx.compose.foundation.background
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.material3.Icon
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material.icons.Icons
@@ -53,6 +56,11 @@ fun DuplicatiDialog(vm: SpeseViewModel, contoValutaId: Long, onChiudi: () -> Uni
     val gruppi = tutti.filter { g -> confermatoFino.let { f -> f == null || g.any { it.data > f } } }
     val nuovaConferma = LocalDate.now().minusDays(impostazioni.giorniConfermaDuplicati.toLong()).toEpochDay()
     var inModifica by remember { mutableStateOf<Operazione?>(null) }
+    val intorno = impostazioni.giorniIntornoDuplicati
+    val opsConto = dati.operazioni.filter { it.contoValutaId == contoValutaId }
+    val scuro = MaterialTheme.colorScheme.surface.luminance() < 0.5f
+    val coloreDuplicato = if (scuro) Color(0xFF5D3A12) else Color(0xFFFFE0B2)
+    val coloreIntorno = MaterialTheme.colorScheme.surfaceVariant
     var chiediConferma by remember { mutableStateOf(false) }
     var chiediReset by remember { mutableStateOf(false) }
 
@@ -72,7 +80,8 @@ fun DuplicatiDialog(vm: SpeseViewModel, contoValutaId: Long, onChiudi: () -> Uni
                     if (confermatoFino != null) TextButton(onClick = { chiediReset = true }) { Text("Reset") }
                 }
                 Text(
-                    "Operazioni con lo stesso importo a non più di $giorni giorni l'una dall'altra (Impostazioni)" +
+                    "In arancio le operazioni con lo stesso importo a non più di $giorni giorni l'una dall'altra; in grigio le altre " +
+                        "dello stesso importo entro $intorno giorni (Impostazioni)" +
                         (if (confermatoFino != null) "; nascosti i gruppi già controllati (${tutti.size - gruppi.size})" else "") +
                         ". Tocca un'operazione per aprirne i dettagli e modificarla o eliminarla.",
                     style = MaterialTheme.typography.bodySmall
@@ -84,16 +93,26 @@ fun DuplicatiDialog(vm: SpeseViewModel, contoValutaId: Long, onChiudi: () -> Uni
                 ) { Text("Conferma controllo fino al ${formattaData(nuovaConferma)}") }
                 if (gruppi.isEmpty()) Text("Nessun possibile duplicato da controllare.", style = MaterialTheme.typography.bodyMedium)
                 gruppi.forEach { gruppo ->
+                    // Il possibile duplicato (arancio chiaro) e le operazioni dello stesso importo nell'intorno (grigio).
+                    val vicine = Duplicati.intorno(opsConto, gruppo, intorno)
+                    val righe = (gruppo.map { it to true } + vicine.map { it to false }).sortedBy { it.first.data }
                     Card(modifier = Modifier.fillMaxWidth()) {
                         Column(modifier = Modifier.padding(8.dp)) {
                             Text(
-                                "${formattaCent(gruppo.first().importoCent, valuta)} · ${gruppo.size} operazioni",
+                                "${formattaCent(gruppo.first().importoCent, valuta)} · ${gruppo.size} possibili duplicati" +
+                                    if (vicine.isNotEmpty()) " · ${vicine.size} nell'intorno di $intorno gg" else "",
                                 style = MaterialTheme.typography.titleSmall,
                                 fontWeight = FontWeight.Bold
                             )
-                            gruppo.forEachIndexed { i, op ->
-                                if (i > 0) HorizontalDivider()
-                                Column(modifier = Modifier.fillMaxWidth().clickable { inModifica = op }.padding(vertical = 4.dp)) {
+                            righe.forEach { (op, duplicato) ->
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(top = 3.dp)
+                                        .background(if (duplicato) coloreDuplicato else coloreIntorno, MaterialTheme.shapes.small)
+                                        .clickable { inModifica = op }
+                                        .padding(horizontal = 6.dp, vertical = 4.dp)
+                                ) {
                                     val descrizione = op.voceId?.let { dati.vociPerId[it]?.descrizione }
                                         ?: if (op.trasferimento) "Spostamento" + (op.contoValutaDestId?.let { " ↔ ${dati.etichetta(it)}" } ?: "") else "Senza tipo"
                                     Row(verticalAlignment = Alignment.CenterVertically) {

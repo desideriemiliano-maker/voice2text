@@ -19,4 +19,16 @@ object Duplicati {
             }
             gruppi.filter { it.size >= 2 }
         }.sortedByDescending { g -> g.maxOf { it.data } }
+
+    /**
+     * Le altre operazioni con lo stesso importo del [gruppo] con data entro [giorni] dalla prima o
+     * dall'ultima del gruppo (fuori dal gruppo stesso), in ordine di data.
+     */
+    fun intorno(operazioni: List<Operazione>, gruppo: List<Operazione>, giorni: Int): List<Operazione> {
+        val importo = gruppo.first().importoCent
+        val ids = gruppo.map { it.id }.toSet()
+        val da = gruppo.minOf { it.data } - giorni
+        val a = gruppo.maxOf { it.data } + giorni
+        return operazioni.filter { it.importoCent == importo && it.id !in ids && it.data in da..a }.sortedBy { it.data }
+    }
 }
