@@ -33,6 +33,7 @@ import androidx.compose.material3.MenuAnchorType
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
@@ -267,6 +268,30 @@ fun ScorrimentoAutomatico(attivo: Boolean, dito: () -> androidx.compose.ui.geome
             }
             if (passo != 0f) scorrimento.dispatchRawDelta(passo)
             kotlinx.coroutines.delay(16)
+        }
+    }
+}
+
+/** Una voce del menu ⋮ di una sezione. */
+data class VoceMenuSezione(val testo: String, val icona: androidx.compose.ui.graphics.vector.ImageVector, val abilitata: Boolean = true, val onClick: () -> Unit)
+
+/** Menu ⋮ di una sezione (es. accanto al filtro): le voci [voci] con la loro icona. */
+@Composable
+fun MenuSezione(voci: List<VoceMenuSezione>) {
+    var aperto by remember { mutableStateOf(false) }
+    androidx.compose.foundation.layout.Box {
+        androidx.compose.material3.IconButton(onClick = { aperto = true }) {
+            androidx.compose.material3.Icon(androidx.compose.material.icons.Icons.Filled.MoreVert, contentDescription = "Altre azioni")
+        }
+        androidx.compose.material3.DropdownMenu(expanded = aperto, onDismissRequest = { aperto = false }) {
+            voci.forEach { v ->
+                androidx.compose.material3.DropdownMenuItem(
+                    text = { Text(v.testo) },
+                    leadingIcon = { androidx.compose.material3.Icon(v.icona, contentDescription = null) },
+                    enabled = v.abilitata,
+                    onClick = { aperto = false; v.onClick() }
+                )
+            }
         }
     }
 }

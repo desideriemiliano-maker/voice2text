@@ -20,6 +20,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material3.AlertDialog
@@ -89,6 +90,7 @@ fun RicorrentiScreen(vm: SpeseViewModel) {
     var sceltaVoci by remember { mutableStateOf(false) }
     var aperta by remember { mutableStateOf<RigaAperta?>(null) }
     var mostraGrafico by remember { mutableStateOf(false) }
+    var mostraCalendario by remember { mutableStateOf(false) }
     val cambi by vm.cambi.collectAsStateWithLifecycle()
 
     LaunchedEffect(mesi.isNotEmpty()) {
@@ -122,9 +124,12 @@ fun RicorrentiScreen(vm: SpeseViewModel) {
                     )
                     Box(modifier = Modifier.matchParentSize().clickable { sceltaVoci = true })
                 }
-                IconButton(onClick = { mostraGrafico = true }) {
-                    Icon(Icons.AutoMirrored.Filled.ShowChart, contentDescription = "Grafico")
-                }
+                MenuSezione(
+                    listOf(
+                        VoceMenuSezione("Grafico", Icons.AutoMirrored.Filled.ShowChart) { mostraGrafico = true },
+                        VoceMenuSezione("Calendario ricorrenti", Icons.Filled.CalendarMonth) { mostraCalendario = true }
+                    )
+                )
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     SceltaMese("Dal", periodo.first, { vm.impostaPeriodoRicorrenti(it, periodo.second) }, Modifier.weight(1f))
@@ -170,6 +175,7 @@ fun RicorrentiScreen(vm: SpeseViewModel) {
             onChiudi = { mostraGrafico = false }
         )
     }
+    if (mostraCalendario) CalendarioRicorrentiDialog(vm, onChiudi = { mostraCalendario = false })
     aperta?.let { a ->
         // La voce aggiornata (es. mese di partenza cambiato) si prende dai dati correnti.
         val voce = dati.vociPerId[a.riga.voce.id] ?: a.riga.voce

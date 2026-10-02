@@ -14,6 +14,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.TableChart
 import androidx.compose.material.icons.automirrored.filled.ShowChart
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
@@ -75,6 +76,7 @@ fun CorrentiScreen(vm: SpeseViewModel) {
     var filtroVoci by rememberSaveable { mutableStateOf<List<Long>>(emptyList()) }
     var sceltaVoci by remember { mutableStateOf(false) }
     var mostraGrafico by remember { mutableStateOf(false) }
+    var mostraReport by remember { mutableStateOf(false) }
     var aperta by remember { mutableStateOf<Pair<RigaCorrente, YearMonth>?>(null) }
 
     // Voci correnti (più "Senza tipo") per il filtro.
@@ -121,9 +123,12 @@ fun CorrentiScreen(vm: SpeseViewModel) {
                     )
                     Box(modifier = Modifier.matchParentSize().clickable { sceltaVoci = true })
                 }
-                IconButton(onClick = { mostraGrafico = true }, enabled = correnti.isNotEmpty()) {
-                    Icon(Icons.AutoMirrored.Filled.ShowChart, contentDescription = "Grafico")
-                }
+                MenuSezione(
+                    listOf(
+                        VoceMenuSezione("Grafico", Icons.AutoMirrored.Filled.ShowChart, abilitata = correnti.isNotEmpty()) { mostraGrafico = true },
+                        VoceMenuSezione("Report", Icons.Filled.TableChart) { mostraReport = true }
+                    )
+                )
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 SceltaMese("Dal", periodo.first, { vm.impostaPeriodoCorrenti(it, periodo.second) }, Modifier.weight(1f))
@@ -164,6 +169,7 @@ fun CorrentiScreen(vm: SpeseViewModel) {
             onChiudi = { mostraGrafico = false }
         )
     }
+    if (mostraReport) ReportCorrentiDialog(vm, onChiudi = { mostraReport = false })
     aperta?.let { (riga, mese) -> OperazioniCorrentiDialog(vm, dati, riga, mese, onChiudi = { aperta = null }) }
 }
 

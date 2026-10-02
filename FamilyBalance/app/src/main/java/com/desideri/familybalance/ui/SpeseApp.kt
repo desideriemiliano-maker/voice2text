@@ -113,7 +113,6 @@ private fun SchermataPrincipale(vm: SpeseViewModel, sezione: Sezione, onSezione:
     var menuAperto by remember { mutableStateOf(false) }
     var mostraVersioni by remember { mutableStateOf(false) }
     var mostraRegistro by remember { mutableStateOf(false) }
-    var mostraCalendario by remember { mutableStateOf(false) }
     val importazioneInCorso by vm.importazioneInCorso.collectAsStateWithLifecycle()
     val importEstratto by vm.importEstratto.collectAsStateWithLifecycle()
     val testoAttesa by vm.testoAttesa.collectAsStateWithLifecycle()
@@ -132,7 +131,6 @@ private fun SchermataPrincipale(vm: SpeseViewModel, sezione: Sezione, onSezione:
                             VoceMenu("Anagrafica spese", Icons.AutoMirrored.Filled.List) { menuAperto = false; onApri(Schermata.AnagraficaSpese) }
                             VoceMenu("Anagrafica conti", Icons.Filled.AccountBalanceWallet) { menuAperto = false; onApri(Schermata.AnagraficaConti) }
                             VoceMenu("Anagrafica associazioni", Icons.Filled.Link) { menuAperto = false; onApri(Schermata.AnagraficaAssociazioni) }
-                            VoceMenu("Calendario ricorrenti", Icons.Filled.CalendarMonth) { menuAperto = false; mostraCalendario = true }
                             HorizontalDivider()
                             VoceMenu("Riscontro spostamenti", Icons.AutoMirrored.Filled.CompareArrows) { menuAperto = false; onApri(Schermata.MappaSpostamenti) }
                             VoceMenu("Cambi CHF/EUR", Icons.Filled.CurrencyExchange) { menuAperto = false; onApri(Schermata.Cambi) }
@@ -172,7 +170,6 @@ private fun SchermataPrincipale(vm: SpeseViewModel, sezione: Sezione, onSezione:
 
     if (mostraVersioni) VersioniDialog(onDismiss = { mostraVersioni = false })
     if (mostraRegistro) RegistroDialog(onDismiss = { mostraRegistro = false })
-    if (mostraCalendario) CalendarioRicorrentiDialog(vm, onChiudi = { mostraCalendario = false })
 
     colonneExcel?.let { ColonneExcelDialog(vm, dati, it) }
 
