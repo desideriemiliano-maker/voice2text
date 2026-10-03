@@ -139,7 +139,7 @@ private fun CardMeseCorrente(r: RigaBilancio) {
     Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer), modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text("Bilancio attuale · ${formattaMese(r.mese)}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            r.saldoIniziale?.let { RigaValore("Saldo mese precedente", it, grassetto = true) }
+            r.saldoIniziale?.let { RigaValore("Saldo iniziale (prima dello stipendio)", it, grassetto = true) }
             HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
             RigaValore("Stipendio / interessi mese precedente", r.entrateMesePrima ?: 0.0, dettaglio = r.mese to ComponenteBilancio.ENTRATE_MESE_PRIMA)
             RigaValore("Spese correnti", r.correnti, dettaglio = r.mese to ComponenteBilancio.CORRENTI)
@@ -154,8 +154,16 @@ private fun CardMeseCorrente(r: RigaBilancio) {
                 )
             }
             HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+            // Saldo iniziale + residuo = saldo a fine mese.
+            val totaleSpese = r.correnti + r.ricorrentiTotali
+            RigaValore("Totale spese", totaleSpese, grassetto = true, dettaglio = r.mese to ComponenteBilancio.SPESE)
+            RigaValore("Residuo (stipendio − spese)", (r.entrateMesePrima ?: 0.0) + totaleSpese, grassetto = true, dettaglio = r.mese to ComponenteBilancio.RESIDUO)
             r.saldoFinale?.let { RigaValore("Saldo a fine mese", it, grassetto = true) }
-            r.saldoFine?.let { Text("Saldo attuale: ${formattaImporto(it)}. Il saldo a fine mese è il punto di partenza dei mesi successivi.", style = MaterialTheme.typography.bodySmall) }
+            Text(
+                "Saldo a fine mese = saldo iniziale + residuo; è il punto di partenza dei mesi successivi." +
+                    (r.saldoFine?.let { " Saldo attuale dei conti: ${formattaImporto(it)}." } ?: ""),
+                style = MaterialTheme.typography.bodySmall
+            )
             RigheCambio(r)
         }
     }

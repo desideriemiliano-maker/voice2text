@@ -81,6 +81,8 @@ class CalcoliTest {
         assertEquals(-100.0, settembre.ricorrentiPrevisti, 0.001)
         // Corrente: saldo attuale + ricorrenti previste (il target non entra); risparmio con lo stipendio di agosto.
         assertEquals(3300.0, settembre.saldoPrevisto!!, 0.001)
+        // Saldo iniziale senza lo stipendio di agosto: 400 + 3000 (stipendio) − 100 (ricorrenti) = 3300.
+        assertEquals(400.0, settembre.saldoIniziale!!, 0.001)
         assertEquals(3000.0, settembre.risparmio, 0.001)
         assertEquals(1000.0, settembre.deltaTarget, 0.001)
 
