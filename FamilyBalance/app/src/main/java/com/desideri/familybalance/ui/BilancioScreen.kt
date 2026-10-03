@@ -17,6 +17,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.foundation.layout.size
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import java.time.YearMonth
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -58,6 +62,7 @@ fun BilancioScreen(vm: SpeseViewModel) {
     val stato = rememberLazyListState()
     var mostraGrafico by remember { mutableStateOf(false) }
     var mostraReport by remember { mutableStateOf(false) }
+    var dettaglio by remember { mutableStateOf<Pair<YearMonth, ComponenteBilancio>?>(null) }
 
     // All'apertura la lista parte dal mese corrente (i passati sono sopra, i futuri sotto).
     LaunchedEffect(righe.isNotEmpty()) {
@@ -95,6 +100,7 @@ fun BilancioScreen(vm: SpeseViewModel) {
                 )
             }
         }
+        CompositionLocalProvider(LocalDettaglioBilancio provides { m, c -> dettaglio = m to c }) {
         LazyColumn(state = stato, contentPadding = PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.weight(1f)) {
             if (righe.isEmpty()) item { Text("Nessun mese nel periodo scelto.", style = MaterialTheme.typography.bodyMedium) }
             items(righe, key = { it.mese.toString() }) { r ->
@@ -105,16 +111,26 @@ fun BilancioScreen(vm: SpeseViewModel) {
                 }
             }
         }
+        }
     }
     if (mostraGrafico) GraficoBilancioDialog(righe, onChiudi = { mostraGrafico = false })
     if (mostraReport) ReportBilancioDialog(vm, onChiudi = { mostraReport = false })
+    dettaglio?.let { (m, c) -> DettaglioBilancioDialog(vm, m, c, onChiudi = { dettaglio = null }) }
 }
 
 @Composable
-private fun RigaValore(etichetta: String, valore: Double, grassetto: Boolean = false) {
-    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(vertical = 1.dp)) {
+private fun RigaValore(etichetta: String, valore: Double, grassetto: Boolean = false, dettaglio: Pair<YearMonth, ComponenteBilancio>? = null) {
+    val apri = LocalDettaglioBilancio.current
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.fillMaxWidth()
+            .then(if (dettaglio != null) Modifier.clickable { apri(dettaglio.first, dettaglio.second) } else Modifier)
+            .padding(vertical = 1.dp)
+    ) {
         Text(etichetta, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f), fontWeight = if (grassetto) FontWeight.Bold else null)
         TestoImporto(valore, grassetto = grassetto)
+        // Gli importi calcolati dalle operazioni si toccano per vederne il dettaglio.
+        if (dettaglio != null) Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = "Dettaglio", modifier = Modifier.size(18.dp))
     }
 }
 
@@ -125,12 +141,12 @@ private fun CardMeseCorrente(r: RigaBilancio) {
             Text("Bilancio attuale · ${formattaMese(r.mese)}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             r.saldoIniziale?.let { RigaValore("Saldo mese precedente", it, grassetto = true) }
             HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
-            RigaValore("Stipendio / interessi mese precedente", r.entrateMesePrima ?: 0.0)
-            RigaValore("Spese correnti", r.correnti)
-            RigaValore("Risparmio", r.risparmio)
+            RigaValore("Stipendio / interessi mese precedente", r.entrateMesePrima ?: 0.0, dettaglio = r.mese to ComponenteBilancio.ENTRATE_MESE_PRIMA)
+            RigaValore("Spese correnti", r.correnti, dettaglio = r.mese to ComponenteBilancio.CORRENTI)
+            RigaValore("Risparmio", r.risparmio, dettaglio = r.mese to ComponenteBilancio.RISPARMIO)
             RigaValore("Delta target risparmio (${formattaImporto(r.target)})", r.deltaTarget)
             HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
-            RigaValore("Spese ricorrenti", r.ricorrentiTotali)
+            RigaValore("Spese ricorrenti", r.ricorrentiTotali, dettaglio = r.mese to ComponenteBilancio.RICORRENTI)
             if (r.ricorrentiPrevisti != 0.0) {
                 Text(
                     "di cui pagate ${formattaImporto(r.ricorrentiPagati)}, ancora previste ${formattaImporto(r.ricorrentiPrevisti)}",
@@ -201,15 +217,15 @@ private fun CardMesePassato(r: RigaBilancio) {
             if (espanso) {
                 HorizontalDivider(modifier = Modifier.padding(vertical = 6.dp))
                 r.saldoIniziale?.let { RigaValore("Saldo iniziale", it) }
-                RigaValore("Stipendio / interessi mese precedente", r.entrateMesePrima ?: 0.0)
-                RigaValore("Spese correnti", r.correnti)
-                RigaValore("Risparmio", r.risparmio)
+                RigaValore("Stipendio / interessi mese precedente", r.entrateMesePrima ?: 0.0, dettaglio = r.mese to ComponenteBilancio.ENTRATE_MESE_PRIMA)
+                RigaValore("Spese correnti", r.correnti, dettaglio = r.mese to ComponenteBilancio.CORRENTI)
+                RigaValore("Risparmio", r.risparmio, dettaglio = r.mese to ComponenteBilancio.RISPARMIO)
                 RigaValore("Delta risparmio (target ${formattaImporto(r.target)})", r.deltaTarget, grassetto = true)
-                RigaValore("Spese ricorrenti", r.ricorrentiPagati)
+                RigaValore("Spese ricorrenti", r.ricorrentiPagati, dettaglio = r.mese to ComponenteBilancio.RICORRENTI)
                 // Totale delle spese del mese e quanto resta dello stipendio del mese prima.
                 val totaleSpese = r.correnti + r.ricorrentiPagati
-                RigaValore("Totale spese", totaleSpese, grassetto = true)
-                RigaValore("Residuo (stipendio − spese)", (r.entrateMesePrima ?: 0.0) + totaleSpese, grassetto = true)
+                RigaValore("Totale spese", totaleSpese, grassetto = true, dettaglio = r.mese to ComponenteBilancio.SPESE)
+                RigaValore("Residuo (stipendio − spese)", (r.entrateMesePrima ?: 0.0) + totaleSpese, grassetto = true, dettaglio = r.mese to ComponenteBilancio.RESIDUO)
                 r.saldoFinale?.let { RigaValore("Saldo finale", it, grassetto = true) }
                 RigheCambio(r)
             }
