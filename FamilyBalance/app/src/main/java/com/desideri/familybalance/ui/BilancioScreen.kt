@@ -22,6 +22,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.TableChart
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.foundation.clickable
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.material.icons.automirrored.filled.ShowChart
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -36,6 +40,7 @@ import com.desideri.familybalance.logica.RigaBilancio
 import com.desideri.familybalance.logica.StatoMese
 import com.desideri.familybalance.logica.formattaImporto
 import com.desideri.familybalance.logica.formattaMese
+import com.desideri.familybalance.ui.tema.coloreImporto
 import java.util.Locale
 import kotlin.math.abs
 
@@ -118,27 +123,54 @@ private fun CardMeseCorrente(r: RigaBilancio) {
     Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer), modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text("Bilancio attuale · ${formattaMese(r.mese)}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            r.saldoFine?.let { RigaValore("Saldo attuale", it, grassetto = true) }
+            r.saldoIniziale?.let { RigaValore("Saldo mese precedente", it, grassetto = true) }
             HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
-            RigaValore("Stipendio / interessi del mese prima", r.entrateMesePrima ?: 0.0)
-            if (r.entrate != 0.0) RigaValore("Entrate di questo mese", r.entrate)
+            RigaValore("Stipendio / interessi mese precedente", r.entrateMesePrima ?: 0.0)
             RigaValore("Spese correnti", r.correnti)
-            RigaValore("Spese ricorrenti pagate", r.ricorrentiPagati)
-            if (r.ricorrentiPrevisti != 0.0) RigaValore("Spese ricorrenti ancora previste", r.ricorrentiPrevisti)
+            RigaValore("Risparmio", r.risparmio)
+            RigaValore("Delta target risparmio (${formattaImporto(r.target)})", r.deltaTarget)
             HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
-            // Riferimento: lo stipendio del mese prima meno le spese correnti, confrontato con il target.
-            RigaValore("Risparmio (stipendio del mese prima + correnti)", r.risparmio)
-            RigaValore("Rispetto al target di ${formattaImporto(r.target)}", r.deltaTarget)
-            RigheCambio(r)
-            r.saldoPrevisto?.let { previsto ->
-                HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
-                Text("Da qui a fine mese", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
-                r.saldoFine?.let { RigaValore("Saldo attuale", it) }
-                if (r.ricorrentiPrevisti != 0.0) RigaValore("Spese ricorrenti ancora previste", r.ricorrentiPrevisti)
-                RigaValore("Saldo previsto a fine mese", previsto, grassetto = true)
+            RigaValore("Spese ricorrenti", r.ricorrentiTotali)
+            if (r.ricorrentiPrevisti != 0.0) {
                 Text(
-                    "Il target di risparmio entra nella previsione solo dai mesi successivi.",
+                    "di cui pagate ${formattaImporto(r.ricorrentiPagati)}, ancora previste ${formattaImporto(r.ricorrentiPrevisti)}",
                     style = MaterialTheme.typography.bodySmall
+                )
+            }
+            AltriMovimenti(r)
+            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+            r.saldoFinale?.let { RigaValore("Saldo a fine mese", it, grassetto = true) }
+            r.saldoFine?.let { Text("Saldo attuale: ${formattaImporto(it)}. Il saldo a fine mese è il punto di partenza dei mesi successivi.", style = MaterialTheme.typography.bodySmall) }
+            RigheCambio(r)
+        }
+    }
+}
+
+/**
+ * Movimenti del mese non elencati sopra (entrate del mese, effetto cambio, spostamenti verso conti
+ * fuori dall'app…): la differenza tra il saldo finale e saldo iniziale + correnti + ricorrenti.
+ */
+@Composable
+private fun AltriMovimenti(r: RigaBilancio) {
+    val iniziale = r.saldoIniziale ?: return
+    val finale = r.saldoFinale ?: return
+    val altro = finale - iniziale - r.correnti - r.ricorrentiTotali
+    if (abs(altro) >= 0.5) RigaValore("Altri movimenti (entrate del mese, cambio…)", altro)
+}
+
+/** Intestazione di un mese collassabile: mese, saldo finale e (se c'è) il delta risparmio. */
+@Composable
+private fun TestaMese(r: RigaBilancio, espanso: Boolean, delta: Double?, onClick: () -> Unit) {
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().clickable(onClick = onClick)) {
+        Icon(if (espanso) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore, contentDescription = if (espanso) "Comprimi" else "Espandi")
+        Text(formattaMese(r.mese), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+        Column(horizontalAlignment = Alignment.End) {
+            r.saldoFinale?.let { TestoImporto(it, grassetto = true) }
+            delta?.let {
+                Text(
+                    "Δ risparmio ${if (it > 0) "+" else ""}${formattaImporto(it)}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = coloreImporto(it)
                 )
             }
         }
@@ -147,30 +179,38 @@ private fun CardMeseCorrente(r: RigaBilancio) {
 
 @Composable
 private fun CardMeseFuturo(r: RigaBilancio) {
+    var espanso by rememberSaveable(r.mese.toString()) { mutableStateOf(false) }
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(12.dp)) {
-            Text(formattaMese(r.mese), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
-            RigaValore("Risparmio previsto (target)", r.target)
-            RigaValore("Spese ricorrenti previste", r.ricorrentiTotali)
-            r.saldoPrevisto?.let { RigaValore("Saldo previsto", it, grassetto = true) }
+            TestaMese(r, espanso, null) { espanso = !espanso }
+            if (espanso) {
+                HorizontalDivider(modifier = Modifier.padding(vertical = 6.dp))
+                r.saldoIniziale?.let { RigaValore("Saldo iniziale", it) }
+                RigaValore("Risparmio previsto (target)", r.target)
+                RigaValore("Spese ricorrenti", r.ricorrentiTotali)
+                r.saldoFinale?.let { RigaValore("Saldo finale", it, grassetto = true) }
+            }
         }
     }
 }
 
 @Composable
 private fun CardMesePassato(r: RigaBilancio) {
+    var espanso by rememberSaveable(r.mese.toString()) { mutableStateOf(false) }
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(12.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(formattaMese(r.mese), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                r.saldoFine?.let { Text("Saldo ${formattaImporto(it)}", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold) }
+            TestaMese(r, espanso, r.deltaTarget) { espanso = !espanso }
+            if (espanso) {
+                HorizontalDivider(modifier = Modifier.padding(vertical = 6.dp))
+                r.saldoIniziale?.let { RigaValore("Saldo iniziale", it) }
+                RigaValore("Stipendio / interessi mese precedente", r.entrateMesePrima ?: 0.0)
+                RigaValore("Spese ricorrenti", r.ricorrentiPagati)
+                RigaValore("Spese correnti", r.correnti)
+                RigaValore("Delta risparmio (target ${formattaImporto(r.target)})", r.deltaTarget, grassetto = true)
+                AltriMovimenti(r)
+                r.saldoFinale?.let { RigaValore("Saldo finale", it, grassetto = true) }
+                RigheCambio(r)
             }
-            RigaValore("Stipendio / interessi", r.entrate)
-            RigaValore("Spese correnti", r.correnti)
-            RigaValore("Spese ricorrenti", r.ricorrentiPagati)
-            RigaValore("Risparmio (entrate + correnti)", r.risparmio)
-            RigaValore("Delta rispetto al target", r.deltaTarget, grassetto = true)
-            RigheCambio(r)
         }
     }
 }

@@ -88,11 +88,15 @@ data class RigaBilancio(
     val effettoCambio: Double = 0.0,
     val cambioSpostamenti: Double = 0.0,
     /**
-     * Per il mese corrente: lo stipendio/interessi del mese prima, che finanzia le spese del mese e
-     * con cui si confronta il risparmio rispetto al target. Null negli altri mesi.
+     * Mesi passati e corrente: lo stipendio/interessi del mese prima, che finanzia le spese del mese e
+     * con cui si confronta il risparmio rispetto al target. Null per i mesi futuri.
      */
-    val entrateMesePrima: Double? = null
+    val entrateMesePrima: Double? = null,
+    /** Saldo di inizio mese (fine del mese prima; per i futuri quello previsto). */
+    val saldoIniziale: Double? = null
 ) {
+    /** Saldo di fine mese: reale per i passati, previsto per corrente e futuri. */
+    val saldoFinale: Double? get() = if (stato == StatoMese.PASSATO) saldoFine else saldoPrevisto
     /** Risparmio del mese: entrate (per il mese corrente quelle del mese prima) + spese correnti. */
     val risparmio: Double get() = (entrateMesePrima ?: entrate) + correnti
     val deltaTarget: Double get() = risparmio - target
@@ -354,7 +358,8 @@ object Calcoli {
                 cambioChfEur = cambio,
                 effettoCambio = if (stato == StatoMese.FUTURO) 0.0 else effettoCambio,
                 cambioSpostamenti = cambioSpostamenti[m] ?: 0.0,
-                entrateMesePrima = if (stato == StatoMese.CORRENTE) entrate[m.minusMonths(1)] ?: 0.0 else null
+                entrateMesePrima = if (stato != StatoMese.FUTURO) entrate[m.minusMonths(1)] ?: 0.0 else null,
+                saldoIniziale = if (stato == StatoMese.FUTURO) saldoPrevistoPrecedente else saldoPrecedente
             )
             saldoPrecedente = saldo
             if (saldoPrevisto != null) saldoPrevistoPrecedente = saldoPrevisto
