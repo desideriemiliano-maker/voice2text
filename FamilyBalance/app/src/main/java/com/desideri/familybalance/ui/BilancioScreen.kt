@@ -179,7 +179,7 @@ private fun TestaMese(r: RigaBilancio, espanso: Boolean, delta: Double?, onClick
             r.saldoFinale?.let { TestoImporto(it, grassetto = true) }
             // Variazione del saldo rispetto alla fine del mese prima.
             val finale = r.saldoFinale
-            val iniziale = r.saldoIniziale
+            val iniziale = r.saldoFinalePrecedente
             if (finale != null && iniziale != null) {
                 val variazione = finale - iniziale
                 Text(
@@ -224,7 +224,7 @@ private fun CardMesePassato(r: RigaBilancio) {
             TestaMese(r, espanso, r.deltaTarget) { espanso = !espanso }
             if (espanso) {
                 HorizontalDivider(modifier = Modifier.padding(vertical = 6.dp))
-                r.saldoIniziale?.let { RigaValore("Saldo iniziale", it) }
+                r.saldoIniziale?.let { RigaValore("Saldo iniziale (prima dello stipendio)", it) }
                 RigaValore("Stipendio / interessi mese precedente", r.entrateMesePrima ?: 0.0, dettaglio = r.mese to ComponenteBilancio.ENTRATE_MESE_PRIMA)
                 RigaValore("Spese correnti", r.correnti, dettaglio = r.mese to ComponenteBilancio.CORRENTI)
                 RigaValore("Risparmio", r.risparmio, dettaglio = r.mese to ComponenteBilancio.RISPARMIO)
@@ -235,6 +235,13 @@ private fun CardMesePassato(r: RigaBilancio) {
                 RigaValore("Totale spese", totaleSpese, grassetto = true, dettaglio = r.mese to ComponenteBilancio.SPESE)
                 RigaValore("Residuo (stipendio − spese)", (r.entrateMesePrima ?: 0.0) + totaleSpese, grassetto = true, dettaglio = r.mese to ComponenteBilancio.RESIDUO)
                 r.saldoFinale?.let { RigaValore("Saldo finale", it, grassetto = true) }
+                r.saldoFine?.let {
+                    Text(
+                        "Saldo finale = saldo iniziale + residuo. Saldo reale dei conti a fine mese: ${formattaImporto(it)} " +
+                            "(comprende lo stipendio arrivato nel mese, per il mese dopo, ed eventuali cambio o spostamenti esterni).",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
                 RigheCambio(r)
             }
         }

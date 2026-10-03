@@ -75,6 +75,8 @@ class CalcoliTest {
         // Il risparmio usa lo stipendio del mese prima (luglio: nessuno).
         assertEquals(-2500.0, agosto.deltaTarget, 0.001)
         assertEquals(1000.0, agosto.saldoIniziale!!, 0.001)
+        // Saldo finale del bilancio = saldo iniziale + residuo (stipendio di luglio 0 − 500 − 100).
+        assertEquals(400.0, agosto.saldoFinale!!, 0.001)
 
         val settembre = righe[1]
         assertEquals(StatoMese.CORRENTE, settembre.stato)

@@ -92,11 +92,23 @@ data class RigaBilancio(
      * con cui si confronta il risparmio rispetto al target. Null per i mesi futuri.
      */
     val entrateMesePrima: Double? = null,
-    /** Saldo di inizio mese (fine del mese prima; per i futuri quello previsto). */
-    val saldoIniziale: Double? = null
+    /**
+     * Saldo di inizio mese: per passati e corrente il saldo reale di fine mese precedente senza lo
+     * stipendio arrivato in quel mese (che è in [entrateMesePrima]); per i futuri quello previsto.
+     */
+    val saldoIniziale: Double? = null,
+    /** Saldo finale calcolato del mese prima (per la variazione), null per il primo mese. */
+    val saldoFinalePrecedente: Double? = null
 ) {
-    /** Saldo di fine mese: reale per i passati, previsto per corrente e futuri. */
-    val saldoFinale: Double? get() = if (stato == StatoMese.PASSATO) saldoFine else saldoPrevisto
+    /**
+     * Saldo di fine mese del bilancio: saldo iniziale + stipendio del mese prima + spese correnti e
+     * ricorrenti (per i futuri con il target). Il saldo reale dei conti è [saldoFine].
+     */
+    val saldoFinale: Double?
+        get() = when (stato) {
+            StatoMese.FUTURO, StatoMese.CORRENTE -> saldoPrevisto
+            StatoMese.PASSATO -> saldoIniziale?.let { it + (entrateMesePrima ?: 0.0) + correnti + ricorrentiPagati }
+        }
     /** Risparmio del mese: entrate (per il mese corrente quelle del mese prima) + spese correnti. */
     val risparmio: Double get() = (entrateMesePrima ?: entrate) + correnti
     val deltaTarget: Double get() = risparmio - target
@@ -323,6 +335,7 @@ object Calcoli {
         var saldo = saldoEurCent / 100.0 + saldoChfCent / 100.0 * cambioPrecedente
         var saldoPrecedente = saldo
         var saldoPrevistoPrecedente = saldo
+        var finalePrecedente: Double? = null
         val righe = mesi.map { m ->
             val cambio = cambi.chfEur(m)
             val effettoCambio = saldoChfCent / 100.0 * (cambio - cambioPrecedente)
@@ -362,9 +375,11 @@ object Calcoli {
                     StatoMese.FUTURO -> saldoPrevistoPrecedente
                     // Mese corrente: saldo di fine mese precedente senza lo stipendio arrivato in quel mese.
                     StatoMese.CORRENTE -> saldoPrecedente - (entrate[m.minusMonths(1)] ?: 0.0)
-                    StatoMese.PASSATO -> saldoPrecedente
-                }
+                    StatoMese.PASSATO -> saldoPrecedente - (entrate[m.minusMonths(1)] ?: 0.0)
+                },
+                saldoFinalePrecedente = finalePrecedente
             )
+            finalePrecedente = riga.saldoFinale
             saldoPrecedente = saldo
             if (saldoPrevisto != null) saldoPrevistoPrecedente = saldoPrevisto
             riga
