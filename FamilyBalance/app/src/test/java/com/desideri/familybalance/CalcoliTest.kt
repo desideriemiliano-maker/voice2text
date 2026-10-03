@@ -77,11 +77,14 @@ class CalcoliTest {
         val settembre = righe[1]
         assertEquals(StatoMese.CORRENTE, settembre.stato)
         assertEquals(-100.0, settembre.ricorrentiPrevisti, 0.001)
-        assertEquals(5300.0, settembre.saldoPrevisto!!, 0.001)
+        // Corrente: saldo attuale + ricorrenti previste (il target non entra); risparmio con lo stipendio di agosto.
+        assertEquals(3300.0, settembre.saldoPrevisto!!, 0.001)
+        assertEquals(3000.0, settembre.risparmio, 0.001)
+        assertEquals(1000.0, settembre.deltaTarget, 0.001)
 
         val ottobre = righe[2]
         assertEquals(StatoMese.FUTURO, ottobre.stato)
-        assertEquals(7200.0, ottobre.saldoPrevisto!!, 0.001)
+        assertEquals(5200.0, ottobre.saldoPrevisto!!, 0.001)
     }
 
     @Test

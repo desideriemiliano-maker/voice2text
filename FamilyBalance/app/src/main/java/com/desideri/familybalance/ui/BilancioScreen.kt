@@ -120,30 +120,26 @@ private fun CardMeseCorrente(r: RigaBilancio) {
             Text("Bilancio attuale · ${formattaMese(r.mese)}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             r.saldoFine?.let { RigaValore("Saldo attuale", it, grassetto = true) }
             HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
-            RigaValore("Stipendio / interessi", r.entrate)
+            RigaValore("Stipendio / interessi del mese prima", r.entrateMesePrima ?: 0.0)
+            if (r.entrate != 0.0) RigaValore("Entrate di questo mese", r.entrate)
             RigaValore("Spese correnti", r.correnti)
             RigaValore("Spese ricorrenti pagate", r.ricorrentiPagati)
             if (r.ricorrentiPrevisti != 0.0) RigaValore("Spese ricorrenti ancora previste", r.ricorrentiPrevisti)
             HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
-            RigaValore("Risparmio finora (entrate + correnti)", r.risparmio)
+            // Riferimento: lo stipendio del mese prima meno le spese correnti, confrontato con il target.
+            RigaValore("Risparmio (stipendio del mese prima + correnti)", r.risparmio)
             RigaValore("Rispetto al target di ${formattaImporto(r.target)}", r.deltaTarget)
             RigheCambio(r)
             r.saldoPrevisto?.let { previsto ->
-                // Come si arriva al saldo previsto: dal saldo attuale, quanto manca al target (stipendio
-                // ancora da ricevere meno le spese correnti attese) e le ricorrenti ancora da pagare.
                 HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
                 Text("Da qui a fine mese", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
                 r.saldoFine?.let { RigaValore("Saldo attuale", it) }
-                RigaValore("Ancora atteso per arrivare al target (entrate − correnti)", -r.deltaTarget)
                 if (r.ricorrentiPrevisti != 0.0) RigaValore("Spese ricorrenti ancora previste", r.ricorrentiPrevisti)
                 RigaValore("Saldo previsto a fine mese", previsto, grassetto = true)
-                if (r.entrate == 0.0 && r.deltaTarget < 0) {
-                    Text(
-                        "Lo stipendio del mese non è ancora arrivato: la previsione assume che arrivi e che il risparmio " +
-                            "del mese (entrate − spese correnti) raggiunga il target di ${formattaImporto(r.target)}.",
-                        style = MaterialTheme.typography.bodySmall
-                    )
-                }
+                Text(
+                    "Il target di risparmio entra nella previsione solo dai mesi successivi.",
+                    style = MaterialTheme.typography.bodySmall
+                )
             }
         }
     }

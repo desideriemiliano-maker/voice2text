@@ -86,9 +86,15 @@ data class RigaBilancio(
     val target: Double,
     val cambioChfEur: Double = 1.0,
     val effettoCambio: Double = 0.0,
-    val cambioSpostamenti: Double = 0.0
+    val cambioSpostamenti: Double = 0.0,
+    /**
+     * Per il mese corrente: lo stipendio/interessi del mese prima, che finanzia le spese del mese e
+     * con cui si confronta il risparmio rispetto al target. Null negli altri mesi.
+     */
+    val entrateMesePrima: Double? = null
 ) {
-    val risparmio: Double get() = entrate + correnti
+    /** Risparmio del mese: entrate (per il mese corrente quelle del mese prima) + spese correnti. */
+    val risparmio: Double get() = (entrateMesePrima ?: entrate) + correnti
     val deltaTarget: Double get() = risparmio - target
     val ricorrentiTotali: Double get() = ricorrentiPagati + ricorrentiPrevisti
 }
@@ -330,8 +336,9 @@ object Calcoli {
             val saldoPrevisto = when (stato) {
                 StatoMese.PASSATO -> null
                 // Dal saldo attuale (che comprende già tutto il mese: pagati, effetto cambio, spostamenti
-                // verso conti esterni…) più quanto manca al target di risparmio e le ricorrenti ancora previste.
-                StatoMese.CORRENTE -> saldo + (targetEuro - ((entrate[m] ?: 0.0) + (correnti[m] ?: 0.0))) + previstiMese
+                // verso conti esterni…) più le ricorrenti ancora previste.
+                // Il target di risparmio vale solo per i mesi futuri: nel corrente è un riferimento.
+                StatoMese.CORRENTE -> saldo + previstiMese
                 StatoMese.FUTURO -> saldoPrevistoPrecedente + targetEuro + pagati + previstiMese
             }
             val riga = RigaBilancio(
@@ -346,7 +353,8 @@ object Calcoli {
                 target = targetEuro,
                 cambioChfEur = cambio,
                 effettoCambio = if (stato == StatoMese.FUTURO) 0.0 else effettoCambio,
-                cambioSpostamenti = cambioSpostamenti[m] ?: 0.0
+                cambioSpostamenti = cambioSpostamenti[m] ?: 0.0,
+                entrateMesePrima = if (stato == StatoMese.CORRENTE) entrate[m.minusMonths(1)] ?: 0.0 else null
             )
             saldoPrecedente = saldo
             if (saldoPrevisto != null) saldoPrevistoPrecedente = saldoPrevisto
