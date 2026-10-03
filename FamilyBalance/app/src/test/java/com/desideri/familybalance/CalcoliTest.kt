@@ -193,4 +193,31 @@ class CalcoliTest {
         assertEquals(-100.0, m.totaleGiaPagato, 0.001)
         assertEquals(-750.0, m.totaleMancante, 0.001)
     }
+
+    @Test
+    fun ricorrenti_residuoTraImportoEOperazioni() {
+        val conti = listOf(ContoValuta(id = 1, contoId = 1, valuta = "EUR"))
+        val luce = Voce(id = 1, tipo = "Luce", ricorrente = true, mesiRicorrenza = 1, meseInizio = "2026-06", importoPrevistoCent = 10_000)
+        val ops = listOf(
+            Operazione(id = 1, contoValutaId = 1, data = giorno(2026, 6, 10), importoCent = -6_000, voceId = 1),
+            Operazione(id = 2, contoValutaId = 1, data = giorno(2026, 7, 10), importoCent = -15_000, voceId = 1),
+            Operazione(id = 3, contoValutaId = 1, data = giorno(2026, 9, 3), importoCent = -6_000, voceId = 1)
+        )
+        // Luglio con importo impostato a 200: resta il residuo anche nel passato.
+        val pers = listOf(PrevisioneRicorrente(voceId = 1, mese = "2026-07", importoCent = 20_000))
+        val mesi = listOf(YearMonth.of(2026, 6), YearMonth.of(2026, 7), YearMonth.of(2026, 9))
+        val r = Calcoli.ricorrenti(mesi, listOf(luce), conti, ops, Cambi.fisso(1.0), YearMonth.of(2026, 9), pers)
+
+        // Giugno (passato, importo da anagrafica): il pagamento chiude la scadenza.
+        assertNull(r[0].righe.single().previsto)
+        val luglio = r[1].righe.single()
+        assertEquals(-150.0, luglio.pagato, 0.001)
+        assertEquals(-50.0, luglio.previsto!!, 0.001)
+        assertEquals(-200.0, luglio.importoScadenza!!, 0.001)
+        // Settembre (corrente): pagati 60 su 100, restano 40; il totale del mese è 100.
+        val settembre = r[2].righe.single()
+        assertEquals(-60.0, settembre.pagato, 0.001)
+        assertEquals(-40.0, settembre.previsto!!, 0.001)
+        assertEquals(-100.0, r[2].totale, 0.001)
+    }
 }

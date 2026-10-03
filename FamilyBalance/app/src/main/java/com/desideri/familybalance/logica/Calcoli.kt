@@ -38,7 +38,12 @@ data class RigaRicorrente(
     /** Scadenza del mese annullata dall'utente (nessuna previsione). */
     val annullata: Boolean = false,
     /** Parte di [pagato] con operazioni già avvenute (data fino a oggi); il resto è registrato con data futura. */
-    val giaPagato: Double = pagato
+    val giaPagato: Double = pagato,
+    /**
+     * Importo della scadenza (calcolato o impostato) prima di togliere il pagato: [previsto] è il
+     * residuo ancora da pagare. Null per le righe senza previsione.
+     */
+    val importoScadenza: Double? = previsto
 )
 
 data class MeseRicorrenti(
@@ -158,8 +163,11 @@ object Calcoli {
             .map { it.key to it.value }
 
     /**
-     * Spese ricorrenti mese per mese secondo la loro ricorrenza: il pagato (operazioni del mese) o,
-     * se nel mese non ci sono operazioni, l'importo stimato (anche nei mesi passati, come non pagato). Le [personalizzazioni] (importo, data o
+     * Spese ricorrenti mese per mese secondo la loro ricorrenza: il pagato (operazioni del mese) e
+     * il residuo ancora previsto, cioè l'importo stimato o impostato meno il pagato (senza
+     * operazioni tutto l'importo, anche nei mesi passati come non pagato). Il residuo si considera
+     * per le scadenze con importo impostato e, per quelle calcolate, dal mese corrente in poi: nei
+     * mesi passati un pagamento chiude la scadenza stimata. Le [personalizzazioni] (importo, data o
      * spostamento di una singola scadenza) prevalgono sul calcolo; le voci obsolete non hanno
      * previsioni.
      */
@@ -207,27 +215,40 @@ object Calcoli {
         return mesi.map { m ->
             val righe = vociRicorrenti.flatMap { voce ->
                 val pagato = storico[voce.id]?.get(m) ?: 0.0
-                // Senza pagamenti nel mese la scadenza si stima (anche nei mesi passati: non pagata).
-                val daPrevedere = pagato == 0.0 && !voce.obsoleta
+                val giaPagato = storicoAdOggi[voce.id]?.get(m) ?: 0.0
                 val p = perVoceEMese[voce.id to m.toString()]
                 // Dovuta per la ricorrenza o aggiunta a mano in questo mese.
                 val dovutaQui = !voce.obsoleta && (dovuta(voce, m) || p?.aggiunta == true)
                 val annullata = dovutaQui && p?.annullata == true
                 // Scadenza del mese secondo la ricorrenza, se non annullata né spostata altrove.
-                val propria = if (daPrevedere && dovutaQui && !annullata && (p?.spostataA == null || p.spostataA == m.toString())) {
-                    riga(voce, pagato, m, p, null)
+                val propria = if (dovutaQui && !annullata && (p?.spostataA == null || p.spostataA == m.toString())) {
+                    riga(voce, 0.0, m, p, null)
                 } else null
                 // Scadenze di altri mesi spostate in questo.
-                val arrivate = if (daPrevedere) {
+                val arrivate = if (voce.obsoleta) emptyList() else {
                     spostatePerMese[m].orEmpty().filter { it.voceId == voce.id && !it.annullata }
-                        .mapNotNull { q -> testoInMese(q.mese)?.let { origine -> riga(voce, pagato, origine, q, origine) } }
-                } else emptyList()
-                val previste = listOfNotNull(propria) + arrivate
+                        .mapNotNull { q -> testoInMese(q.mese)?.let { origine -> riga(voce, 0.0, origine, q, origine) } }
+                }
+                // Il pagato del mese copre le scadenze in ordine; resta previsto il residuo (vedi sopra).
+                var daCoprire = pagato
+                val previste = (listOfNotNull(propria) + arrivate).mapNotNull { r ->
+                    val importo = r.previsto ?: return@mapNotNull null
+                    val conResiduo = pagato == 0.0 || r.fonte == FontePrevisione.PERSONALIZZATA || m >= oggi
+                    val residuo = when {
+                        !conResiduo -> { daCoprire = 0.0; 0.0 }
+                        // Spese negative: resta da pagare se l'importo è "più negativo" del pagato.
+                        importo < daCoprire - 0.005 -> (importo - daCoprire).also { daCoprire = 0.0 }
+                        else -> { daCoprire -= importo; 0.0 }
+                    }
+                    if (residuo == 0.0) null else r.copy(previsto = residuo, importoScadenza = importo)
+                }
+                // Il pagato va su una sola riga (la prima), per non contarlo più volte.
+                val conPagato = if (pagato == 0.0) previste else when {
+                    previste.isNotEmpty() -> listOf(previste.first().copy(pagato = pagato, giaPagato = giaPagato)) + previste.drop(1)
+                    else -> listOf(RigaRicorrente(voce, pagato, null, meseScadenza = m, giaPagato = giaPagato))
+                }
                 when {
-                    previste.isNotEmpty() -> previste
-                    pagato != 0.0 -> listOf(
-                        RigaRicorrente(voce, pagato, null, meseScadenza = m, giaPagato = storicoAdOggi[voce.id]?.get(m) ?: 0.0)
-                    )
+                    conPagato.isNotEmpty() -> conPagato
                     annullata -> listOf(RigaRicorrente(voce, 0.0, null, meseScadenza = m, annullata = true))
                     else -> emptyList()
                 }

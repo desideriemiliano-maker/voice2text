@@ -258,8 +258,10 @@ private fun CardMese(mese: MeseRicorrenti, oggi: YearMonth, onRiga: (RigaRicorre
                     if (riga.annullata) {
                         Text("annullata", style = MaterialTheme.typography.bodyMedium, fontStyle = FontStyle.Italic, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     } else if (riga.previsto != null) {
+                        // Con operazioni già collegate si mostra il pagato e il residuo.
                         Text(
-                            (if (mese.mese < oggi) "stima " else "previsto ") + formattaImporto(riga.previsto),
+                            (if (riga.pagato != 0.0) "pagato ${formattaImporto(riga.pagato)} · resta " else if (mese.mese < oggi) "stima " else "previsto ") +
+                                formattaImporto(riga.previsto),
                             style = MaterialTheme.typography.bodyMedium,
                             fontStyle = FontStyle.Italic,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -335,7 +337,7 @@ internal fun DettaglioRicorrenteDialog(vm: SpeseViewModel, dati: DatiApp, riga: 
     var daAssociare by remember { mutableStateOf<Operazione?>(null) }
     var confermaElimina by remember { mutableStateOf(false) }
     var contoNuova by remember { mutableStateOf(dati.contiValutaOrdinati.firstOrNull()?.id) }
-    var importo by remember(riga) { mutableStateOf(riga.previsto?.let { centInTesto(Math.round(abs(it) * 100)) } ?: "") }
+    var importo by remember(riga) { mutableStateOf(riga.importoScadenza?.let { centInTesto(Math.round(abs(it) * 100)) } ?: "") }
     var data by remember(riga) { mutableStateOf(riga.dataPrevista) }
     var nuovoMese by remember(riga) { mutableStateOf(mese.plusMonths(1)) }
     var mantieni by remember(riga) { mutableStateOf(true) }
@@ -355,6 +357,8 @@ internal fun DettaglioRicorrenteDialog(vm: SpeseViewModel, dati: DatiApp, riga: 
                     when {
                         riga.annullata -> "Stato: eliminata da questo mese"
                         riga.previsto == null && pagate.isNotEmpty() -> "Stato: effettiva (operazioni sul conto)"
+                        riga.previsto != null && riga.pagato != 0.0 ->
+                            "Stato: pagata in parte (${formattaImporto(riga.pagato)} su ${formattaImporto(riga.importoScadenza ?: riga.previsto)})"
                         riga.previsto != null && riga.dataPrevista != null -> "Stato: pianificata per il ${formattaData(riga.dataPrevista)}"
                         riga.previsto != null && riga.fonte == FontePrevisione.MEDIA -> "Stato: stimata con la media"
                         riga.previsto != null -> "Stato: stimata"
@@ -385,7 +389,7 @@ internal fun DettaglioRicorrenteDialog(vm: SpeseViewModel, dati: DatiApp, riga: 
                                 errore = "Importo non valido"
                             } else {
                                 // Importo uguale al calcolato: non lo si fissa, così segue le variazioni.
-                                val calcolato = if (riga.fonte != FontePrevisione.PERSONALIZZATA) Math.round(abs(previsto) * 100) else null
+                                val calcolato = if (riga.fonte != FontePrevisione.PERSONALIZZATA) riga.importoScadenza?.let { Math.round(abs(it) * 100) } else null
                                 vm.salvaScadenza(voce, meseScadenza, cent?.takeIf { it != calcolato }, data)
                                 onChiudi()
                             }
@@ -435,6 +439,14 @@ internal fun DettaglioRicorrenteDialog(vm: SpeseViewModel, dati: DatiApp, riga: 
                         }
                     }
                     Text("Tocca un'operazione per modificarla o eliminarla.", style = MaterialTheme.typography.bodySmall)
+                    // Il totale delle operazioni diventa l'importo del mese: niente più residuo.
+                    val totaleCent = Math.round(abs(riga.pagato) * 100)
+                    if (totaleCent > 0 && riga.importoScadenza?.let { Math.round(abs(it) * 100) } != totaleCent) {
+                        OutlinedButton(onClick = {
+                            vm.salvaScadenza(voce, meseScadenza, totaleCent, riga.dataPrevista)
+                            onChiudi()
+                        }, modifier = Modifier.fillMaxWidth()) { Text("Imposta l'importo del mese al totale delle operazioni (${formattaImporto(abs(riga.pagato))})") }
+                    }
                 }
                 Text("Aggiungi operazione", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -494,7 +506,12 @@ internal fun DettaglioRicorrenteDialog(vm: SpeseViewModel, dati: DatiApp, riga: 
                 }
 
                 riga.previsto?.let { previsto ->
-                    Text("Previsto: ${formattaImporto(previsto)}", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                    Text(
+                        if (riga.pagato != 0.0) "Previsto: ${formattaImporto(riga.importoScadenza ?: previsto)} · pagato ${formattaImporto(riga.pagato)} · resta ${formattaImporto(previsto)}"
+                        else "Previsto: ${formattaImporto(previsto)}",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold
+                    )
                     riga.meseOrigine?.let { Text("Scadenza di ${formattaMese(it)} spostata in questo mese.", style = MaterialTheme.typography.bodySmall) }
                     when (riga.fonte) {
                         FontePrevisione.PERSONALIZZATA -> Text("Importo impostato per questa scadenza.", style = MaterialTheme.typography.bodySmall)
