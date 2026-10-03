@@ -49,6 +49,7 @@ fun BilancioScreen(vm: SpeseViewModel) {
     val righe by vm.bilancio.collectAsStateWithLifecycle()
     val periodo by vm.periodoBilancio.collectAsStateWithLifecycle()
     val impostazioni by vm.impostazioni.collectAsStateWithLifecycle()
+    val dati by vm.dati.collectAsStateWithLifecycle()
     val stato = rememberLazyListState()
     var mostraGrafico by remember { mutableStateOf(false) }
     var mostraReport by remember { mutableStateOf(false) }
@@ -70,6 +71,15 @@ fun BilancioScreen(vm: SpeseViewModel) {
                         VoceMenuSezione("Grafico", Icons.AutoMirrored.Filled.ShowChart, abilitata = righe.isNotEmpty()) { mostraGrafico = true },
                         VoceMenuSezione("Report", Icons.Filled.TableChart) { mostraReport = true }
                     )
+                )
+            }
+            // Con conti in CHF un cambio attuale di 1 è quasi certamente da impostare.
+            if (impostazioni.cambioChfEur == 1.0 && dati.contiValuta.any { it.valuta == "CHF" }) {
+                Text(
+                    "Il cambio attuale CHF/EUR in Impostazioni è 1: i saldi CHF del mese corrente valgono 1:1 in EUR " +
+                        "(e l'effetto cambio rispetto al mese prima risulta falsato). Imposta il cambio in Impostazioni (menu ⋮).",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error
                 )
             }
             if (impostazioni.targetRisparmioCent == 0L) {

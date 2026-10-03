@@ -329,7 +329,9 @@ object Calcoli {
             val previstiMese = previsti[m] ?: 0.0
             val saldoPrevisto = when (stato) {
                 StatoMese.PASSATO -> null
-                StatoMese.CORRENTE -> saldoPrecedente + targetEuro + pagati + previstiMese
+                // Dal saldo attuale (che comprende già tutto il mese: pagati, effetto cambio, spostamenti
+                // verso conti esterni…) più quanto manca al target di risparmio e le ricorrenti ancora previste.
+                StatoMese.CORRENTE -> saldo + (targetEuro - ((entrate[m] ?: 0.0) + (correnti[m] ?: 0.0))) + previstiMese
                 StatoMese.FUTURO -> saldoPrevistoPrecedente + targetEuro + pagati + previstiMese
             }
             val riga = RigaBilancio(

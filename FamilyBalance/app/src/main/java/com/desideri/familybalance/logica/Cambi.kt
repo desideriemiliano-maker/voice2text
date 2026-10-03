@@ -35,7 +35,8 @@ class Cambi(
     }
 
     fun cambioMese(mese: YearMonth): CambioMese {
-        if (mese >= oggi) return CambioMese(mese, attuale, FonteCambio.ATTUALE)
+        // Corrente e futuri: il cambio attuale delle Impostazioni, salvo quello inserito per il mese.
+        if (mese >= oggi) return inseriti[mese]?.let { CambioMese(mese, it, FonteCambio.INSERITO) } ?: CambioMese(mese, attuale, FonteCambio.ATTUALE)
         inseriti[mese]?.let { return CambioMese(mese, it, FonteCambio.INSERITO) }
         daSpostamenti[mese]?.let { return CambioMese(mese, it, FonteCambio.SPOSTAMENTI) }
         val vicino = noti.floorEntry(mese) ?: noti.ceilingEntry(mese)
