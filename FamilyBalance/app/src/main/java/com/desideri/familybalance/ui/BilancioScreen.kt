@@ -175,6 +175,17 @@ private fun TestaMese(r: RigaBilancio, espanso: Boolean, delta: Double?, onClick
         Text(formattaMese(r.mese), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
         Column(horizontalAlignment = Alignment.End) {
             r.saldoFinale?.let { TestoImporto(it, grassetto = true) }
+            // Variazione del saldo rispetto alla fine del mese prima.
+            val finale = r.saldoFinale
+            val iniziale = r.saldoIniziale
+            if (finale != null && iniziale != null) {
+                val variazione = finale - iniziale
+                Text(
+                    "Δ mese prima ${if (variazione > 0) "+" else ""}${formattaImporto(variazione)}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = coloreImporto(variazione)
+                )
+            }
             delta?.let {
                 Text(
                     "Δ risparmio ${if (it > 0) "+" else ""}${formattaImporto(it)}",
