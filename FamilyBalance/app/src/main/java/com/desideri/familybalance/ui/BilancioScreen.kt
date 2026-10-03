@@ -27,6 +27,7 @@ import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.foundation.clickable
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.material.icons.automirrored.filled.ShowChart
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.runtime.getValue
@@ -58,6 +59,7 @@ fun BilancioScreen(vm: SpeseViewModel) {
     val stato = rememberLazyListState()
     var mostraGrafico by remember { mutableStateOf(false) }
     var mostraReport by remember { mutableStateOf(false) }
+    var altri by remember { mutableStateOf<RigaBilancio?>(null) }
 
     // All'apertura la lista parte dal mese corrente (i passati sono sopra, i futuri sotto).
     LaunchedEffect(righe.isNotEmpty()) {
@@ -99,15 +101,16 @@ fun BilancioScreen(vm: SpeseViewModel) {
             if (righe.isEmpty()) item { Text("Nessun mese nel periodo scelto.", style = MaterialTheme.typography.bodyMedium) }
             items(righe, key = { it.mese.toString() }) { r ->
                 when (r.stato) {
-                    StatoMese.CORRENTE -> CardMeseCorrente(r)
+                    StatoMese.CORRENTE -> CardMeseCorrente(r) { altri = it }
                     StatoMese.FUTURO -> CardMeseFuturo(r)
-                    StatoMese.PASSATO -> CardMesePassato(r)
+                    StatoMese.PASSATO -> CardMesePassato(r) { altri = it }
                 }
             }
         }
     }
     if (mostraGrafico) GraficoBilancioDialog(righe, onChiudi = { mostraGrafico = false })
     if (mostraReport) ReportBilancioDialog(vm, onChiudi = { mostraReport = false })
+    altri?.let { AltriMovimentiDialog(vm, it, onChiudi = { altri = null }) }
 }
 
 @Composable
@@ -119,7 +122,7 @@ private fun RigaValore(etichetta: String, valore: Double, grassetto: Boolean = f
 }
 
 @Composable
-private fun CardMeseCorrente(r: RigaBilancio) {
+private fun CardMeseCorrente(r: RigaBilancio, onAltri: (RigaBilancio) -> Unit) {
     Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer), modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text("Bilancio attuale · ${formattaMese(r.mese)}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
@@ -137,7 +140,7 @@ private fun CardMeseCorrente(r: RigaBilancio) {
                     style = MaterialTheme.typography.bodySmall
                 )
             }
-            AltriMovimenti(r)
+            AltriMovimenti(r, onAltri)
             HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
             r.saldoFinale?.let { RigaValore("Saldo a fine mese", it, grassetto = true) }
             r.saldoFine?.let { Text("Saldo attuale: ${formattaImporto(it)}. Il saldo a fine mese è il punto di partenza dei mesi successivi.", style = MaterialTheme.typography.bodySmall) }
@@ -151,25 +154,16 @@ private fun CardMeseCorrente(r: RigaBilancio) {
  * fuori dall'app…): la differenza tra il saldo finale e saldo iniziale + correnti + ricorrenti.
  */
 @Composable
-private fun AltriMovimenti(r: RigaBilancio) {
+private fun AltriMovimenti(r: RigaBilancio, onApri: (RigaBilancio) -> Unit) {
     val iniziale = r.saldoIniziale ?: return
     val finale = r.saldoFinale ?: return
     val altro = finale - iniziale - r.correnti - r.ricorrentiTotali
     if (abs(altro) < 0.5) return
-    RigaValore("Altri movimenti", altro)
-    // Di cosa sono fatti: le entrate arrivate nel mese (lo stipendio per il mese dopo, già nel saldo),
-    // l'effetto del cambio CHF/EUR e il resto (spostamenti verso conti fuori dall'app, rimborsi…).
-    val resto = altro - r.entrate - r.effettoCambio - r.cambioSpostamenti
-    val dettagli = listOf(
-        "entrate del mese (stipendio per il mese dopo)" to r.entrate,
-        "effetto cambio" to r.effettoCambio + r.cambioSpostamenti,
-        "spostamenti verso conti fuori dall'app e altro" to resto
-    ).filter { abs(it.second) >= 0.5 }
-    if (dettagli.isNotEmpty()) {
-        Text(
-            "di cui " + dettagli.joinToString(", ") { (nome, v) -> "$nome ${formattaImporto(v)}" },
-            style = MaterialTheme.typography.bodySmall
-        )
+    // Toccando si vede di quali operazioni e voci è fatto.
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().clickable { onApri(r) }.padding(vertical = 1.dp)) {
+        Text("Altri movimenti", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+        TestoImporto(altro)
+        Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = "Dettaglio")
     }
 }
 
@@ -210,7 +204,7 @@ private fun CardMeseFuturo(r: RigaBilancio) {
 }
 
 @Composable
-private fun CardMesePassato(r: RigaBilancio) {
+private fun CardMesePassato(r: RigaBilancio, onAltri: (RigaBilancio) -> Unit) {
     var espanso by rememberSaveable(r.mese.toString()) { mutableStateOf(false) }
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(12.dp)) {
@@ -223,7 +217,7 @@ private fun CardMesePassato(r: RigaBilancio) {
                 RigaValore("Risparmio", r.risparmio)
                 RigaValore("Delta risparmio (target ${formattaImporto(r.target)})", r.deltaTarget, grassetto = true)
                 RigaValore("Spese ricorrenti", r.ricorrentiPagati)
-                AltriMovimenti(r)
+                AltriMovimenti(r, onAltri)
                 r.saldoFinale?.let { RigaValore("Saldo finale", it, grassetto = true) }
                 RigheCambio(r)
             }
