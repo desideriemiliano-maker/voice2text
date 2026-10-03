@@ -155,7 +155,22 @@ private fun AltriMovimenti(r: RigaBilancio) {
     val iniziale = r.saldoIniziale ?: return
     val finale = r.saldoFinale ?: return
     val altro = finale - iniziale - r.correnti - r.ricorrentiTotali
-    if (abs(altro) >= 0.5) RigaValore("Altri movimenti (entrate del mese, cambio…)", altro)
+    if (abs(altro) < 0.5) return
+    RigaValore("Altri movimenti", altro)
+    // Di cosa sono fatti: le entrate arrivate nel mese (lo stipendio per il mese dopo, già nel saldo),
+    // l'effetto del cambio CHF/EUR e il resto (spostamenti verso conti fuori dall'app, rimborsi…).
+    val resto = altro - r.entrate - r.effettoCambio - r.cambioSpostamenti
+    val dettagli = listOf(
+        "entrate del mese (stipendio per il mese dopo)" to r.entrate,
+        "effetto cambio" to r.effettoCambio + r.cambioSpostamenti,
+        "spostamenti verso conti fuori dall'app e altro" to resto
+    ).filter { abs(it.second) >= 0.5 }
+    if (dettagli.isNotEmpty()) {
+        Text(
+            "di cui " + dettagli.joinToString(", ") { (nome, v) -> "$nome ${formattaImporto(v)}" },
+            style = MaterialTheme.typography.bodySmall
+        )
+    }
 }
 
 /** Intestazione di un mese collassabile: mese, saldo finale e (se c'è) il delta risparmio. */
@@ -204,9 +219,10 @@ private fun CardMesePassato(r: RigaBilancio) {
                 HorizontalDivider(modifier = Modifier.padding(vertical = 6.dp))
                 r.saldoIniziale?.let { RigaValore("Saldo iniziale", it) }
                 RigaValore("Stipendio / interessi mese precedente", r.entrateMesePrima ?: 0.0)
-                RigaValore("Spese ricorrenti", r.ricorrentiPagati)
                 RigaValore("Spese correnti", r.correnti)
+                RigaValore("Risparmio", r.risparmio)
                 RigaValore("Delta risparmio (target ${formattaImporto(r.target)})", r.deltaTarget, grassetto = true)
+                RigaValore("Spese ricorrenti", r.ricorrentiPagati)
                 AltriMovimenti(r)
                 r.saldoFinale?.let { RigaValore("Saldo finale", it, grassetto = true) }
                 RigheCambio(r)
