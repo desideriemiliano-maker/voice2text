@@ -196,7 +196,7 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
     val bilancio: StateFlow<List<RigaBilancio>> = combine(dati, _impostazioni, cambi, personalizzazioni, _periodoBilancio) { d, imp, cambi, pers, periodo ->
         val oggi = YearMonth.now()
         val mesiFuturi = java.time.temporal.ChronoUnit.MONTHS.between(oggi, periodo.second).toInt().coerceAtLeast(0)
-        Calcoli.bilancio(d.contiValuta, d.voci, d.operazioni, cambi, imp.targetRisparmioCent / 100.0, oggi, mesiFuturi, personalizzazioni = pers)
+        Calcoli.bilancio(d.contiValuta, d.voci, d.operazioni, cambi, imp.targetRisparmioCent / 100.0, oggi, mesiFuturi, personalizzazioni = pers, mesiMediaStipendio = imp.mesiMediaStipendio)
             .filter { it.mese >= periodo.first && it.mese <= periodo.second }
     }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
@@ -207,6 +207,12 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
     fun impostaPeriodoRicorrenti(da: YearMonth, a: YearMonth) {
         if (da <= a) _periodoRicorrenti.value = da to a
     }
+
+    /** Le spese ricorrenti del mese corrente (per il bilancio: quelle da pagare prima dello stipendio). */
+    val ricorrentiMeseCorrente: StateFlow<List<com.desideri.familybalance.logica.RigaRicorrente>> = combine(dati, cambi, personalizzazioni) { d, cambi, pers ->
+        val oggi = YearMonth.now()
+        Calcoli.ricorrenti(listOf(oggi), d.voci, d.contiValuta, d.operazioni, cambi, oggi, pers, java.time.LocalDate.now().toEpochDay()).single().righe
+    }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     /** Spese ricorrenti mese per mese nel periodo scelto. */
     // CHF convertiti come nel Bilancio: mese corrente e futuri al cambio delle Impostazioni, passati al cambio del mese.

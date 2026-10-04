@@ -25,7 +25,10 @@ object ImpostazioniBackup {
                 "minutiBlocco" to imp.minutiBlocco.toString(),
                 "giorniDuplicati" to imp.giorniDuplicati.toString(),
                 "giorniConfermaDuplicati" to imp.giorniConfermaDuplicati.toString(),
-                "giorniIntornoDuplicati" to imp.giorniIntornoDuplicati.toString()
+                "giorniIntornoDuplicati" to imp.giorniIntornoDuplicati.toString(),
+                "mesiMediaStipendio" to imp.mesiMediaStipendio.toString(),
+                "giornoStipendio" to imp.giornoStipendio.toString(),
+                "stipendioGiornoLavorativo" to imp.stipendioGiornoLavorativo.toString()
             ).plus(altre).forEach { (k, v) -> db.execSQL("INSERT INTO $TABELLA (chiave, valore) VALUES (?, ?)", arrayOf(k, v)) }
         }
     }
@@ -56,7 +59,10 @@ object ImpostazioniBackup {
             minutiBlocco = valori["minutiBlocco"]?.toIntOrNull() ?: attuali.minutiBlocco,
             giorniDuplicati = valori["giorniDuplicati"]?.toIntOrNull() ?: attuali.giorniDuplicati,
             giorniConfermaDuplicati = valori["giorniConfermaDuplicati"]?.toIntOrNull() ?: attuali.giorniConfermaDuplicati,
-            giorniIntornoDuplicati = valori["giorniIntornoDuplicati"]?.toIntOrNull() ?: attuali.giorniIntornoDuplicati
+            giorniIntornoDuplicati = valori["giorniIntornoDuplicati"]?.toIntOrNull() ?: attuali.giorniIntornoDuplicati,
+            mesiMediaStipendio = valori["mesiMediaStipendio"]?.toIntOrNull() ?: attuali.mesiMediaStipendio,
+            giornoStipendio = valori["giornoStipendio"]?.toIntOrNull() ?: attuali.giornoStipendio,
+            stipendioGiornoLavorativo = valori["stipendioGiornoLavorativo"]?.toBooleanStrictOrNull() ?: attuali.stipendioGiornoLavorativo
         )
     }
 }

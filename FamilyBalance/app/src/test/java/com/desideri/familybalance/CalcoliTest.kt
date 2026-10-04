@@ -72,25 +72,25 @@ class CalcoliTest {
         assertEquals(-500.0, agosto.correnti, 0.001)
         assertEquals(-100.0, agosto.ricorrentiPagati, 0.001)
         assertEquals(3400.0, agosto.saldoFine!!, 0.001)
-        // Il risparmio usa lo stipendio del mese prima (luglio: nessuno).
-        assertEquals(-2500.0, agosto.deltaTarget, 0.001)
+        // Passato: stipendio del mese; saldo finale = iniziale + stipendio − spese.
+        assertEquals(500.0, agosto.deltaTarget, 0.001)
         assertEquals(1000.0, agosto.saldoIniziale!!, 0.001)
-        // Saldo finale del bilancio = saldo iniziale + residuo (stipendio di luglio 0 − 500 − 100).
-        assertEquals(400.0, agosto.saldoFinale!!, 0.001)
+        assertEquals(3400.0, agosto.saldoFinale!!, 0.001)
 
         val settembre = righe[1]
         assertEquals(StatoMese.CORRENTE, settembre.stato)
         assertEquals(-100.0, settembre.ricorrentiPrevisti, 0.001)
-        // Corrente: saldo attuale + ricorrenti previste (il target non entra); risparmio con lo stipendio di agosto.
-        assertEquals(3300.0, settembre.saldoPrevisto!!, 0.001)
-        // Saldo iniziale senza lo stipendio di agosto: 400 + 3000 (stipendio) − 100 (ricorrenti) = 3300.
-        assertEquals(400.0, settembre.saldoIniziale!!, 0.001)
-        assertEquals(3000.0, settembre.risparmio, 0.001)
+        // Corrente senza stipendio: media degli ultimi mesi (agosto 3000).
+        assertTrue(settembre.stipendioStimato)
+        assertEquals(3000.0, settembre.stipendio!!, 0.001)
+        assertEquals(3400.0, settembre.saldoIniziale!!, 0.001)
+        assertEquals(6300.0, settembre.saldoPrevisto!!, 0.001)
+        assertEquals(6300.0, settembre.saldoFinale!!, 0.001)
         assertEquals(1000.0, settembre.deltaTarget, 0.001)
 
         val ottobre = righe[2]
         assertEquals(StatoMese.FUTURO, ottobre.stato)
-        assertEquals(5200.0, ottobre.saldoPrevisto!!, 0.001)
+        assertEquals(8200.0, ottobre.saldoPrevisto!!, 0.001)
     }
 
     @Test

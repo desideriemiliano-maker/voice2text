@@ -10,6 +10,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -42,6 +43,9 @@ fun ImpostazioniScreen(vm: SpeseViewModel, onIndietro: () -> Unit) {
     var giorniDuplicati by remember { mutableStateOf(impostazioni.giorniDuplicati.toString()) }
     var giorniConferma by remember { mutableStateOf(impostazioni.giorniConfermaDuplicati.toString()) }
     var giorniIntorno by remember { mutableStateOf(impostazioni.giorniIntornoDuplicati.toString()) }
+    var mesiMedia by remember { mutableStateOf(impostazioni.mesiMediaStipendio.toString()) }
+    var giornoStipendio by remember { mutableStateOf(impostazioni.giornoStipendio.toString()) }
+    var giornoLavorativo by remember { mutableStateOf(impostazioni.stipendioGiornoLavorativo) }
     val bloccoPossibile = bloccoDisponibile(LocalContext.current)
     var errore by remember { mutableStateOf<String?>(null) }
 
@@ -71,6 +75,28 @@ fun ImpostazioniScreen(vm: SpeseViewModel, onIndietro: () -> Unit) {
                 },
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                modifier = Modifier.fillMaxWidth()
+            )
+            OutlinedTextField(
+                value = giornoStipendio,
+                onValueChange = { giornoStipendio = it },
+                label = { Text("Giorno dello stipendio") },
+                supportingText = { Text("Giorno del mese in cui arriva lo stipendio (1-31, predefinito 20): nel bilancio del mese corrente si indicano le ricorrenti da pagare prima.") },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                modifier = Modifier.fillMaxWidth()
+            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Checkbox(checked = giornoLavorativo, onCheckedChange = { giornoLavorativo = it })
+                Text("Se cade nel weekend, il giorno lavorativo successivo", style = MaterialTheme.typography.bodyMedium)
+            }
+            OutlinedTextField(
+                value = mesiMedia,
+                onValueChange = { mesiMedia = it },
+                label = { Text("Mesi per la media dello stipendio") },
+                supportingText = { Text("Nel mese corrente, finché lo stipendio non è entrato, si usa la media degli ultimi mesi (1-24, predefinito 5).") },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                 modifier = Modifier.fillMaxWidth()
             )
             OutlinedTextField(
@@ -140,6 +166,8 @@ fun ImpostazioniScreen(vm: SpeseViewModel, onIndietro: () -> Unit) {
                     val giorni = giorniDuplicati.trim().toIntOrNull()
                     val conferma = giorniConferma.trim().toIntOrNull()
                     val intorno = giorniIntorno.trim().toIntOrNull()
+                    val media = mesiMedia.trim().toIntOrNull()
+                    val giornoStip = giornoStipendio.trim().toIntOrNull()
                     errore = when {
                         targetCent == null -> "Target non valido"
                         tasso == null || tasso <= 0 -> "Cambio non valido"
@@ -148,6 +176,8 @@ fun ImpostazioniScreen(vm: SpeseViewModel, onIndietro: () -> Unit) {
                         giorni == null || giorni !in 0..30 -> "Giorni per i duplicati non validi (0-30)"
                         conferma == null || conferma !in 0..90 -> "Giorni esclusi dalla conferma non validi (0-90)"
                         intorno == null || intorno !in 0..90 -> "Intorno dei duplicati non valido (0-90)"
+                        media == null || media !in 1..24 -> "Mesi per la media dello stipendio non validi (1-24)"
+                        giornoStip == null || giornoStip !in 1..31 -> "Giorno dello stipendio non valido (1-31)"
                         else -> {
                             vm.salvaImpostazioni(
                                 impostazioni.copy(
@@ -158,7 +188,10 @@ fun ImpostazioniScreen(vm: SpeseViewModel, onIndietro: () -> Unit) {
                                     minutiBlocco = minuti,
                                     giorniDuplicati = giorni,
                                     giorniConfermaDuplicati = conferma,
-                                    giorniIntornoDuplicati = intorno
+                                    giorniIntornoDuplicati = intorno,
+                                    mesiMediaStipendio = media,
+                                    giornoStipendio = giornoStip,
+                                    stipendioGiornoLavorativo = giornoLavorativo
                                 )
                             )
                             onIndietro()

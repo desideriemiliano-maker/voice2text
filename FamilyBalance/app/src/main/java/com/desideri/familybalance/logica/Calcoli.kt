@@ -88,29 +88,28 @@ data class RigaBilancio(
     val effettoCambio: Double = 0.0,
     val cambioSpostamenti: Double = 0.0,
     /**
-     * Mesi passati e corrente: lo stipendio/interessi del mese prima, che finanzia le spese del mese e
-     * con cui si confronta il risparmio rispetto al target. Null per i mesi futuri.
+     * Stipendio/interessi usati nel bilancio del mese: per i passati quelli entrati nel mese; per il
+     * corrente quelli entrati o, se non ancora arrivati, la media degli ultimi mesi
+     * ([stipendioStimato]); null per i futuri (si usa il target).
      */
-    val entrateMesePrima: Double? = null,
-    /**
-     * Saldo di inizio mese: per passati e corrente il saldo reale di fine mese precedente senza lo
-     * stipendio arrivato in quel mese (che è in [entrateMesePrima]); per i futuri quello previsto.
-     */
+    val stipendio: Double? = null,
+    val stipendioStimato: Boolean = false,
+    /** Saldo di inizio mese: reale di fine mese precedente (per i futuri il saldo finale previsto). */
     val saldoIniziale: Double? = null,
     /** Saldo finale calcolato del mese prima (per la variazione), null per il primo mese. */
     val saldoFinalePrecedente: Double? = null
 ) {
     /**
-     * Saldo di fine mese del bilancio: saldo iniziale + stipendio del mese prima + spese correnti e
-     * ricorrenti (per i futuri con il target). Il saldo reale dei conti è [saldoFine].
+     * Saldo di fine mese del bilancio: saldo iniziale + stipendio + spese correnti e ricorrenti (per i
+     * futuri con il target al posto dello stipendio e delle correnti). Il saldo reale dei conti è [saldoFine].
      */
     val saldoFinale: Double?
         get() = when (stato) {
-            StatoMese.FUTURO, StatoMese.CORRENTE -> saldoPrevisto
-            StatoMese.PASSATO -> saldoIniziale?.let { it + (entrateMesePrima ?: 0.0) + correnti + ricorrentiPagati }
+            StatoMese.FUTURO -> saldoPrevisto
+            else -> saldoIniziale?.let { it + (stipendio ?: 0.0) + correnti + ricorrentiTotali }
         }
-    /** Risparmio del mese: entrate (per il mese corrente quelle del mese prima) + spese correnti. */
-    val risparmio: Double get() = (entrateMesePrima ?: entrate) + correnti
+    /** Risparmio del mese: stipendio (entrate) + spese correnti. */
+    val risparmio: Double get() = (stipendio ?: entrate) + correnti
     val deltaTarget: Double get() = risparmio - target
     val ricorrentiTotali: Double get() = ricorrentiPagati + ricorrentiPrevisti
 }
@@ -287,7 +286,9 @@ object Calcoli {
         targetEuro: Double,
         oggi: YearMonth,
         mesiFuturi: Int = 12,
-        personalizzazioni: List<PrevisioneRicorrente> = emptyList()
+        personalizzazioni: List<PrevisioneRicorrente> = emptyList(),
+        /** Mesi per la media dello stipendio del mese corrente, se non è ancora arrivato. */
+        mesiMediaStipendio: Int = 5
     ): List<RigaBilancio> {
         val valutaDi = contiValuta.associate { it.id to it.valuta }
         val vociPerId = voci.associateBy { it.id }
@@ -350,11 +351,21 @@ object Calcoli {
             }
             val pagati = ricorrentiPagati[m] ?: 0.0
             val previstiMese = previsti[m] ?: 0.0
+            // Stipendio del mese: quello entrato; nel mese corrente, se non è ancora arrivato, la media
+            // degli ultimi mesi in cui è entrato qualcosa.
+            val entrateMese = entrate[m] ?: 0.0
+            val stimato = stato == StatoMese.CORRENTE && entrateMese == 0.0
+            val stipendio = when {
+                stato == StatoMese.FUTURO -> null
+                stimato -> (1..mesiMediaStipendio.coerceAtLeast(1)).mapNotNull { entrate[m.minusMonths(it.toLong())] }
+                    .filter { it != 0.0 }.let { if (it.isEmpty()) 0.0 else it.average() }
+                else -> entrateMese
+            }
             val saldoPrevisto = when (stato) {
                 StatoMese.PASSATO -> null
-                // Saldo iniziale (prima dello stipendio del mese precedente) + stipendio + spese correnti +
-                // ricorrenti (pagate e ancora previste); il target vale solo per i mesi futuri.
-                StatoMese.CORRENTE -> saldoPrecedente + (correnti[m] ?: 0.0) + pagati + previstiMese
+                // Saldo di fine mese precedente + stipendio + spese correnti + ricorrenti (pagate e
+                // ancora previste); il target di risparmio vale solo per i mesi futuri.
+                StatoMese.CORRENTE -> saldoPrecedente + (stipendio ?: 0.0) + (correnti[m] ?: 0.0) + pagati + previstiMese
                 StatoMese.FUTURO -> saldoPrevistoPrecedente + targetEuro + pagati + previstiMese
             }
             val riga = RigaBilancio(
@@ -370,13 +381,9 @@ object Calcoli {
                 cambioChfEur = cambio,
                 effettoCambio = if (stato == StatoMese.FUTURO) 0.0 else effettoCambio,
                 cambioSpostamenti = cambioSpostamenti[m] ?: 0.0,
-                entrateMesePrima = if (stato != StatoMese.FUTURO) entrate[m.minusMonths(1)] ?: 0.0 else null,
-                saldoIniziale = when (stato) {
-                    StatoMese.FUTURO -> saldoPrevistoPrecedente
-                    // Mese corrente: saldo di fine mese precedente senza lo stipendio arrivato in quel mese.
-                    StatoMese.CORRENTE -> saldoPrecedente - (entrate[m.minusMonths(1)] ?: 0.0)
-                    StatoMese.PASSATO -> saldoPrecedente - (entrate[m.minusMonths(1)] ?: 0.0)
-                },
+                stipendio = stipendio,
+                stipendioStimato = stimato,
+                saldoIniziale = if (stato == StatoMese.FUTURO) saldoPrevistoPrecedente else saldoPrecedente,
                 saldoFinalePrecedente = finalePrecedente
             )
             finalePrecedente = riga.saldoFinale

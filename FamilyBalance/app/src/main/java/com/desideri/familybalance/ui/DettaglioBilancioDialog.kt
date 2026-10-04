@@ -34,7 +34,7 @@ import java.time.YearMonth
 
 /** Le voci del bilancio di cui si possono vedere le operazioni. */
 enum class ComponenteBilancio(val titolo: String) {
-    ENTRATE_MESE_PRIMA("Stipendio / interessi del mese prima"),
+    ENTRATE("Stipendio / interessi"),
     CORRENTI("Spese correnti"),
     RICORRENTI("Spese ricorrenti"),
     RISPARMIO("Risparmio"),
@@ -46,7 +46,7 @@ enum class ComponenteBilancio(val titolo: String) {
 val LocalDettaglioBilancio = compositionLocalOf<(YearMonth, ComponenteBilancio) -> Unit> { { _, _ -> } }
 
 /**
- * Le operazioni che compongono una voce del bilancio di [mese]: entrate del mese prima, spese
+ * Le operazioni che compongono una voce del bilancio di [mese]: entrate del mese, spese
  * correnti, ricorrenti (nel mese a cui sono imputate) o le loro combinazioni. In EUR come nel
  * Bilancio; toccandole si aprono.
  */
@@ -56,11 +56,11 @@ fun DettaglioBilancioDialog(vm: SpeseViewModel, mese: YearMonth, componente: Com
     val cambi by vm.cambi.collectAsStateWithLifecycle()
     var inModifica by remember { mutableStateOf<Operazione?>(null) }
     fun classe(op: Operazione) = Calcoli.classifica(op, op.voceId?.let { dati.vociPerId[it] })
-    val entrate = { dati.operazioni.filter { classe(it) == Classe.ENTRATA && Calcoli.mese(it.data) == mese.minusMonths(1) } }
+    val entrate = { dati.operazioni.filter { classe(it) == Classe.ENTRATA && Calcoli.mese(it.data) == mese } }
     val correnti = { dati.operazioni.filter { classe(it) == Classe.CORRENTE && Calcoli.mese(it.data) == mese } }
     val ricorrenti = { dati.operazioni.filter { classe(it) == Classe.RICORRENTE && Calcoli.mese(it.dataPerRicorrente) == mese } }
     val operazioni = when (componente) {
-        ComponenteBilancio.ENTRATE_MESE_PRIMA -> entrate()
+        ComponenteBilancio.ENTRATE -> entrate()
         ComponenteBilancio.CORRENTI -> correnti()
         ComponenteBilancio.RICORRENTI -> ricorrenti()
         ComponenteBilancio.RISPARMIO -> entrate() + correnti()

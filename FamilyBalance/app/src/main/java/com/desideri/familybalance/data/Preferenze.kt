@@ -20,7 +20,13 @@ data class Impostazioni(
     /** Conferma del controllo duplicati: fino a oggi meno questi giorni. */
     val giorniConfermaDuplicati: Int = 7,
     /** Intorno (giorni) in cui mostrare, per ogni possibile duplicato, le altre operazioni dello stesso importo. */
-    val giorniIntornoDuplicati: Int = 10
+    val giorniIntornoDuplicati: Int = 10,
+    /** Mesi per la media dello stipendio del mese corrente quando non è ancora arrivato. */
+    val mesiMediaStipendio: Int = 5,
+    /** Giorno del mese in cui arriva lo stipendio. */
+    val giornoStipendio: Int = 20,
+    /** Se il giorno dello stipendio cade nel weekend si considera il lunedì successivo. */
+    val stipendioGiornoLavorativo: Boolean = true
 )
 
 class Preferenze(context: Context) {
@@ -35,7 +41,10 @@ class Preferenze(context: Context) {
         minutiBlocco = prefs.getInt(CHIAVE_MINUTI_BLOCCO, 3),
         giorniDuplicati = prefs.getInt(CHIAVE_GIORNI_DUPLICATI, 3),
         giorniConfermaDuplicati = prefs.getInt(CHIAVE_GIORNI_CONFERMA_DUPLICATI, 7),
-        giorniIntornoDuplicati = prefs.getInt(CHIAVE_GIORNI_INTORNO_DUPLICATI, 10)
+        giorniIntornoDuplicati = prefs.getInt(CHIAVE_GIORNI_INTORNO_DUPLICATI, 10),
+        mesiMediaStipendio = prefs.getInt(CHIAVE_MESI_MEDIA_STIPENDIO, 5),
+        giornoStipendio = prefs.getInt(CHIAVE_GIORNO_STIPENDIO, 20),
+        stipendioGiornoLavorativo = prefs.getBoolean(CHIAVE_STIPENDIO_LAVORATIVO, true)
     )
 
     /** Con [subito] la scrittura è sincrona (es. prima di riavviare l'app dopo un ripristino). */
@@ -50,6 +59,9 @@ class Preferenze(context: Context) {
             .putInt(CHIAVE_GIORNI_DUPLICATI, impostazioni.giorniDuplicati)
             .putInt(CHIAVE_GIORNI_CONFERMA_DUPLICATI, impostazioni.giorniConfermaDuplicati)
             .putInt(CHIAVE_GIORNI_INTORNO_DUPLICATI, impostazioni.giorniIntornoDuplicati)
+            .putInt(CHIAVE_MESI_MEDIA_STIPENDIO, impostazioni.mesiMediaStipendio)
+            .putInt(CHIAVE_GIORNO_STIPENDIO, impostazioni.giornoStipendio)
+            .putBoolean(CHIAVE_STIPENDIO_LAVORATIVO, impostazioni.stipendioGiornoLavorativo)
         if (subito) editor.commit() else editor.apply()
     }
 
@@ -141,6 +153,9 @@ class Preferenze(context: Context) {
         const val CHIAVE_GIORNI_DUPLICATI = "giorni_duplicati"
         const val CHIAVE_GIORNI_CONFERMA_DUPLICATI = "giorni_conferma_duplicati"
         const val CHIAVE_GIORNI_INTORNO_DUPLICATI = "giorni_intorno_duplicati"
+        const val CHIAVE_MESI_MEDIA_STIPENDIO = "mesi_media_stipendio"
+        const val CHIAVE_GIORNO_STIPENDIO = "giorno_stipendio"
+        const val CHIAVE_STIPENDIO_LAVORATIVO = "stipendio_giorno_lavorativo"
         const val PREFISSO_DUPLICATI = "duplicati_fino_"
     }
 }

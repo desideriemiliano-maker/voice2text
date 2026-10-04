@@ -20,6 +20,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import java.time.LocalDate
 import java.time.YearMonth
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -63,6 +64,23 @@ fun BilancioScreen(vm: SpeseViewModel) {
     var mostraGrafico by remember { mutableStateOf(false) }
     var mostraReport by remember { mutableStateOf(false) }
     var dettaglio by remember { mutableStateOf<Pair<YearMonth, ComponenteBilancio>?>(null) }
+    val ricorrenti by vm.ricorrentiMeseCorrente.collectAsStateWithLifecycle()
+    // Giorno dello stipendio (eventualmente il lunedì dopo, se cade nel weekend) e ricorrenti del mese
+    // ancora previste con data prima di quel giorno; la data è quella pianificata o, se manca, il
+    // giorno del mese dell'ultimo pagamento della stessa spesa (senza nessuno dei due: inclusa).
+    val primaStipendio = remember(ricorrenti, dati.operazioni, impostazioni.giornoStipendio, impostazioni.stipendioGiornoLavorativo) {
+        val mese = YearMonth.now()
+        var giorno = mese.atDay(impostazioni.giornoStipendio.coerceIn(1, mese.lengthOfMonth()))
+        if (impostazioni.stipendioGiornoLavorativo) {
+            while (giorno.dayOfWeek == java.time.DayOfWeek.SATURDAY || giorno.dayOfWeek == java.time.DayOfWeek.SUNDAY) giorno = giorno.plusDays(1)
+        }
+        val righe = ricorrenti.filter { it.previsto != null }.mapNotNull { r ->
+            val data = r.dataPrevista?.let { LocalDate.ofEpochDay(it) } ?: dati.operazioni.filter { it.voceId == r.voce.id }.maxByOrNull { it.data }
+                ?.let { mese.atDay(LocalDate.ofEpochDay(it.data).dayOfMonth.coerceAtMost(mese.lengthOfMonth())) }
+            if (data == null || data < giorno) Triple(r.voce.descrizione, r.previsto ?: 0.0, data) else null
+        }.sortedBy { it.third ?: LocalDate.MIN }
+        RicorrentiPrimaStipendio(giorno, righe)
+    }
 
     // All'apertura la lista parte dal mese corrente (i passati sono sopra, i futuri sotto).
     LaunchedEffect(righe.isNotEmpty()) {
@@ -105,7 +123,7 @@ fun BilancioScreen(vm: SpeseViewModel) {
             if (righe.isEmpty()) item { Text("Nessun mese nel periodo scelto.", style = MaterialTheme.typography.bodyMedium) }
             items(righe, key = { it.mese.toString() }) { r ->
                 when (r.stato) {
-                    StatoMese.CORRENTE -> CardMeseCorrente(r)
+                    StatoMese.CORRENTE -> CardMeseCorrente(r, primaStipendio)
                     StatoMese.FUTURO -> CardMeseFuturo(r)
                     StatoMese.PASSATO -> CardMesePassato(r)
                 }
@@ -135,13 +153,20 @@ private fun RigaValore(etichetta: String, valore: Double, grassetto: Boolean = f
 }
 
 @Composable
-private fun CardMeseCorrente(r: RigaBilancio) {
+private fun CardMeseCorrente(r: RigaBilancio, primaStipendio: RicorrentiPrimaStipendio?) {
     Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer), modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text("Bilancio attuale · ${formattaMese(r.mese)}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            r.saldoIniziale?.let { RigaValore("Saldo iniziale (prima dello stipendio)", it, grassetto = true) }
+            r.saldoIniziale?.let { RigaValore("Saldo iniziale (fine mese precedente)", it, grassetto = true) }
             HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
-            RigaValore("Stipendio / interessi mese precedente", r.entrateMesePrima ?: 0.0, dettaglio = r.mese to ComponenteBilancio.ENTRATE_MESE_PRIMA)
+            RigaValore(
+                if (r.stipendioStimato) "Stipendio / interessi (stimato)" else "Stipendio / interessi",
+                r.stipendio ?: 0.0,
+                dettaglio = r.mese to ComponenteBilancio.ENTRATE
+            )
+            if (r.stipendioStimato) {
+                Text("Non ancora entrato: media degli ultimi mesi (Impostazioni).", style = MaterialTheme.typography.bodySmall)
+            }
             RigaValore("Spese correnti", r.correnti, dettaglio = r.mese to ComponenteBilancio.CORRENTI)
             RigaValore("Risparmio", r.risparmio, dettaglio = r.mese to ComponenteBilancio.RISPARMIO)
             RigaValore("Delta target risparmio (${formattaImporto(r.target)})", r.deltaTarget)
@@ -153,11 +178,21 @@ private fun CardMeseCorrente(r: RigaBilancio) {
                     style = MaterialTheme.typography.bodySmall
                 )
             }
+            // Ricorrenti ancora da pagare con scadenza prima dell'arrivo dello stipendio.
+            if (primaStipendio != null && r.stipendioStimato) {
+                RigaValore("Da pagare prima dello stipendio (${primaStipendio.giorno.format(FORMATO_GIORNO)})", primaStipendio.righe.sumOf { it.second })
+                if (primaStipendio.righe.isNotEmpty()) {
+                    Text(
+                        primaStipendio.righe.joinToString(" · ") { (nome, v, giorno) -> "$nome ${giorno?.format(FORMATO_GIORNO)?.let { "($it) " }.orEmpty()}${formattaImporto(v)}" },
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+            }
             HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
             // Saldo iniziale + residuo = saldo a fine mese.
             val totaleSpese = r.correnti + r.ricorrentiTotali
             RigaValore("Totale spese", totaleSpese, grassetto = true, dettaglio = r.mese to ComponenteBilancio.SPESE)
-            RigaValore("Residuo (stipendio − spese)", (r.entrateMesePrima ?: 0.0) + totaleSpese, grassetto = true, dettaglio = r.mese to ComponenteBilancio.RESIDUO)
+            RigaValore("Residuo (stipendio − spese)", (r.stipendio ?: 0.0) + totaleSpese, grassetto = true, dettaglio = r.mese to ComponenteBilancio.RESIDUO)
             r.saldoFinale?.let { RigaValore("Saldo a fine mese", it, grassetto = true) }
             Text(
                 "Saldo a fine mese = saldo iniziale + residuo; è il punto di partenza dei mesi successivi." +
@@ -168,6 +203,11 @@ private fun CardMeseCorrente(r: RigaBilancio) {
         }
     }
 }
+
+private val FORMATO_GIORNO = java.time.format.DateTimeFormatter.ofPattern("dd/MM")
+
+/** Giorno dello stipendio del mese corrente e ricorrenti ancora da pagare prima (nome, importo, data prevista). */
+data class RicorrentiPrimaStipendio(val giorno: LocalDate, val righe: List<Triple<String, Double, LocalDate?>>)
 
 /** Intestazione di un mese collassabile: mese, saldo finale e (se c'è) il delta risparmio. */
 @Composable
@@ -224,21 +264,21 @@ private fun CardMesePassato(r: RigaBilancio) {
             TestaMese(r, espanso, r.deltaTarget) { espanso = !espanso }
             if (espanso) {
                 HorizontalDivider(modifier = Modifier.padding(vertical = 6.dp))
-                r.saldoIniziale?.let { RigaValore("Saldo iniziale (prima dello stipendio)", it) }
-                RigaValore("Stipendio / interessi mese precedente", r.entrateMesePrima ?: 0.0, dettaglio = r.mese to ComponenteBilancio.ENTRATE_MESE_PRIMA)
+                r.saldoIniziale?.let { RigaValore("Saldo iniziale", it) }
+                RigaValore("Stipendio / interessi", r.stipendio ?: 0.0, dettaglio = r.mese to ComponenteBilancio.ENTRATE)
                 RigaValore("Spese correnti", r.correnti, dettaglio = r.mese to ComponenteBilancio.CORRENTI)
                 RigaValore("Risparmio", r.risparmio, dettaglio = r.mese to ComponenteBilancio.RISPARMIO)
                 RigaValore("Delta risparmio (target ${formattaImporto(r.target)})", r.deltaTarget, grassetto = true)
                 RigaValore("Spese ricorrenti", r.ricorrentiPagati, dettaglio = r.mese to ComponenteBilancio.RICORRENTI)
-                // Totale delle spese del mese e quanto resta dello stipendio del mese prima.
+                // Totale delle spese del mese e quanto resta dello stipendio.
                 val totaleSpese = r.correnti + r.ricorrentiPagati
                 RigaValore("Totale spese", totaleSpese, grassetto = true, dettaglio = r.mese to ComponenteBilancio.SPESE)
-                RigaValore("Residuo (stipendio − spese)", (r.entrateMesePrima ?: 0.0) + totaleSpese, grassetto = true, dettaglio = r.mese to ComponenteBilancio.RESIDUO)
+                RigaValore("Residuo (stipendio − spese)", (r.stipendio ?: 0.0) + totaleSpese, grassetto = true, dettaglio = r.mese to ComponenteBilancio.RESIDUO)
                 r.saldoFinale?.let { RigaValore("Saldo finale", it, grassetto = true) }
                 r.saldoFine?.let {
                     Text(
                         "Saldo finale = saldo iniziale + residuo. Saldo reale dei conti a fine mese: ${formattaImporto(it)} " +
-                            "(comprende lo stipendio arrivato nel mese, per il mese dopo, ed eventuali cambio o spostamenti esterni).",
+                            "(può differire per effetto cambio o spostamenti verso conti fuori dall'app).",
                         style = MaterialTheme.typography.bodySmall
                     )
                 }

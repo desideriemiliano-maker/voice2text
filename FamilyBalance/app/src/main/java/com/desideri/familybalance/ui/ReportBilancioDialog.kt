@@ -102,7 +102,7 @@ fun ReportBilancioDialog(vm: SpeseViewModel, onChiudi: () -> Unit) {
     val mesi = remember(dati, cambi, impostazioni.targetRisparmioCent, personalizzazioni) {
         Calcoli.bilancio(
             dati.contiValuta, dati.voci, dati.operazioni, cambi, impostazioni.targetRisparmioCent / 100.0,
-            YearMonth.now(), mesiFuturi = 0, personalizzazioni = personalizzazioni
+            YearMonth.now(), mesiFuturi = 0, personalizzazioni = personalizzazioni, mesiMediaStipendio = impostazioni.mesiMediaStipendio
         )
     }
     // Entrate e spese sono solo del periodo (mese o anno); il saldo è quello a fine periodo.
