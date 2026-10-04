@@ -74,6 +74,24 @@ data class MeseRicorrenti(
  * - [cambioSpostamenti]: differenza tra EUR e CHF (al cambio del mese) negli spostamenti CHF↔EUR
  *   collegati: il costo (o guadagno) del cambio applicato dalla banca.
  */
+/** Un mese usato per la stima delle spese correnti: spese fino al giorno di riferimento e del mese intero. */
+data class MeseStimaCorrenti(val mese: YearMonth, val finoAlGiorno: Double, val totale: Double) {
+    val percentuale: Double? get() = if (totale != 0.0) finoAlGiorno / totale else null
+}
+
+/**
+ * Proiezione a fine mese delle spese correnti del mese corrente: [finora] fino al [giorno] dell'ultima
+ * spesa corrente; nei [mesi] precedenti la quota di spese fatta entro lo stesso giorno, in media
+ * [percentuale]; [stima] = finora / percentuale (finora se non calcolabile).
+ */
+data class StimaCorrenti(
+    val giorno: Int,
+    val finora: Double,
+    val mesi: List<MeseStimaCorrenti>,
+    val percentuale: Double?,
+    val stima: Double
+)
+
 data class RigaBilancio(
     val mese: YearMonth,
     val stato: StatoMese,
@@ -97,8 +115,13 @@ data class RigaBilancio(
     /** Saldo di inizio mese: reale di fine mese precedente (per i futuri il saldo finale previsto). */
     val saldoIniziale: Double? = null,
     /** Saldo finale calcolato del mese prima (per la variazione), null per il primo mese. */
-    val saldoFinalePrecedente: Double? = null
+    val saldoFinalePrecedente: Double? = null,
+    /** Mese corrente: proiezione a fine mese delle spese correnti. */
+    val stimaCorrenti: StimaCorrenti? = null
 ) {
+    /** Spese correnti del bilancio: per il mese corrente la stima a fine mese, altrimenti quelle registrate. */
+    val correntiBilancio: Double get() = stimaCorrenti?.stima ?: correnti
+
     /**
      * Saldo di fine mese del bilancio: saldo iniziale + stipendio + spese correnti e ricorrenti (per i
      * futuri con il target al posto dello stipendio e delle correnti). Il saldo reale dei conti è [saldoFine].
@@ -106,10 +129,10 @@ data class RigaBilancio(
     val saldoFinale: Double?
         get() = when (stato) {
             StatoMese.FUTURO -> saldoPrevisto
-            else -> saldoIniziale?.let { it + (stipendio ?: 0.0) + correnti + ricorrentiTotali }
+            else -> saldoIniziale?.let { it + (stipendio ?: 0.0) + correntiBilancio + ricorrentiTotali }
         }
     /** Risparmio del mese: stipendio (entrate) + spese correnti. */
-    val risparmio: Double get() = (stipendio ?: entrate) + correnti
+    val risparmio: Double get() = (stipendio ?: entrate) + correntiBilancio
     val deltaTarget: Double get() = risparmio - target
     val ricorrentiTotali: Double get() = ricorrentiPagati + ricorrentiPrevisti
 }
@@ -325,6 +348,24 @@ object Calcoli {
             if (destinazione != null) destinazione[mDest] = (destinazione[mDest] ?: 0.0) + eur
         }
 
+        // Stima delle spese correnti del mese corrente (vedi StimaCorrenti).
+        val stimaCorrenti = run {
+            fun eur(op: Operazione) = cambi.inEuro(op.importoCent, valutaDi[op.contoValutaId] ?: Valute.EUR, mese(op.data))
+            val correntiOps = operazioni.filter { classifica(it, it.voceId?.let { v -> vociPerId[v] }) == Classe.CORRENTE }
+            val delMese = correntiOps.filter { mese(it.data) == oggi }
+            val giorno = delMese.maxOfOrNull { LocalDate.ofEpochDay(it.data).dayOfMonth } ?: return@run null
+            val finora = delMese.sumOf { eur(it) }
+            val perMese = correntiOps.groupBy { mese(it.data) }
+            val mesiStima = (1..mesiMediaStipendio.coerceAtLeast(1)).map { oggi.minusMonths(it.toLong()) }.mapNotNull { m ->
+                val ops = perMese[m] ?: return@mapNotNull null
+                val limite = giorno.coerceAtMost(m.lengthOfMonth())
+                MeseStimaCorrenti(m, ops.filter { LocalDate.ofEpochDay(it.data).dayOfMonth <= limite }.sumOf { eur(it) }, ops.sumOf { eur(it) })
+            }
+            val percentuali = mesiStima.mapNotNull { it.percentuale }.filter { it > 0 }
+            val percentuale = if (percentuali.isEmpty()) null else percentuali.average()
+            StimaCorrenti(giorno, finora, mesiStima.sortedBy { it.mese }, percentuale, percentuale?.let { finora / it } ?: finora)
+        }
+
         val ultimoMese = oggi.plusMonths(mesiFuturi.toLong())
         val mesi = generateSequence(primoMese) { it.plusMonths(1) }.takeWhile { it <= ultimoMese }.toList()
         val previsti = ricorrenti(mesi.filter { it >= oggi }, voci, contiValuta, operazioni, cambi, oggi, personalizzazioni)
@@ -365,7 +406,9 @@ object Calcoli {
                 StatoMese.PASSATO -> null
                 // Saldo di fine mese precedente + stipendio + spese correnti + ricorrenti (pagate e
                 // ancora previste); il target di risparmio vale solo per i mesi futuri.
-                StatoMese.CORRENTE -> saldoPrecedente + (stipendio ?: 0.0) + (correnti[m] ?: 0.0) + pagati + previstiMese
+                // Per i mesi successivi il corrente vale come un mese futuro (conti non ancora consolidati):
+                // saldo di fine mese precedente + target di risparmio + ricorrenti del mese.
+                StatoMese.CORRENTE -> saldoPrecedente + targetEuro + pagati + previstiMese
                 StatoMese.FUTURO -> saldoPrevistoPrecedente + targetEuro + pagati + previstiMese
             }
             val riga = RigaBilancio(
@@ -384,9 +427,11 @@ object Calcoli {
                 stipendio = stipendio,
                 stipendioStimato = stimato,
                 saldoIniziale = if (stato == StatoMese.FUTURO) saldoPrevistoPrecedente else saldoPrecedente,
-                saldoFinalePrecedente = finalePrecedente
+                saldoFinalePrecedente = finalePrecedente,
+                stimaCorrenti = if (stato == StatoMese.CORRENTE) stimaCorrenti else null
             )
-            finalePrecedente = riga.saldoFinale
+            // Dopo il mese corrente si parte dal suo saldo con il target (come per i futuri).
+            finalePrecedente = if (stato == StatoMese.CORRENTE) saldoPrevisto else riga.saldoFinale
             saldoPrecedente = saldo
             if (saldoPrevisto != null) saldoPrevistoPrecedente = saldoPrevisto
             riga

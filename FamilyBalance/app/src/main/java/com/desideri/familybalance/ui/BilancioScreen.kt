@@ -11,6 +11,11 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.Card
+import com.desideri.familybalance.logica.StimaCorrenti
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
@@ -167,8 +172,21 @@ private fun CardMeseCorrente(r: RigaBilancio, primaStipendio: RicorrentiPrimaSti
             if (r.stipendioStimato) {
                 Text("Non ancora entrato: media degli ultimi mesi (Impostazioni).", style = MaterialTheme.typography.bodySmall)
             }
-            RigaValore("Spese correnti", r.correnti, dettaglio = r.mese to ComponenteBilancio.CORRENTI)
-            RigaValore("Risparmio", r.risparmio, dettaglio = r.mese to ComponenteBilancio.RISPARMIO)
+            RigaValore("Spese correnti finora", r.correnti, dettaglio = r.mese to ComponenteBilancio.CORRENTI)
+            // Proiezione a fine mese: toccandola si vede come è calcolata.
+            r.stimaCorrenti?.let { stima ->
+                var mostraStima by remember { mutableStateOf(false) }
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth().clickable { mostraStima = true }.padding(vertical = 1.dp)
+                ) {
+                    Text("Spese correnti stimate a fine mese", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                    TestoImporto(stima.stima)
+                    Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = "Calcolo della stima", modifier = Modifier.size(18.dp))
+                }
+                if (mostraStima) StimaCorrentiDialog(stima, onChiudi = { mostraStima = false })
+            }
+            RigaValore(if (r.stimaCorrenti != null) "Risparmio (stimato)" else "Risparmio", r.risparmio, dettaglio = r.mese to ComponenteBilancio.RISPARMIO)
             RigaValore("Delta target risparmio (${formattaImporto(r.target)})", r.deltaTarget)
             HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
             RigaValore("Spese ricorrenti", r.ricorrentiTotali, dettaglio = r.mese to ComponenteBilancio.RICORRENTI)
@@ -189,16 +207,19 @@ private fun CardMeseCorrente(r: RigaBilancio, primaStipendio: RicorrentiPrimaSti
                 }
             }
             HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
-            // Saldo iniziale + residuo = saldo a fine mese.
-            val totaleSpese = r.correnti + r.ricorrentiTotali
+            // Saldo iniziale + residuo = saldo a fine mese (con le spese correnti stimate).
+            val totaleSpese = r.correntiBilancio + r.ricorrentiTotali
             RigaValore("Totale spese", totaleSpese, grassetto = true, dettaglio = r.mese to ComponenteBilancio.SPESE)
             RigaValore("Residuo (stipendio − spese)", (r.stipendio ?: 0.0) + totaleSpese, grassetto = true, dettaglio = r.mese to ComponenteBilancio.RESIDUO)
             HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
             // Saldo reale di oggi (somma dei conti), prima della previsione di fine mese.
             r.saldoFine?.let { RigaValore("Saldo attuale", it, grassetto = true) }
-            r.saldoFinale?.let { RigaValore("Saldo a fine mese", it, grassetto = true) }
+            r.saldoFinale?.let { RigaValore("Saldo a fine mese (stima)", it, grassetto = true) }
             Text(
-                "Saldo attuale: somma dei conti oggi. Saldo a fine mese = saldo iniziale + residuo; è il punto di partenza dei mesi successivi.",
+                "Saldo attuale: somma dei conti oggi. Saldo a fine mese = saldo iniziale + residuo, con le spese correnti stimate." +
+                    (r.saldoPrevisto?.let {
+                        " I mesi successivi partono, come per i futuri, da saldo iniziale + target di risparmio + ricorrenti: ${formattaImporto(it)}."
+                    } ?: ""),
                 style = MaterialTheme.typography.bodySmall
             )
             RigheCambio(r)
@@ -301,4 +322,48 @@ private fun RigheCambio(r: RigaBilancio) {
     )
     if (abs(r.effettoCambio) >= 0.005) RigaValore("Effetto cambio sui saldi CHF", r.effettoCambio)
     if (abs(r.cambioSpostamenti) >= 0.005) RigaValore("Cambio applicato negli spostamenti", r.cambioSpostamenti)
+}
+
+/** Come è calcolata la stima a fine mese delle spese correnti del mese corrente. */
+@Composable
+private fun StimaCorrentiDialog(stima: StimaCorrenti, onChiudi: () -> Unit) {
+    fun perc(p: Double?) = p?.let { String.format(Locale.ITALY, "%.0f%%", it * 100) } ?: "—"
+    AlertDialog(
+        onDismissRequest = onChiudi,
+        title = { Text("Stima delle spese correnti") },
+        text = {
+            Column(modifier = Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(
+                    "Ultima spesa corrente del mese: giorno ${stima.giorno}. Spese correnti finora: ${formattaImporto(stima.finora)}.",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                Text("Nei mesi precedenti, quota delle spese correnti fatta entro il giorno ${stima.giorno}:", style = MaterialTheme.typography.bodySmall)
+                Row {
+                    Text("Mese", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, modifier = Modifier.weight(0.8f))
+                    Text("Entro il ${stima.giorno}", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                    Text("Totale", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                    Text("%", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, modifier = Modifier.weight(0.5f))
+                }
+                stima.mesi.forEach { m ->
+                    Row {
+                        Text(formattaMese(m.mese), style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(0.8f))
+                        Text(formattaImporto(m.finoAlGiorno), style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+                        Text(formattaImporto(m.totale), style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+                        Text(perc(m.percentuale), style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(0.5f))
+                    }
+                }
+                if (stima.mesi.isEmpty()) Text("Nessun mese precedente con spese correnti.", style = MaterialTheme.typography.bodySmall)
+                HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+                Text("Quota media: ${perc(stima.percentuale)}", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
+                Text(
+                    if (stima.percentuale != null) "Stima a fine mese = ${formattaImporto(stima.finora)} / ${perc(stima.percentuale)} = ${formattaImporto(stima.stima)}"
+                    else "Quota non calcolabile: la stima è uguale alle spese finora (${formattaImporto(stima.stima)}).",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                Text("I mesi considerati sono gli stessi della media dello stipendio (Impostazioni).", style = MaterialTheme.typography.bodySmall)
+            }
+        },
+        confirmButton = { TextButton(onClick = onChiudi) { Text("Chiudi") } }
+    )
 }

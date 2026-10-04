@@ -84,13 +84,16 @@ class CalcoliTest {
         assertTrue(settembre.stipendioStimato)
         assertEquals(3000.0, settembre.stipendio!!, 0.001)
         assertEquals(3400.0, settembre.saldoIniziale!!, 0.001)
-        assertEquals(6300.0, settembre.saldoPrevisto!!, 0.001)
+        // Stima di fine mese: iniziale + stipendio stimato + correnti (stimate) + ricorrenti.
         assertEquals(6300.0, settembre.saldoFinale!!, 0.001)
+        // Per i mesi successivi il corrente vale con il target: 3400 + 2000 − 100.
+        assertEquals(5300.0, settembre.saldoPrevisto!!, 0.001)
         assertEquals(1000.0, settembre.deltaTarget, 0.001)
 
         val ottobre = righe[2]
         assertEquals(StatoMese.FUTURO, ottobre.stato)
-        assertEquals(8200.0, ottobre.saldoPrevisto!!, 0.001)
+        assertEquals(5300.0, ottobre.saldoIniziale!!, 0.001)
+        assertEquals(7200.0, ottobre.saldoPrevisto!!, 0.001)
     }
 
     @Test
@@ -228,5 +231,25 @@ class CalcoliTest {
         assertEquals(-60.0, settembre.pagato, 0.001)
         assertEquals(-40.0, settembre.previsto!!, 0.001)
         assertEquals(-100.0, r[2].totale, 0.001)
+    }
+
+    @Test
+    fun bilancio_stimaSpeseCorrentiDelMese() {
+        val conti = listOf(ContoValuta(id = 1, contoId = 1, valuta = "EUR"))
+        val spesa = Voce(id = 1, tipo = "Spesa")
+        val ops = listOf(
+            // Agosto: 100 entro l'8, 400 in tutto (25%).
+            Operazione(id = 1, contoValutaId = 1, data = giorno(2026, 8, 5), importoCent = -10_000, voceId = 1),
+            Operazione(id = 2, contoValutaId = 1, data = giorno(2026, 8, 25), importoCent = -30_000, voceId = 1),
+            // Settembre: 50 fino all'8 → stima 200.
+            Operazione(id = 3, contoValutaId = 1, data = giorno(2026, 9, 8), importoCent = -5_000, voceId = 1)
+        )
+        val corrente = Calcoli.bilancio(conti, listOf(spesa), ops, Cambi.fisso(1.0), 0.0, YearMonth.of(2026, 9), mesiFuturi = 0, mesiMediaStipendio = 1)
+            .single { it.stato == StatoMese.CORRENTE }
+        val stima = corrente.stimaCorrenti!!
+        assertEquals(8, stima.giorno)
+        assertEquals(0.25, stima.percentuale!!, 0.0001)
+        assertEquals(-200.0, stima.stima, 0.001)
+        assertEquals(-200.0, corrente.correntiBilancio, 0.001)
     }
 }
