@@ -193,10 +193,12 @@ private fun CardMeseCorrente(r: RigaBilancio, primaStipendio: RicorrentiPrimaSti
             val totaleSpese = r.correnti + r.ricorrentiTotali
             RigaValore("Totale spese", totaleSpese, grassetto = true, dettaglio = r.mese to ComponenteBilancio.SPESE)
             RigaValore("Residuo (stipendio − spese)", (r.stipendio ?: 0.0) + totaleSpese, grassetto = true, dettaglio = r.mese to ComponenteBilancio.RESIDUO)
+            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+            // Saldo reale di oggi (somma dei conti), prima della previsione di fine mese.
+            r.saldoFine?.let { RigaValore("Saldo attuale", it, grassetto = true) }
             r.saldoFinale?.let { RigaValore("Saldo a fine mese", it, grassetto = true) }
             Text(
-                "Saldo a fine mese = saldo iniziale + residuo; è il punto di partenza dei mesi successivi." +
-                    (r.saldoFine?.let { " Saldo attuale dei conti: ${formattaImporto(it)}." } ?: ""),
+                "Saldo attuale: somma dei conti oggi. Saldo a fine mese = saldo iniziale + residuo; è il punto di partenza dei mesi successivi.",
                 style = MaterialTheme.typography.bodySmall
             )
             RigheCambio(r)
