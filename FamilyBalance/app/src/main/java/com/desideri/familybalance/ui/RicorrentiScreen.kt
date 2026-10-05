@@ -20,6 +20,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
@@ -201,12 +203,15 @@ private fun CardMese(mese: MeseRicorrenti, oggi: YearMonth, onRiga: (RigaRicorre
     val corrente = mese.mese == oggi
     // Le scadenze annullate non si mostrano (si ripristinano dal Calendario ricorrenti).
     val righe = mese.righe.filter { !it.annullata }
+    // Mesi passati e futuri chiusi per default; il corrente sempre aperto.
+    var espanso by rememberSaveable(mese.mese.toString()) { mutableStateOf(corrente) }
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = if (corrente) CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer) else CardDefaults.cardColors()
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().clickable(enabled = !corrente) { espanso = !espanso }) {
+                if (!corrente) Icon(if (espanso) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore, contentDescription = if (espanso) "Comprimi" else "Espandi")
                 Text(
                     formattaMese(mese.mese) + if (corrente) " (corrente)" else "",
                     style = MaterialTheme.typography.titleMedium,
@@ -223,6 +228,7 @@ private fun CardMese(mese: MeseRicorrenti, oggi: YearMonth, onRiga: (RigaRicorre
                     style = MaterialTheme.typography.bodySmall
                 )
             }
+            if (espanso) {
             if (righe.isEmpty()) {
                 Text("Nessuna spesa ricorrente", style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 4.dp))
             }
@@ -270,6 +276,7 @@ private fun CardMese(mese: MeseRicorrenti, oggi: YearMonth, onRiga: (RigaRicorre
                         TestoImporto(riga.pagato)
                     }
                 }
+            }
             }
         }
     }
