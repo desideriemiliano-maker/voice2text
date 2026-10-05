@@ -138,7 +138,10 @@ fun CorrentiScreen(vm: SpeseViewModel) {
             }
         }
         LazyColumn(state = stato, contentPadding = PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.weight(1f)) {
-            items(mesi, key = { it.mese.toString() }) { mese -> CardMeseCorrenti(mese, onRiga = { aperta = it to mese.mese }) }
+            items(mesi, key = { it.mese.toString() }) { mese ->
+                val precedente = mesi.firstOrNull { it.mese == mese.mese.minusMonths(1) }?.totale
+                CardMeseCorrenti(mese, precedente, onRiga = { aperta = it to mese.mese })
+            }
         }
     }
 
@@ -176,7 +179,7 @@ fun CorrentiScreen(vm: SpeseViewModel) {
 }
 
 @Composable
-private fun CardMeseCorrenti(mese: MeseCorrenti, onRiga: (RigaCorrente) -> Unit) {
+private fun CardMeseCorrenti(mese: MeseCorrenti, totalePrecedente: Double?, onRiga: (RigaCorrente) -> Unit) {
     val corrente = mese.mese == YearMonth.now()
     // Mesi passati e futuri chiusi per default; il corrente sempre aperto.
     var espanso by rememberSaveable(mese.mese.toString()) { mutableStateOf(corrente) }
@@ -194,6 +197,7 @@ private fun CardMeseCorrenti(mese: MeseCorrenti, onRiga: (RigaCorrente) -> Unit)
                     modifier = Modifier.weight(1f)
                 )
                 TestoImporto(mese.totale, grassetto = true)
+                VariazioneSpesa(mese.totale, totalePrecedente)
             }
             if (espanso) {
             if (mese.righe.isEmpty()) {

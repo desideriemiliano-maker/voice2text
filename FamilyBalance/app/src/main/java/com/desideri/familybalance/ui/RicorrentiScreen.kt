@@ -139,7 +139,10 @@ fun RicorrentiScreen(vm: SpeseViewModel) {
                 }
             }
         LazyColumn(state = stato, contentPadding = PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.weight(1f)) {
-            items(filtrati, key = { it.mese.toString() }) { mese -> CardMese(mese, oggi, onRiga = { aperta = RigaAperta(it, mese.mese) }) }
+            items(filtrati, key = { it.mese.toString() }) { mese ->
+                val precedente = filtrati.firstOrNull { it.mese == mese.mese.minusMonths(1) }?.totale
+                CardMese(mese, oggi, precedente, onRiga = { aperta = RigaAperta(it, mese.mese) })
+            }
         }
     }
 
@@ -199,7 +202,7 @@ internal fun SceltaMese(etichetta: String, mese: YearMonth, onMese: (YearMonth) 
 }
 
 @Composable
-private fun CardMese(mese: MeseRicorrenti, oggi: YearMonth, onRiga: (RigaRicorrente) -> Unit) {
+private fun CardMese(mese: MeseRicorrenti, oggi: YearMonth, totalePrecedente: Double?, onRiga: (RigaRicorrente) -> Unit) {
     val corrente = mese.mese == oggi
     // Le scadenze annullate non si mostrano (si ripristinano dal Calendario ricorrenti).
     val righe = mese.righe.filter { !it.annullata }
@@ -219,6 +222,7 @@ private fun CardMese(mese: MeseRicorrenti, oggi: YearMonth, onRiga: (RigaRicorre
                     modifier = Modifier.weight(1f)
                 )
                 TestoImporto(mese.totale, grassetto = true)
+                VariazioneSpesa(mese.totale, totalePrecedente)
             }
             // Dettaglio del totale: effettivo (operazioni del mese), già pagato (fino a oggi) e mancante.
             if (mese.totale != 0.0) {

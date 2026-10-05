@@ -33,6 +33,7 @@ import androidx.compose.material3.MenuAnchorType
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDatePickerState
@@ -294,4 +295,25 @@ fun MenuSezione(voci: List<VoceMenuSezione>) {
             }
         }
     }
+}
+
+/**
+ * Variazione percentuale di una spesa (importi negativi) rispetto al mese prima, tra parentesi:
+ * rossa se si è speso di più, verde se di meno; niente se non calcolabile.
+ */
+@Composable
+fun VariazioneSpesa(attuale: Double, precedente: Double?, modifier: Modifier = Modifier) {
+    if (precedente == null || kotlin.math.abs(precedente) < 0.005 || kotlin.math.abs(attuale) < 0.005) return
+    val p = Math.round((kotlin.math.abs(attuale) - kotlin.math.abs(precedente)) / kotlin.math.abs(precedente) * 100).toInt()
+    val scuro = MaterialTheme.colorScheme.surface.luminance() < 0.5f
+    Text(
+        "(${if (p > 0) "+" else ""}$p%)",
+        style = MaterialTheme.typography.labelMedium,
+        color = when {
+            p > 0 -> if (scuro) androidx.compose.ui.graphics.Color(0xFFFF8A80) else androidx.compose.ui.graphics.Color(0xFFC62828)
+            p < 0 -> if (scuro) androidx.compose.ui.graphics.Color(0xFF81C784) else androidx.compose.ui.graphics.Color(0xFF2E7D32)
+            else -> MaterialTheme.colorScheme.onSurfaceVariant
+        },
+        modifier = modifier.padding(start = 4.dp)
+    )
 }
