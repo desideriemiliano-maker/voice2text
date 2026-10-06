@@ -62,6 +62,7 @@ import kotlin.math.abs
 private val FORMATO_NOME_MESE = DateTimeFormatter.ofPattern("MMM", Locale.ITALIAN)
 private val LARGHEZZA_MESE: Dp = 56.dp
 private val LARGHEZZA_COLONNA: Dp = 104.dp
+private val FORMATO_GIORNO_MESE = DateTimeFormatter.ofPattern("dd/MM")
 
 /** Stato di una spesa ricorrente in un mese. */
 private enum class StatoSpesa { STIMATA, PIANIFICATA, EFFETTIVA }
@@ -79,7 +80,9 @@ private data class Cella(
     val stato: StatoSpesa,
     val data: Long?,
     val annullata: Boolean,
-    val riga: RigaRicorrente
+    val riga: RigaRicorrente,
+    /** Data da mostrare: pagamento o prevista (null = n.d.). */
+    val dataMostrata: Long? = null
 ) {
     /** Il totale: l'effettivo e, se manca, il valore calcolato o impostato. */
     val importo: Double get() = effettivo + previsto
@@ -127,7 +130,7 @@ fun CalendarioRicorrentiDialog(vm: SpeseViewModel, onChiudi: () -> Unit) {
                         data != null -> StatoSpesa.PIANIFICATA
                         else -> StatoSpesa.STIMATA
                     }
-                    put(voceId to m.mese, Cella(effettivo, previsto, giaPagato, stato, data, rr.all { it.annullata }, rr.first()))
+                    put(voceId to m.mese, Cella(effettivo, previsto, giaPagato, stato, data, rr.all { it.annullata }, rr.first(), (rr.firstOrNull { it.previsto != null } ?: rr.first()).data))
                 }
             }
         }
@@ -153,7 +156,7 @@ fun CalendarioRicorrentiDialog(vm: SpeseViewModel, onChiudi: () -> Unit) {
                     )
                 }
                 Text(
-                    "Effettiva (operazioni sul conto) in nero; pianificata (giorno previsto · importo) in verde; stimata con la media in arancio; " +
+                    "Sotto l'importo la data del pagamento o quella prevista (n.d. se non ricavabile). Effettiva (operazioni sul conto) in nero; pianificata in verde; stimata con la media in arancio; " +
                         "✕ annullata. Il totale usa l'effettivo e, dove manca, il valore calcolato; tocca \"Totale\" per il dettaglio. " +
                         "CHF come nel Bilancio (passati al cambio del mese, corrente e futuri a quello delle Impostazioni). Tocca una cella per pianificare, aggiungere, modificare o eliminare la spesa di quel mese; " +
                         "tieni premuta una spesa stimata o pianificata per eliminarla da quel mese.",
@@ -199,7 +202,7 @@ fun CalendarioRicorrentiDialog(vm: SpeseViewModel, onChiudi: () -> Unit) {
                         Row(modifier = Modifier.weight(1f)) {
                             Column(modifier = Modifier.verticalScroll(verticale)) {
                                 righe.forEachIndexed { i, (nome, m) ->
-                                    CellaTesto(nome, LARGHEZZA_MESE, grassetto = m == null || m == YearMonth.now(), sfondo = sfondo(i))
+                                    CellaTesto(nome, LARGHEZZA_MESE, grassetto = m == null || m == YearMonth.now(), righe = 2, sfondo = sfondo(i))
                                 }
                             }
                             Column(modifier = Modifier.verticalScroll(verticale).horizontalScroll(orizzontale)) {
@@ -214,14 +217,15 @@ fun CalendarioRicorrentiDialog(vm: SpeseViewModel, onChiudi: () -> Unit) {
                                             mostrate.forEach { v ->
                                                 val c = celle[v.id to m]
                                                 CellaTesto(
+                                                    // Importo e, sotto, la data (pagamento o prevista; n.d. se non ricavabile).
                                                     when {
                                                         c == null -> ""
                                                         c.annullata -> "✕"
-                                                        c.stato == StatoSpesa.PIANIFICATA && c.data != null ->
-                                                            "${LocalDate.ofEpochDay(c.data).dayOfMonth}· ${formattaImporto(c.importo)}"
-                                                        else -> formattaImporto(c.importo)
+                                                        else -> formattaImporto(c.importo) + "\n" +
+                                                            (c.dataMostrata?.let { LocalDate.ofEpochDay(it).format(FORMATO_GIORNO_MESE) } ?: "n.d.")
                                                     },
                                                     LARGHEZZA_COLONNA,
+                                                    righe = 2,
                                                     corsivo = c != null && c.stato == StatoSpesa.STIMATA && !c.annullata,
                                                     colore = when {
                                                         c == null || c.annullata -> null
@@ -239,7 +243,7 @@ fun CalendarioRicorrentiDialog(vm: SpeseViewModel, onChiudi: () -> Unit) {
                                             // Totale dell'anno per spesa.
                                             mostrate.forEach { v ->
                                                 val somma = mesi.sumOf { mm -> celle[v.id to mm]?.takeIf { !it.annullata }?.importo ?: 0.0 }
-                                                CellaTesto(if (somma != 0.0) formattaImporto(somma) else "", LARGHEZZA_COLONNA, grassetto = true, allineaDestra = true, sfondo = sfondo(i))
+                                                CellaTesto(if (somma != 0.0) formattaImporto(somma) else "", LARGHEZZA_COLONNA, grassetto = true, allineaDestra = true, righe = 2, sfondo = sfondo(i))
                                             }
                                         }
                                     }
@@ -300,11 +304,11 @@ fun CalendarioRicorrentiDialog(vm: SpeseViewModel, onChiudi: () -> Unit) {
 private fun CelleTotali(effettivo: Double, previsto: Double, giaPagato: Double, espansi: Boolean, sfondo: Color) {
     val totale = effettivo + previsto
     val mancante = totale - giaPagato
-    CellaTesto(if (totale != 0.0) formattaImporto(totale) else "", LARGHEZZA_COLONNA, grassetto = true, allineaDestra = true, sfondo = sfondo)
+    CellaTesto(if (totale != 0.0) formattaImporto(totale) else "", LARGHEZZA_COLONNA, grassetto = true, allineaDestra = true, righe = 2, sfondo = sfondo)
     if (espansi) {
-        CellaTesto(if (effettivo != 0.0) formattaImporto(effettivo) else "", LARGHEZZA_COLONNA, allineaDestra = true, sfondo = sfondo)
-        CellaTesto(if (giaPagato != 0.0) formattaImporto(giaPagato) else "", LARGHEZZA_COLONNA, allineaDestra = true, sfondo = sfondo)
-        CellaTesto(if (mancante != 0.0) formattaImporto(mancante) else "", LARGHEZZA_COLONNA, corsivo = true, allineaDestra = true, sfondo = sfondo)
+        CellaTesto(if (effettivo != 0.0) formattaImporto(effettivo) else "", LARGHEZZA_COLONNA, allineaDestra = true, righe = 2, sfondo = sfondo)
+        CellaTesto(if (giaPagato != 0.0) formattaImporto(giaPagato) else "", LARGHEZZA_COLONNA, allineaDestra = true, righe = 2, sfondo = sfondo)
+        CellaTesto(if (mancante != 0.0) formattaImporto(mancante) else "", LARGHEZZA_COLONNA, corsivo = true, allineaDestra = true, righe = 2, sfondo = sfondo)
     }
 }
 

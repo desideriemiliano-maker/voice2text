@@ -80,8 +80,7 @@ fun BilancioScreen(vm: SpeseViewModel) {
             while (giorno.dayOfWeek == java.time.DayOfWeek.SATURDAY || giorno.dayOfWeek == java.time.DayOfWeek.SUNDAY) giorno = giorno.plusDays(1)
         }
         val righe = ricorrenti.filter { it.previsto != null }.mapNotNull { r ->
-            val data = r.dataPrevista?.let { LocalDate.ofEpochDay(it) } ?: dati.operazioni.filter { it.voceId == r.voce.id }.maxByOrNull { it.data }
-                ?.let { mese.atDay(LocalDate.ofEpochDay(it.data).dayOfMonth.coerceAtMost(mese.lengthOfMonth())) }
+            val data = r.dataStimata?.let { LocalDate.ofEpochDay(it) }
             if (data == null || data < giorno) Triple(r.voce.descrizione, r.previsto ?: 0.0, data) else null
         }.sortedBy { it.third ?: LocalDate.MIN }
         RicorrentiPrimaStipendio(giorno, righe)

@@ -255,13 +255,20 @@ private fun CardMese(mese: MeseRicorrenti, oggi: YearMonth, totalePrecedente: Do
                             style = MaterialTheme.typography.bodyMedium,
                             color = if (riga.annullata) MaterialTheme.colorScheme.onSurfaceVariant else Color.Unspecified
                         )
+                        // Data del pagamento (se tutta pagata) o prevista: indicata o dal giorno dell'ultimo pagamento.
+                        val testoData = when {
+                            riga.annullata -> null
+                            riga.previsto == null && riga.dataPagamento != null -> "pagata il ${formattaData(riga.dataPagamento)}"
+                            riga.dataStimata != null -> "prevista il ${formattaData(riga.dataStimata)}"
+                            else -> "data n.d."
+                        }
                         val extra = listOfNotNull(
+                            testoData,
                             "non pagata".takeIf { nonPagata },
-                            riga.dataPrevista?.let { "il ${formattaData(it)}" },
-                            riga.meseOrigine?.let { "spostata da ${formattaMese(it)}" },
-                            "importo impostato".takeIf { riga.fonte == FontePrevisione.PERSONALIZZATA }
+                            riga.meseOrigine?.let { "spostata da ${formattaMese(it)}" }.takeIf { riga.previsto != null },
+                            "importo impostato".takeIf { riga.previsto != null && riga.fonte == FontePrevisione.PERSONALIZZATA }
                         )
-                        if (riga.previsto != null && extra.isNotEmpty()) {
+                        if (extra.isNotEmpty()) {
                             Text(extra.joinToString(" · "), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
                         }
                     }

@@ -43,8 +43,18 @@ data class RigaRicorrente(
      * Importo della scadenza (calcolato o impostato) prima di togliere il pagato: [previsto] è il
      * residuo ancora da pagare. Null per le righe senza previsione.
      */
-    val importoScadenza: Double? = previsto
-)
+    val importoScadenza: Double? = previsto,
+    /** Data dell'ultima operazione pagata nel mese (null se nessuna). */
+    val dataPagamento: Long? = null,
+    /**
+     * Data prevista della scadenza: quella indicata ([dataPrevista]) o, se manca, lo stesso giorno
+     * del mese dell'ultimo pagamento della spesa; null se non ricavabile.
+     */
+    val dataStimata: Long? = null
+) {
+    /** Data da mostrare: il pagamento se la spesa è tutta pagata, altrimenti quella prevista (null = n.d.). */
+    val data: Long? get() = if (previsto == null && dataPagamento != null) dataPagamento else dataStimata
+}
 
 data class MeseRicorrenti(
     val mese: YearMonth,
@@ -235,6 +245,8 @@ object Calcoli {
         val storicoMedia = storicoRicorrenti(vociRicorrenti, operazioni, valutaDi, cambi, perMedia = true)
         val previsioni = vociRicorrenti.associate { it.id to previsione(it, storicoMedia[it.id], oggi) }
         val perVoceEMese = personalizzazioni.associateBy { it.voceId to it.mese }
+        val idsRicorrenti = vociRicorrenti.map { it.id }.toHashSet()
+        val opsPerVoce = operazioni.filter { !it.trasferimento && it.voceId in idsRicorrenti }.groupBy { it.voceId!! }
         val spostatePerMese = personalizzazioni.filter { it.spostataA != null && it.spostataA != it.mese }
             .groupBy { testoInMese(it.spostataA!!) }
 
@@ -286,13 +298,18 @@ object Calcoli {
                     }
                     if (residuo == 0.0) null else r.copy(previsto = residuo, importoScadenza = importo)
                 }
+                // Date: ultimo pagamento del mese e data prevista (indicata o dal giorno dell'ultimo pagamento).
+                val dataPagamento = opsPerVoce[voce.id].orEmpty().filter { mese(it.dataPerRicorrente) == m }.maxOfOrNull { it.data }
+                val giornoAbituale = opsPerVoce[voce.id].orEmpty().maxByOrNull { it.data }?.let { LocalDate.ofEpochDay(it.data).dayOfMonth }
+                fun stimata(r: RigaRicorrente) = r.dataPrevista
+                    ?: giornoAbituale?.let { m.atDay(it.coerceAtMost(m.lengthOfMonth())).toEpochDay() }
                 // Il pagato va su una sola riga (la prima), per non contarlo più volte.
                 val conPagato = if (pagato == 0.0) previste else when {
                     previste.isNotEmpty() -> listOf(previste.first().copy(pagato = pagato, giaPagato = giaPagato)) + previste.drop(1)
                     else -> listOf(RigaRicorrente(voce, pagato, null, meseScadenza = m, giaPagato = giaPagato))
                 }
                 when {
-                    conPagato.isNotEmpty() -> conPagato
+                    conPagato.isNotEmpty() -> conPagato.map { it.copy(dataPagamento = dataPagamento.takeIf { _ -> it.pagato != 0.0 }, dataStimata = stimata(it)) }
                     annullata -> listOf(RigaRicorrente(voce, 0.0, null, meseScadenza = m, annullata = true))
                     else -> emptyList()
                 }
