@@ -66,7 +66,9 @@ data class MovimentoEstratto(
     val dataContabile: LocalDate? = null,
     val dataValuta: LocalDate? = null,
     /** Numero della riga del file da cui proviene (per mantenere l'ordine dell'estratto conto). */
-    val rigaFile: Int? = null
+    val rigaFile: Int? = null,
+    /** Movimento senza data contabile ("non contabilizzato"): ha la data di oggi, da sanare in seguito. */
+    val nonContabilizzato: Boolean = false
 ) {
     fun dataDi(tipo: TipoData): LocalDate? = when (tipo) {
         TipoData.OPERAZIONE -> dataOperazione

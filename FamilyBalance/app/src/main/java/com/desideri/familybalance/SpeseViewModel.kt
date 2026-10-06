@@ -801,7 +801,8 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
     fun aggiornaDateDaEstratto(nuoveDate: Map<Long, Long>) = viewModelScope.launch {
         db.withTransaction {
             for ((id, data) in nuoveDate) {
-                dao.operazione(id)?.let { dao.aggiornaOperazione(it.copy(data = data)) }
+                // La data dell'estratto sana anche le operazioni importate come non contabilizzate.
+                dao.operazione(id)?.let { dao.aggiornaOperazione(it.copy(data = data, nonContabilizzata = false)) }
             }
         }
         messaggio(if (nuoveDate.size == 1) "Aggiornata 1 data" else "Aggiornate ${nuoveDate.size} date")
@@ -845,7 +846,7 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
             for (a in aggiornamenti) {
                 val op = dao.operazione(a.operazione.id) ?: continue
                 val giorno = a.nuovaData?.toEpochDay() ?: op.data
-                dao.aggiornaOperazione(op.copy(data = giorno, ordine = a.ordine ?: op.ordine))
+                dao.aggiornaOperazione(op.copy(data = giorno, ordine = a.ordine ?: op.ordine, nonContabilizzata = op.nonContabilizzata && a.nuovaData == null))
                 op.collegataId?.let { dao.operazione(it) }?.let {
                     dao.aggiornaOperazione(it.copy(data = giorno, ordine = a.ordine ?: it.ordine))
                 }
@@ -879,7 +880,8 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
                         trasferimento = true,
                         contoValutaDestId = dest,
                         note = note,
-                        ordine = scelta.riga.ordine
+                        ordine = scelta.riga.ordine,
+                        nonContabilizzata = m.nonContabilizzato
                     )
                     val id = dao.inserisciOperazione(op)
                     // Contro-operazione solo nella stessa valuta: con un cambio l'importo accreditato non è noto.
@@ -897,7 +899,8 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
                             importoCent = m.importoCent,
                             voceId = voceId(scelta.tipo.trim(), scelta.sottotipo?.trim()?.ifEmpty { null }),
                             note = note,
-                            ordine = scelta.riga.ordine
+                            ordine = scelta.riga.ordine,
+                            nonContabilizzata = m.nonContabilizzato
                         )
                     )
                 }

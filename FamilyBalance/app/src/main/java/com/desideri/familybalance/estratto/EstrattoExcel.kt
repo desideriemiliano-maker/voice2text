@@ -79,7 +79,7 @@ object EstrattoExcel {
     }
 
     /** I movimenti delle righe dopo l'intestazione con le colonne [c]; si saltano le righe senza data o importo. */
-    fun leggi(righe: List<Pair<Int, List<String>>>, c: ColonneExcel, valutaConto: String): EsitoEstrattoExcel {
+    fun leggi(righe: List<Pair<Int, List<String>>>, c: ColonneExcel, valutaConto: String, oggi: LocalDate = LocalDate.now()): EsitoEstrattoExcel {
         // Valuta indicata sopra l'intestazione (es. "Divisa C/C: | EUR").
         val valutaFile = righe.take(c.rigaIntestazione).firstNotNullOfOrNull { (_, celle) ->
             val i = celle.indexOfFirst { normalizza(it).startsWith("divisa") || normalizza(it).startsWith("valuta") }
@@ -93,16 +93,24 @@ object EstrattoExcel {
                 if (u == null && e == null) null else (u ?: 0) + (e ?: 0)
             }
             if (cent == null || cent == 0L) return@mapNotNull null
-            val data = dataDa(cella(c.data)) ?: return@mapNotNull null
+            // Data non leggibile (es. "Non contabilizzato"): il movimento si tiene con la data di oggi.
+            val testoData = cella(c.data)
+            val letta = dataDa(testoData)
+            if (letta == null && testoData.isBlank()) return@mapNotNull null
+            val data = letta ?: oggi
             MovimentoEstratto(
                 valuta = valutaFile ?: valutaConto,
                 importoCent = cent,
                 descrizione = c.descrizioni.map { cella(it) }.filter { it.isNotBlank() }.distinct().joinToString(" · "),
                 dataOperazione = data,
-                rigaFile = numero
+                rigaFile = numero,
+                nonContabilizzato = letta == null
             )
         }
         val avvisi = buildList {
+            movimenti.count { it.nonContabilizzato }.takeIf { it > 0 }?.let {
+                add("$it movimenti non ancora contabilizzati: registrati con la data di oggi, da sanare con un riscontro successivo")
+            }
             if (valutaFile != null && valutaFile != valutaConto) add("Valuta del file ($valutaFile) diversa da quella del conto ($valutaConto)")
         }
         return EsitoEstrattoExcel(movimenti, avvisi)

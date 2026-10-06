@@ -102,7 +102,13 @@ data class Operazione(
      * Data a cui imputare l'operazione per la spesa ricorrente, se diversa da [data] (es. addebitata
      * il 1° del mese ma relativa al mese precedente); null = [data].
      */
-    val dataRicorrente: Long? = null
+    val dataRicorrente: Long? = null,
+    /**
+     * Movimento importato dall'estratto ancora "non contabilizzato" (senza data contabile): registrato
+     * con la data dell'import, da sanare con un riscontro successivo (che ne aggiorna la data).
+     */
+    @ColumnInfo(defaultValue = "0")
+    val nonContabilizzata: Boolean = false
 )
 
 /** Giorno che conta per le spese ricorrenti (fuori dall'entità: non è una colonna). */

@@ -495,6 +495,9 @@ private fun RigaListaOperazione(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+            if (op.nonContabilizzata) {
+                Text("⏳ non ancora contabilizzata (data dell'import)", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.tertiary)
+            }
         }
         Column(horizontalAlignment = Alignment.End) {
             TestoImporto(op.importoCent / 100.0, valuta, grassetto = true)

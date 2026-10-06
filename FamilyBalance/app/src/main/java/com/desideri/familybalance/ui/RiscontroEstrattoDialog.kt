@@ -193,6 +193,8 @@ fun RiscontroEstrattoDialog(vm: SpeseViewModel, dati: DatiApp, stato: StatoRisco
 
     val daAggiornare = collegamenti.mapNotNull { c ->
         val op = perIdOp[c.operazioneId] ?: return@mapNotNull null
+        // Un movimento ancora non contabilizzato non ha una data vera: non sana l'operazione.
+        if (stato.movimenti[c.movimento].nonContabilizzato) return@mapNotNull null
         val d = movimenti[c.movimento].data
         if (op.data != d) op.id to d else null
     }.toMap()
@@ -360,8 +362,8 @@ fun RiscontroEstrattoDialog(vm: SpeseViewModel, dati: DatiApp, stato: StatoRisco
                                 Column(modifier = Modifier.weight(1f).padding(horizontal = 6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                     opsPerData[giorno].orEmpty().forEach { op ->
                                         val chiave = chiaveOp(op.id)
-                                        val descrizione = op.note ?: op.voceId?.let { dati.vociPerId[it]?.descrizione }
-                                            ?: if (op.trasferimento) "Spostamento" else ""
+                                        val descrizione = (if (op.nonContabilizzata) "⏳ non contabilizzata · " else "") +
+                                            (op.note ?: op.voceId?.let { dati.vociPerId[it]?.descrizione } ?: if (op.trasferimento) "Spostamento" else "")
                                         CartaRiscontro(
                                             importo = formattaCent(op.importoCent, valuta),
                                             descrizione = descrizione,
@@ -382,7 +384,7 @@ fun RiscontroEstrattoDialog(vm: SpeseViewModel, dati: DatiApp, stato: StatoRisco
                                         val m = stato.movimenti[i]
                                         CartaRiscontro(
                                             importo = formattaCent(m.importoCent, valuta),
-                                            descrizione = m.descrizione,
+                                            descrizione = (if (m.nonContabilizzato) "⏳ non contabilizzato · " else "") + m.descrizione,
                                             collegata = i in movCollegati,
                                             evidenziata = bersaglio == chiave,
                                             onPosizione = { posizioni[chiave] = it },

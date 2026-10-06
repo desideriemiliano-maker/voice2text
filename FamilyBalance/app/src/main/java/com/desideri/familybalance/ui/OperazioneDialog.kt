@@ -160,6 +160,8 @@ fun OperazioneDialog(
                     note = note.trim().ifEmpty { null },
                     ordine = esistente?.ordine,
                     esclusaDaMedia = esistente?.esclusaDaMedia ?: false,
+                    // Resta "non contabilizzata" finché la data non viene cambiata (a mano o da un riscontro).
+                    nonContabilizzata = esistente?.nonContabilizzata == true && esistente.data == data,
                     // La data per la ricorrente conta solo per le voci ricorrenti e se diversa dalla data.
                     dataRicorrente = dataRicorrente.takeIf { dati.vociPerId[voceId]?.ricorrente == true && it != data }
                 )

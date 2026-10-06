@@ -35,8 +35,13 @@ class EstrattoExcelTest {
         assertEquals("Rimborso", esito.movimenti[1].descrizione)
         assertEquals(LocalDate.of(2026, 9, 28), esito.movimenti[1].dataOperazione)
         assertEquals(4, esito.movimenti[0].rigaFile)
-        // Data contabile: "Non contabilizzato" non è una data, la riga si salta.
-        assertEquals(2, EstrattoExcel.leggi(estratto, ColonneExcel(2, data = 1, importo = 5), "EUR").movimenti.size)
+        // Data contabile: "Non contabilizzato" non è una data: la riga resta, con la data di oggi e il flag.
+        val oggi = LocalDate.of(2026, 10, 6)
+        val conContabile = EstrattoExcel.leggi(estratto, ColonneExcel(2, data = 1, importo = 5), "EUR", oggi).movimenti
+        assertEquals(3, conContabile.size)
+        assertEquals(true, conContabile[0].nonContabilizzato)
+        assertEquals(oggi, conContabile[0].dataOperazione)
+        assertEquals(false, conContabile[1].nonContabilizzato)
     }
 
     @Test
