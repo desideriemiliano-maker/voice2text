@@ -540,7 +540,12 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
     /** Sposta tutte le operazioni di [da] su [a], poi chiama [onFatto] con il numero di operazioni spostate. */
     fun spostaOperazioniVoce(da: Voce, a: Voce, onFatto: (Int) -> Unit) = viewModelScope.launch {
         if (da.id == a.id) return@launch messaggio("Scegli una voce diversa da quella di origine")
-        val spostate = dao.spostaOperazioniVoce(da.id, a.id)
+        val sottotipo = da.sottotipo?.trim()?.takeIf { it.isNotEmpty() && !it.equals(a.sottotipo?.trim(), ignoreCase = true) }
+        val spostate = db.withTransaction {
+            // Il sottotipo di origine non va perso: finisce nelle note delle operazioni.
+            if (sottotipo != null) dao.aggiungiANote(da.id, sottotipo)
+            dao.spostaOperazioniVoce(da.id, a.id)
+        }
         messaggio("$spostate operazioni spostate su ${a.descrizione}")
         onFatto(spostate)
     }
