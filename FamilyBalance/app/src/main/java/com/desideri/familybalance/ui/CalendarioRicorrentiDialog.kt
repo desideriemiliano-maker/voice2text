@@ -108,6 +108,7 @@ fun CalendarioRicorrentiDialog(vm: SpeseViewModel, onChiudi: () -> Unit) {
     var aperta by remember { mutableStateOf<Pair<Long, YearMonth>?>(null) }
     // Cella stimata o pianificata da eliminare (pressione lunga), in attesa di conferma.
     var daEliminare by remember { mutableStateOf<Pair<Long, YearMonth>?>(null) }
+    var graficoMese by remember { mutableStateOf<YearMonth?>(null) }
     // Totali espansi: effettivo e quanto manca, oltre al totale.
     var totaliEspansi by rememberSaveable { mutableStateOf(false) }
     // null = tutte le spese (anche quelle aggiunte in seguito); lista vuota = nessuna.
@@ -202,7 +203,11 @@ fun CalendarioRicorrentiDialog(vm: SpeseViewModel, onChiudi: () -> Unit) {
                         Row(modifier = Modifier.weight(1f)) {
                             Column(modifier = Modifier.verticalScroll(verticale)) {
                                 righe.forEachIndexed { i, (nome, m) ->
-                                    CellaTesto(nome, LARGHEZZA_MESE, grassetto = m == null || m == YearMonth.now(), righe = 2, sfondo = sfondo(i))
+                                    // Toccando il mese si apre il grafico cumulato delle sue spese ricorrenti.
+                                    CellaTesto(
+                                        if (m != null) "$nome ▸" else nome, LARGHEZZA_MESE, grassetto = m == null || m == YearMonth.now(), righe = 2, sfondo = sfondo(i),
+                                        onClick = m?.let { mm -> { graficoMese = mm } }
+                                    )
                                 }
                             }
                             Column(modifier = Modifier.verticalScroll(verticale).horizontalScroll(orizzontale)) {
@@ -267,6 +272,13 @@ fun CalendarioRicorrentiDialog(vm: SpeseViewModel, onChiudi: () -> Unit) {
         }
     }
 
+    graficoMese?.let { m ->
+        val righeMese = mostrate.mapNotNull { v -> celle[v.id to m]?.riga?.takeIf { !it.annullata } }
+        GraficoMeseDialog(
+            "Spese ricorrenti", "Cumulato del mese per giorno, in EUR (spese del filtro). Tocca il grafico per i valori del giorno.",
+            m, serieRicorrenti(dati, cambi, m, righeMese), onChiudi = { graficoMese = null }
+        )
+    }
     daEliminare?.let { (voceId, mese) ->
         val voce = dati.vociPerId[voceId]
         val cella = celle[voceId to mese]

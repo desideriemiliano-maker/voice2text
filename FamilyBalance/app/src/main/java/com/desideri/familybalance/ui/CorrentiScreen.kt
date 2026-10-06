@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -79,6 +80,7 @@ fun CorrentiScreen(vm: SpeseViewModel) {
     var sceltaVoci by remember { mutableStateOf(false) }
     var mostraGrafico by remember { mutableStateOf(false) }
     var mostraReport by remember { mutableStateOf(false) }
+    var graficoMese by remember { mutableStateOf<YearMonth?>(null) }
     var aperta by remember { mutableStateOf<Pair<RigaCorrente, YearMonth>?>(null) }
 
     // Voci correnti (più "Senza tipo") per il filtro.
@@ -140,7 +142,7 @@ fun CorrentiScreen(vm: SpeseViewModel) {
         LazyColumn(state = stato, contentPadding = PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.weight(1f)) {
             items(mesi, key = { it.mese.toString() }) { mese ->
                 val precedente = mesi.firstOrNull { it.mese == mese.mese.minusMonths(1) }?.totale
-                CardMeseCorrenti(mese, precedente, onRiga = { aperta = it to mese.mese })
+                CardMeseCorrenti(mese, precedente, onGrafico = { graficoMese = it }, onRiga = { aperta = it to mese.mese })
             }
         }
     }
@@ -175,11 +177,17 @@ fun CorrentiScreen(vm: SpeseViewModel) {
         )
     }
     if (mostraReport) ReportCorrentiDialog(vm, onChiudi = { mostraReport = false })
+    graficoMese?.let { m ->
+        GraficoMeseDialog(
+            "Spese correnti", "Cumulato del mese per giorno, in EUR (spese filtrate). Tocca il grafico per i valori del giorno.",
+            m, serieCorrenti(dati, cambi, m, filtroVoci.toSet().ifEmpty { null }), onChiudi = { graficoMese = null }
+        )
+    }
     aperta?.let { (riga, mese) -> OperazioniCorrentiDialog(vm, dati, riga, mese, onChiudi = { aperta = null }) }
 }
 
 @Composable
-private fun CardMeseCorrenti(mese: MeseCorrenti, totalePrecedente: Double?, onRiga: (RigaCorrente) -> Unit) {
+private fun CardMeseCorrenti(mese: MeseCorrenti, totalePrecedente: Double?, onGrafico: (YearMonth) -> Unit, onRiga: (RigaCorrente) -> Unit) {
     val corrente = mese.mese == YearMonth.now()
     // Mesi passati e futuri chiusi per default; il corrente sempre aperto.
     var espanso by rememberSaveable(mese.mese.toString()) { mutableStateOf(corrente) }
@@ -198,6 +206,9 @@ private fun CardMeseCorrenti(mese: MeseCorrenti, totalePrecedente: Double?, onRi
                 )
                 TestoImporto(mese.totale, grassetto = true)
                 VariazioneSpesa(mese.totale, totalePrecedente)
+                IconButton(onClick = { onGrafico(mese.mese) }, modifier = Modifier.size(32.dp)) {
+                    Icon(Icons.AutoMirrored.Filled.ShowChart, contentDescription = "Grafico del mese", modifier = Modifier.size(18.dp))
+                }
             }
             if (espanso) {
             if (mese.righe.isEmpty()) {

@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -93,6 +94,7 @@ fun RicorrentiScreen(vm: SpeseViewModel) {
     var aperta by remember { mutableStateOf<RigaAperta?>(null) }
     var mostraGrafico by remember { mutableStateOf(false) }
     var mostraCalendario by remember { mutableStateOf(false) }
+    var graficoMese by remember { mutableStateOf<MeseRicorrenti?>(null) }
     val cambi by vm.cambi.collectAsStateWithLifecycle()
 
     LaunchedEffect(mesi.isNotEmpty()) {
@@ -141,7 +143,7 @@ fun RicorrentiScreen(vm: SpeseViewModel) {
         LazyColumn(state = stato, contentPadding = PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.weight(1f)) {
             items(filtrati, key = { it.mese.toString() }) { mese ->
                 val precedente = filtrati.firstOrNull { it.mese == mese.mese.minusMonths(1) }?.totale
-                CardMese(mese, oggi, precedente, onRiga = { aperta = RigaAperta(it, mese.mese) })
+                CardMese(mese, oggi, precedente, onGrafico = { graficoMese = it }, onRiga = { aperta = RigaAperta(it, mese.mese) })
             }
         }
     }
@@ -181,6 +183,12 @@ fun RicorrentiScreen(vm: SpeseViewModel) {
         )
     }
     if (mostraCalendario) CalendarioRicorrentiDialog(vm, onChiudi = { mostraCalendario = false })
+    graficoMese?.let { m ->
+        GraficoMeseDialog(
+            "Spese ricorrenti", "Cumulato del mese per giorno, in EUR (spese filtrate). Tocca il grafico per i valori del giorno.",
+            m.mese, serieRicorrenti(dati, cambi, m.mese, m.righe), onChiudi = { graficoMese = null }
+        )
+    }
     aperta?.let { a ->
         // La voce aggiornata (es. mese di partenza cambiato) si prende dai dati correnti.
         val voce = dati.vociPerId[a.riga.voce.id] ?: a.riga.voce
@@ -202,7 +210,7 @@ internal fun SceltaMese(etichetta: String, mese: YearMonth, onMese: (YearMonth) 
 }
 
 @Composable
-private fun CardMese(mese: MeseRicorrenti, oggi: YearMonth, totalePrecedente: Double?, onRiga: (RigaRicorrente) -> Unit) {
+private fun CardMese(mese: MeseRicorrenti, oggi: YearMonth, totalePrecedente: Double?, onGrafico: (MeseRicorrenti) -> Unit, onRiga: (RigaRicorrente) -> Unit) {
     val corrente = mese.mese == oggi
     // Le scadenze annullate non si mostrano (si ripristinano dal Calendario ricorrenti).
     val righe = mese.righe.filter { !it.annullata }
@@ -223,6 +231,9 @@ private fun CardMese(mese: MeseRicorrenti, oggi: YearMonth, totalePrecedente: Do
                 )
                 TestoImporto(mese.totale, grassetto = true)
                 VariazioneSpesa(mese.totale, totalePrecedente)
+                IconButton(onClick = { onGrafico(mese) }, modifier = Modifier.size(32.dp)) {
+                    Icon(Icons.AutoMirrored.Filled.ShowChart, contentDescription = "Grafico del mese", modifier = Modifier.size(18.dp))
+                }
             }
             // Dettaglio del totale: effettivo (operazioni del mese), già pagato (fino a oggi) e mancante.
             if (mese.totale != 0.0) {
