@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -19,7 +20,9 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -70,15 +73,23 @@ fun AnagraficaSpeseScreen(vm: SpeseViewModel, onIndietro: () -> Unit) {
     var operazioniDi by remember { mutableStateOf<Voce?>(null) }
     var ricorrentiEspansa by rememberSaveable { mutableStateOf(true) }
     var correntiEspansa by rememberSaveable { mutableStateOf(true) }
+    var nascondiObsolete by rememberSaveable { mutableStateOf(true) }
+    var mostraSottotipi by remember { mutableStateOf(false) }
 
     val utilizzi = remember(dati.operazioni) { dati.operazioni.mapNotNull { it.voceId }.groupingBy { it }.eachCount() }
-    val filtrate = remember(dati.voci, filtro) {
+    val filtrate = remember(dati.voci, filtro, nascondiObsolete) {
         val f = filtro.trim()
-        if (f.isEmpty()) dati.voci else dati.voci.filter { it.tipo.contains(f, true) || (it.sottotipo?.contains(f, true) == true) }
+        dati.voci.filter { v ->
+            (!nascondiObsolete || !v.obsoleta) && (f.isEmpty() || v.tipo.contains(f, true) || (v.sottotipo?.contains(f, true) == true))
+        }
     }
 
     Scaffold(
-        topBar = { BarraIndietro("Anagrafica spese", onIndietro) },
+        topBar = {
+            BarraIndietro("Anagrafica spese", onIndietro) {
+                MenuSezione(listOf(VoceMenuSezione("Operazioni con sottotipo", Icons.AutoMirrored.Filled.List) { mostraSottotipi = true }))
+            }
+        },
         floatingActionButton = {
             FloatingActionButton(onClick = { inModifica = Voce(tipo = "") }) { Icon(Icons.Filled.Add, contentDescription = "Nuova voce") }
         }
@@ -92,11 +103,14 @@ fun AnagraficaSpeseScreen(vm: SpeseViewModel, onIndietro: () -> Unit) {
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)
             )
-            Text(
-                "${filtrate.size} voci",
-                style = MaterialTheme.typography.bodySmall,
-                modifier = Modifier.padding(horizontal = 16.dp)
-            )
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(horizontal = 16.dp)) {
+                Text("${filtrate.size} voci", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+                FilterChip(
+                    selected = nascondiObsolete,
+                    onClick = { nascondiObsolete = !nascondiObsolete },
+                    label = { Text("Nascondi obsolete") }
+                )
+            }
             // Due sezioni espandibili, ognuna con l'ordinamento dell'anagrafica (tipo, sottotipo).
             val ricorrenti = filtrate.filter { it.ricorrente }
             val correnti = filtrate.filter { !it.ricorrente }
@@ -121,6 +135,10 @@ fun AnagraficaSpeseScreen(vm: SpeseViewModel, onIndietro: () -> Unit) {
                 }
             }
         }
+    }
+
+    if (mostraSottotipi) {
+        OperazioniConSottotipoDialog(vm, dati, onChiudi = { mostraSottotipi = false })
     }
 
     operazioniDi?.let { voce ->
@@ -433,4 +451,114 @@ private fun SpostaOperazioniDialog(
         },
         dismissButton = { TextButton(onClick = onAnnulla) { Text("Annulla") } }
     )
+}
+
+/**
+ * Le operazioni delle voci con sottotipo, con il pulsante che sposta il sottotipo nelle note (con
+ * " / " se c'è già una nota) e le operazioni sulla voce di solo tipo; poi propone di eliminare le
+ * voci con sottotipo rimaste vuote.
+ */
+@Composable
+private fun OperazioniConSottotipoDialog(vm: SpeseViewModel, dati: DatiApp, onChiudi: () -> Unit) {
+    val conSottotipo = remember(dati.voci) { dati.voci.filter { !it.sottotipo.isNullOrBlank() }.associateBy { it.id } }
+    val operazioni = remember(dati.operazioni, conSottotipo) {
+        dati.operazioni.filter { it.voceId in conSottotipo }.sortedWith(compareBy({ conSottotipo[it.voceId]?.descrizione?.lowercase() }, { -it.data }))
+    }
+    var inModifica by remember { mutableStateOf<Operazione?>(null) }
+    var conferma by remember { mutableStateOf(false) }
+    var vociVuote by remember { mutableStateOf<List<Voce>?>(null) }
+
+    Dialog(onDismissRequest = onChiudi, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
+        Surface(modifier = Modifier.fillMaxSize(), tonalElevation = 4.dp) {
+            Column(modifier = Modifier.fillMaxSize().systemBarsPadding().padding(12.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Operazioni con sottotipo", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                    IconButton(onClick = onChiudi) { Icon(Icons.Filled.Close, contentDescription = "Chiudi") }
+                }
+                Text(
+                    "${operazioni.size} operazioni su ${operazioni.mapNotNull { it.voceId }.distinct().size} voci con sottotipo. Tocca un'operazione per modificarla.",
+                    style = MaterialTheme.typography.bodySmall
+                )
+                HorizontalDivider(modifier = Modifier.padding(top = 8.dp))
+                LazyColumn(modifier = Modifier.weight(1f)) {
+                    if (operazioni.isEmpty()) item { Text("Nessuna operazione con sottotipo.", modifier = Modifier.padding(vertical = 12.dp)) }
+                    items(operazioni, key = { it.id }) { op ->
+                        val voce = conSottotipo[op.voceId]
+                        val valuta = dati.contiValutaPerId[op.contoValutaId]?.valuta ?: Valute.EUR
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.fillMaxWidth().clickable { inModifica = op }.padding(vertical = 8.dp, horizontal = 4.dp)
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    "${voce?.tipo} · ${voce?.sottotipo}",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                                Text(
+                                    formattaData(op.data) + " · " + dati.etichetta(op.contoValutaId) + (op.note?.let { " · $it" } ?: ""),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            TestoImporto(op.importoCent / 100.0, valuta, grassetto = true)
+                        }
+                        HorizontalDivider()
+                    }
+                }
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    TextButton(onClick = { conferma = true }, enabled = operazioni.isNotEmpty()) { Text("Sposta i sottotipi nelle note") }
+                    TextButton(onClick = onChiudi) { Text("Chiudi") }
+                }
+            }
+        }
+    }
+
+    if (conferma) {
+        AlertDialog(
+            onDismissRequest = { conferma = false },
+            title = { Text("Sposta i sottotipi nelle note") },
+            text = {
+                Text(
+                    "Le ${operazioni.size} operazioni passano alla voce di solo tipo (creata se manca) e il sottotipo " +
+                        "si aggiunge alle note, dopo \" / \" se c'è già una nota. Es. \"Auto · Benzina\" → \"Auto\" con nota \"Benzina\"."
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    conferma = false
+                    vm.spostaSottotipiInNote { _, voci -> vociVuote = voci }
+                }) { Text("Sposta") }
+            },
+            dismissButton = { TextButton(onClick = { conferma = false }) { Text("Annulla") } }
+        )
+    }
+
+    vociVuote?.let { voci ->
+        if (voci.isEmpty()) {
+            vociVuote = null
+        } else {
+            AlertDialog(
+                onDismissRequest = { vociVuote = null },
+                title = { Text("Eliminare le voci con sottotipo?") },
+                text = {
+                    Text(
+                        "Le ${voci.size} voci con sottotipo non hanno più operazioni. Eliminarle dall'anagrafica? " +
+                            "Si perdono anche le loro impostazioni (ricorrenza, importo previsto, previsioni dei mesi)."
+                    )
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        vm.eliminaVociVuote(voci)
+                        vociVuote = null
+                    }) { Text("Elimina", color = MaterialTheme.colorScheme.error) }
+                },
+                dismissButton = { TextButton(onClick = { vociVuote = null }) { Text("Mantieni") } }
+            )
+        }
+    }
+
+    inModifica?.let { op ->
+        OperazioneDialog(vm = vm, dati = dati, contoValutaId = op.contoValutaId, esistente = op, onChiudi = { inModifica = null })
+    }
 }

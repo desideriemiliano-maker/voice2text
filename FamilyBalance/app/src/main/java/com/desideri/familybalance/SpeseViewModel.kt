@@ -559,6 +559,35 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
         onFatto(spostate)
     }
 
+    /**
+     * Toglie il sottotipo dalle operazioni: quelle delle voci con sottotipo passano alla voce di solo
+     * tipo (creata se manca) e il sottotipo si aggiunge alle note (con " / " se c'è già una nota).
+     * Chiama [onFatto] con il numero di operazioni spostate e le voci con sottotipo rimaste vuote.
+     */
+    fun spostaSottotipiInNote(onFatto: (Int, List<Voce>) -> Unit) = viewModelScope.launch {
+        val conSottotipo = dati.value.voci.filter { !it.sottotipo.isNullOrBlank() }
+        val usate = dati.value.operazioni.mapNotNull { it.voceId }.toSet()
+        val daSpostare = conSottotipo.filter { it.id in usate }
+        val destinazioni = HashMap<String, Long>()
+        val spostate = db.withTransaction {
+            daSpostare.sumOf { voce ->
+                val chiave = voce.tipo.trim().lowercase()
+                val dest = destinazioni[chiave] ?: voceId(voce.tipo, null)?.also { destinazioni[chiave] = it } ?: return@sumOf 0
+                dao.aggiungiANote(voce.id, voce.sottotipo!!.trim())
+                dao.spostaOperazioniVoce(voce.id, dest)
+            }
+        }
+        messaggio("$spostate operazioni senza più sottotipo")
+        onFatto(spostate, conSottotipo)
+    }
+
+    /** Elimina le voci [voci] rimaste senza operazioni (con le loro previsioni ricorrenti). */
+    fun eliminaVociVuote(voci: List<Voce>) = viewModelScope.launch {
+        var eliminate = 0
+        voci.forEach { v -> if (dao.contaOperazioniVoce(v.id) == 0) { dao.eliminaVoce(v); eliminate++ } }
+        messaggio("$eliminate voci eliminate")
+    }
+
     /** Voce per tipo/sottotipo (sottotipo vuoto = voce di solo tipo), creata se manca solo quella di tipo. */
     /**
      * Associa l'operazione [op] alla spesa ricorrente [voce] nel [mese]: il tipo diventa quello della
