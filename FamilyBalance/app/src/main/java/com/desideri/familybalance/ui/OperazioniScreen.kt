@@ -62,7 +62,7 @@ import com.desideri.familybalance.logica.formattaData
 import com.desideri.familybalance.logica.testoInCent
 import kotlin.math.abs
 
-/** Filtri della lista operazioni: periodo, intervallo di importo (valore assoluto), tipi (uno o più) e sottotipo. */
+/** Filtri della lista operazioni: periodo, intervallo di importo (valore assoluto), tipi (uno o più) e testo nelle note. */
 private data class Filtri(
     val da: Long? = null,
     val a: Long? = null,
@@ -70,7 +70,7 @@ private data class Filtri(
     val importoMax: String = "",
     /** Tipi ammessi (minuscoli; [TIPO_VUOTO] = operazioni senza tipo); vuoto = tutti. */
     val tipi: Set<String> = emptySet(),
-    val sottotipo: String = ""
+    val note: String = ""
 ) {
     val attivi: Boolean get() = this != Filtri()
 }
@@ -341,7 +341,7 @@ private fun corrisponde(op: Operazione, f: Filtri, dati: DatiApp): Boolean {
     val voce = op.voceId?.let { dati.vociPerId[it] }
     val tipo = if (op.trasferimento) "Spostamento" else voce?.tipo ?: ""
     if (f.tipi.isNotEmpty() && tipo.lowercase() !in f.tipi) return false
-    if (f.sottotipo.isNotBlank() && !(voce?.sottotipo ?: "").contains(f.sottotipo.trim(), ignoreCase = true)) return false
+    if (f.note.isNotBlank() && !(op.note ?: "").contains(f.note.trim(), ignoreCase = true)) return false
     return true
 }
 
@@ -349,10 +349,6 @@ private fun corrisponde(op: Operazione, f: Filtri, dati: DatiApp): Boolean {
 private fun PannelloFiltri(filtri: Filtri, dati: DatiApp, onFiltri: (Filtri) -> Unit) {
     val tipi = remember(dati.voci) { (dati.voci.map { it.tipo } + "Spostamento").distinct().sortedBy { it.lowercase() } }
     var sceltaTipi by remember { mutableStateOf(false) }
-    val sottotipi = remember(dati.voci, filtri.tipi) {
-        dati.voci.filter { filtri.tipi.isEmpty() || it.tipo.lowercase() in filtri.tipi }
-            .mapNotNull { it.sottotipo }.distinct().sortedBy { it.lowercase() }
-    }
     Card(modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
         Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("Filtri", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
@@ -394,7 +390,13 @@ private fun PannelloFiltri(filtri: Filtri, dati: DatiApp, onFiltri: (Filtri) -> 
                 // Il campo è in sola lettura: un tocco apre la scelta multipla.
                 Box(modifier = Modifier.matchParentSize().clickable { sceltaTipi = true })
             }
-            CampoAutocompletamento("Sottotipo", filtri.sottotipo, sottotipi, { onFiltri(filtri.copy(sottotipo = it)) })
+            OutlinedTextField(
+                value = filtri.note,
+                onValueChange = { onFiltri(filtri.copy(note = it)) },
+                label = { Text("Note contengono") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+            )
             if (filtri.attivi) {
                 TextButton(onClick = { onFiltri(Filtri()) }, modifier = Modifier.align(Alignment.End)) { Text("Azzera filtri") }
             }
@@ -405,7 +407,7 @@ private fun PannelloFiltri(filtri: Filtri, dati: DatiApp, onFiltri: (Filtri) -> 
             tipi = tipi,
             selezionati = filtri.tipi,
             onConferma = {
-                onFiltri(filtri.copy(tipi = it, sottotipo = ""))
+                onFiltri(filtri.copy(tipi = it))
                 sceltaTipi = false
             },
             onAnnulla = { sceltaTipi = false }

@@ -397,11 +397,10 @@ data class AggiornamentoData(
     val ordine: Long?
 )
 
-/** Scelta dell'utente per un movimento: data, tipo/sottotipo, o "Spostamento" verso [destinazioneId]. */
+/** Scelta dell'utente per un movimento: data, tipo, o "Spostamento" verso [destinazioneId]. */
 data class SceltaEstratto(
     val riga: RigaEstratto,
     val data: LocalDate,
     val tipo: String,
-    val sottotipo: String?,
     val destinazioneId: Long?
 )

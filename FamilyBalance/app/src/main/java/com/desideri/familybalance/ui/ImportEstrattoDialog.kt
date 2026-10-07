@@ -81,7 +81,6 @@ private data class StatoRiga(
     /** Per i movimenti già presenti: aggiornare la data dell'operazione esistente. */
     val aggiornaData: Boolean = false,
     val tipo: String = "",
-    val sottotipo: String = "",
     val destinazione: Long? = null
 ) {
     val spostamento: Boolean get() = tipo.trim().equals(Associazione.TIPO_SPOSTAMENTO, ignoreCase = true)
@@ -95,9 +94,9 @@ private fun destinazionePredefinita(riga: RigaEstratto, dati: DatiApp): Long? {
         ?: altri.firstOrNull { it.contoId == propria?.contoId } ?: altri.firstOrNull())?.id
 }
 
-/** Applica un'associazione (tipo/sottotipo o spostamento) allo stato di una riga. */
+/** Applica un'associazione (tipo o spostamento) allo stato di una riga. */
 private fun StatoRiga.con(associazione: Associazione, riga: RigaEstratto, dati: DatiApp): StatoRiga {
-    val nuovo = copy(tipo = associazione.tipo, sottotipo = associazione.sottotipo ?: "")
+    val nuovo = copy(tipo = associazione.tipo)
     return if (nuovo.spostamento) nuovo.copy(destinazione = destinazione ?: destinazionePredefinita(riga, dati)) else nuovo
 }
 
@@ -150,7 +149,7 @@ fun ImportEstrattoDialog(vm: SpeseViewModel, dati: DatiApp, importazione: Import
                 Text("Import estratto conto · $conto", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                 Text(
                     "${importazione.righe.size} movimenti letti da Gemini: ${importazione.presenti} già presenti e " +
-                        "${importazione.simili} possibili doppioni (deselezionati). Scegli tipo/sottotipo di quelli da " +
+                        "${importazione.simili} possibili doppioni (deselezionati). Scegli il tipo di quelli da " +
                         "importare; quelli senza tipo o deselezionati non vengono importati.",
                     style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier.padding(top = 4.dp, bottom = 8.dp)
@@ -185,7 +184,6 @@ fun ImportEstrattoDialog(vm: SpeseViewModel, dati: DatiApp, importazione: Import
                                         riga = importazione.righe[i],
                                         data = importazione.righe[i].movimento.data(tipoData),
                                         tipo = if (s.spostamento) Associazione.TIPO_SPOSTAMENTO else s.tipo.trim(),
-                                        sottotipo = s.sottotipo.trim().ifEmpty { null },
                                         destinazioneId = if (s.spostamento) s.destinazione else null
                                     )
                                 },
@@ -377,7 +375,7 @@ private fun CardMovimento(
                     )
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         riga.candidate.forEach { a ->
-                            val selezionata = a.tipo.equals(stato.tipo, true) && (a.sottotipo ?: "").equals(stato.sottotipo, true)
+                            val selezionata = a.tipo.equals(stato.tipo, true)
                             FilterChip(
                                 selected = selezionata,
                                 onClick = { onStato(stato.con(a, riga, dati)) },
@@ -390,15 +388,15 @@ private fun CardMovimento(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Checkbox(checked = stato.spostamento, onCheckedChange = { attivo ->
                         onStato(
-                            if (attivo) stato.copy(tipo = Associazione.TIPO_SPOSTAMENTO, sottotipo = "", destinazione = stato.destinazione ?: destinazionePredefinita(riga, dati))
-                            else stato.copy(tipo = "", sottotipo = "")
+                            if (attivo) stato.copy(tipo = Associazione.TIPO_SPOSTAMENTO, destinazione = stato.destinazione ?: destinazionePredefinita(riga, dati))
+                            else stato.copy(tipo = "")
                         )
                     })
                     Text("Spostamento tra conti", style = MaterialTheme.typography.bodyMedium)
                 }
                 if (!stato.spostamento) {
                     CampoAutocompletamento("Tipo", stato.tipo, tipi, { t ->
-                        val nuovo = stato.copy(tipo = t, sottotipo = "")
+                        val nuovo = stato.copy(tipo = t)
                         onStato(if (nuovo.spostamento) nuovo.copy(destinazione = stato.destinazione ?: destinazionePredefinita(riga, dati)) else nuovo)
                     })
                 }
@@ -413,8 +411,6 @@ private fun CardMovimento(
                         onScelta = { onStato(stato.copy(destinazione = it.id)) }
                     )
                 } else {
-                    val sottotipi = dati.vociAttive.filter { it.tipo.equals(stato.tipo.trim(), true) }.mapNotNull { it.sottotipo }.distinct().sortedBy { it.lowercase() }
-                    CampoAutocompletamento("Sottotipo (opzionale)", stato.sottotipo, sottotipi, { onStato(stato.copy(sottotipo = it)) })
                     if (stato.tipo.isNotBlank() && !tipoNoto) {
                         Text("Tipo nuovo: verrà creato in anagrafica", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.tertiary)
                     }
@@ -437,8 +433,6 @@ private fun NuovaAssociazioneDialog(
 ) {
     var chiave by remember { mutableStateOf(descrizione) }
     var tipo by remember { mutableStateOf(statoIniziale.tipo) }
-    var sottotipo by remember { mutableStateOf(statoIniziale.sottotipo) }
-    val sottotipi = dati.vociAttive.filter { it.tipo.equals(tipo.trim(), true) }.mapNotNull { it.sottotipo }.distinct().sortedBy { it.lowercase() }
     val valida = chiave.isNotBlank() && tipo.isNotBlank() && Associazioni.contiene(descrizione, chiave)
 
     AlertDialog(
@@ -455,15 +449,12 @@ private fun NuovaAssociazioneDialog(
                     supportingText = { Text("Cancella le parti variabili (date, numeri di carta…)") },
                     modifier = Modifier.fillMaxWidth()
                 )
-                CampoAutocompletamento("Tipo", tipo, tipi, { tipo = it; sottotipo = "" })
-                if (!tipo.trim().equals(Associazione.TIPO_SPOSTAMENTO, true)) {
-                    CampoAutocompletamento("Sottotipo (opzionale)", sottotipo, sottotipi, { sottotipo = it })
-                }
+                CampoAutocompletamento("Tipo", tipo, tipi, { tipo = it })
             }
         },
         confirmButton = {
             TextButton(
-                onClick = { onSalva(Associazione(chiave = chiave.trim(), tipo = tipo.trim(), sottotipo = sottotipo.trim().ifEmpty { null })) },
+                onClick = { onSalva(Associazione(chiave = chiave.trim(), tipo = tipo.trim())) },
                 enabled = valida
             ) { Text("Salva") }
         },

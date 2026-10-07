@@ -32,7 +32,7 @@ class CalcoliTest {
 
     @Test
     fun dovuta_rispettaPeriodoEMeseDiPartenza() {
-        val voce = Voce(id = 1, tipo = "Bollette", sottotipo = "Gas", ricorrente = true, mesiRicorrenza = 2, meseInizio = "2026-09")
+        val voce = Voce(id = 1, tipo = "Bollette Gas", ricorrente = true, mesiRicorrenza = 2, meseInizio = "2026-09")
         assertTrue(Calcoli.dovuta(voce, YearMonth.of(2026, 9)))
         assertFalse(Calcoli.dovuta(voce, YearMonth.of(2026, 10)))
         assertTrue(Calcoli.dovuta(voce, YearMonth.of(2026, 11)))
@@ -57,7 +57,7 @@ class CalcoliTest {
         val conti = listOf(ContoValuta(id = 1, contoId = 1, valuta = "EUR", saldoInizialeCent = 100_000))
         val stipendio = Voce(id = 1, tipo = "Stipendio", entrata = true)
         val spesa = Voce(id = 2, tipo = "Spesa")
-        val bolletta = Voce(id = 3, tipo = "Bollette", sottotipo = "Luce", ricorrente = true, mesiRicorrenza = 1, meseInizio = "2026-08")
+        val bolletta = Voce(id = 3, tipo = "Bollette Luce", ricorrente = true, mesiRicorrenza = 1, meseInizio = "2026-08")
         val ops = listOf(
             Operazione(id = 1, contoValutaId = 1, data = giorno(2026, 8, 1), importoCent = 300_000, voceId = 1),
             Operazione(id = 2, contoValutaId = 1, data = giorno(2026, 8, 5), importoCent = -50_000, voceId = 2),
@@ -99,7 +99,7 @@ class CalcoliTest {
     @Test
     fun ricorrenti_mesePagatoNonHaPrevisione() {
         val conti = listOf(ContoValuta(id = 1, contoId = 1, valuta = "CHF"))
-        val voce = Voce(id = 1, tipo = "Bollette", sottotipo = "Affitto", ricorrente = true, mesiRicorrenza = 1, meseInizio = "2026-01", importoPrevistoCent = 70_000)
+        val voce = Voce(id = 1, tipo = "Affitto", ricorrente = true, mesiRicorrenza = 1, meseInizio = "2026-01", importoPrevistoCent = 70_000)
         val ops = listOf(Operazione(id = 1, contoValutaId = 1, data = giorno(2026, 9, 3), importoCent = -70_000, voceId = 1))
         val mesi = listOf(YearMonth.of(2026, 9), YearMonth.of(2026, 10))
         val risultato = Calcoli.ricorrenti(mesi, listOf(voce), conti, ops, cambi = Cambi.fisso(1.1), oggi = YearMonth.of(2026, 9))

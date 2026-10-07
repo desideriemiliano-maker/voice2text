@@ -40,8 +40,8 @@ import com.desideri.familybalance.data.Associazione
 
 /**
  * Anagrafica associazioni per l'import degli estratti conto: chiave (testo cercato nella
- * descrizione del movimento) -> tipo/sottotipo. "Incolla elenco" aggiunge più associazioni in un
- * colpo, una per riga nel formato "Chiave (Tipo)" o "Chiave (Tipo / Sottotipo)".
+ * descrizione del movimento) -> tipo. "Incolla elenco" aggiunge più associazioni in un colpo,
+ * una per riga nel formato "Chiave (Tipo)".
  */
 @Composable
 fun AnagraficaAssociazioniScreen(vm: SpeseViewModel, onIndietro: () -> Unit) {
@@ -55,7 +55,7 @@ fun AnagraficaAssociazioniScreen(vm: SpeseViewModel, onIndietro: () -> Unit) {
     val filtrate = remember(associazioni, filtro) {
         val f = filtro.trim()
         if (f.isEmpty()) associazioni else associazioni.filter {
-            it.chiave.contains(f, true) || it.tipo.contains(f, true) || (it.sottotipo?.contains(f, true) == true)
+            it.chiave.contains(f, true) || it.tipo.contains(f, true)
         }
     }
 
@@ -103,7 +103,6 @@ fun AnagraficaAssociazioniScreen(vm: SpeseViewModel, onIndietro: () -> Unit) {
         AssociazioneDialog(
             associazione = a,
             tipi = tipi,
-            sottotipiDi = { tipo -> dati.vociAttive.filter { it.tipo.equals(tipo.trim(), true) }.mapNotNull { it.sottotipo }.distinct().sortedBy { it.lowercase() } },
             onSalva = {
                 vm.salvaAssociazione(it)
                 inModifica = null
@@ -131,29 +130,24 @@ fun AnagraficaAssociazioniScreen(vm: SpeseViewModel, onIndietro: () -> Unit) {
 private fun AssociazioneDialog(
     associazione: Associazione,
     tipi: List<String>,
-    sottotipiDi: (String) -> List<String>,
     onSalva: (Associazione) -> Unit,
     onElimina: () -> Unit,
     onChiudi: () -> Unit
 ) {
     var chiave by remember { mutableStateOf(associazione.chiave) }
     var tipo by remember { mutableStateOf(associazione.tipo) }
-    var sottotipo by remember { mutableStateOf(associazione.sottotipo ?: "") }
     AlertDialog(
         onDismissRequest = onChiudi,
         title = { Text(if (associazione.id == 0L) "Nuova associazione" else "Modifica associazione") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(value = chiave, onValueChange = { chiave = it }, label = { Text("Chiave (testo nella descrizione)") }, modifier = Modifier.fillMaxWidth())
-                CampoAutocompletamento("Tipo", tipo, tipi, { tipo = it; sottotipo = "" })
-                if (!tipo.trim().equals(Associazione.TIPO_SPOSTAMENTO, true)) {
-                    CampoAutocompletamento("Sottotipo (opzionale)", sottotipo, sottotipiDi(tipo), { sottotipo = it })
-                }
+                CampoAutocompletamento("Tipo", tipo, tipi, { tipo = it })
             }
         },
         confirmButton = {
             TextButton(
-                onClick = { onSalva(associazione.copy(chiave = chiave, tipo = tipo, sottotipo = sottotipo.ifBlank { null })) },
+                onClick = { onSalva(associazione.copy(chiave = chiave, tipo = tipo)) },
                 enabled = chiave.isNotBlank() && tipo.isNotBlank()
             ) { Text("Salva") }
         },
@@ -176,7 +170,7 @@ private fun IncollaElencoDialog(onImporta: (String) -> Unit, onAnnulla: () -> Un
         title = { Text("Incolla elenco associazioni") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("Una associazione per riga: \"Chiave (Tipo)\" oppure \"Chiave (Tipo / Sottotipo)\". I doppioni vengono saltati.", style = MaterialTheme.typography.bodySmall)
+                Text("Una associazione per riga: \"Chiave (Tipo)\". I doppioni vengono saltati.", style = MaterialTheme.typography.bodySmall)
                 OutlinedTextField(
                     value = testo,
                     onValueChange = { testo = it },

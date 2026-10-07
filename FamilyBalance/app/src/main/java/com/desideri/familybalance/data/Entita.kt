@@ -37,7 +37,7 @@ data class ContoValuta(
 )
 
 /**
- * Voce dell'anagrafica spese: tipo e sottotipo opzionale (null = solo tipo).
+ * Voce dell'anagrafica spese, identificata dal [tipo] (il vecchio sottotipo è finito nelle note).
  *
  * - [entrata]: voce che rappresenta un'entrata (stipendio, interessi), conteggiata a parte nel bilancio.
  * - [ricorrente]: spesa ricorrente (ex foglio "Bollette"), attesa ogni [mesiRicorrenza] mesi a
@@ -48,11 +48,10 @@ data class ContoValuta(
  * - [obsoleta]: voce non più in uso: non si propone più come tipo e, se ricorrente, non ha
  *   previsioni nei mesi futuri (le operazioni passate restano).
  */
-@Entity(tableName = "voci", indices = [Index(value = ["tipo", "sottotipo"], unique = true)])
+@Entity(tableName = "voci", indices = [Index(value = ["tipo"], unique = true)])
 data class Voce(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val tipo: String,
-    val sottotipo: String? = null,
     val entrata: Boolean = false,
     val ricorrente: Boolean = false,
     val mesiRicorrenza: Int = 1,
@@ -63,7 +62,7 @@ data class Voce(
     @ColumnInfo(defaultValue = "0")
     val obsoleta: Boolean = false
 ) {
-    val descrizione: String get() = if (sottotipo.isNullOrBlank()) tipo else "$tipo / $sottotipo"
+    val descrizione: String get() = tipo
 }
 
 /**
@@ -116,7 +115,7 @@ val Operazione.dataPerRicorrente: Long get() = dataRicorrente ?: data
 
 /**
  * Associazione dell'anagrafica associazioni: se la descrizione di un movimento di un estratto conto
- * contiene [chiave], all'import si propone [tipo]/[sottotipo]. Salvata come testo (non come id
+ * contiene [chiave], all'import si propone il [tipo]. Salvata come testo (non come id
  * della voce) così resta valida anche dopo un nuovo import dell'Excel, che ricrea le voci. Il tipo
  * [TIPO_SPOSTAMENTO] indica uno spostamento tra conti.
  */
@@ -124,10 +123,9 @@ val Operazione.dataPerRicorrente: Long get() = dataRicorrente ?: data
 data class Associazione(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val chiave: String,
-    val tipo: String,
-    val sottotipo: String? = null
+    val tipo: String
 ) {
-    val destinazione: String get() = if (sottotipo.isNullOrBlank()) tipo else "$tipo / $sottotipo"
+    val destinazione: String get() = tipo
 
     companion object {
         const val TIPO_SPOSTAMENTO = "Spostamento"

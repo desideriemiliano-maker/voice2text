@@ -42,7 +42,7 @@ interface SpeseDao {
     suspend fun contaOperazioniContoValuta(id: Long): Int
 
     // --- Voci ---
-    @Query("SELECT * FROM voci ORDER BY tipo COLLATE NOCASE, sottotipo COLLATE NOCASE")
+    @Query("SELECT * FROM voci ORDER BY tipo COLLATE NOCASE")
     fun vociFlow(): Flow<List<Voce>>
 
     // Letture dirette (senza Flow) per le operazioni in transazione, es. il ripristino parziale.
@@ -66,10 +66,6 @@ interface SpeseDao {
 
     @Delete
     suspend fun eliminaVoce(voce: Voce)
-
-    /** Aggiunge [testo] alle note delle operazioni della voce [voceId] (dopo " / " se c'è già una nota). */
-    @Query("UPDATE operazioni SET note = CASE WHEN note IS NULL OR TRIM(note) = '' THEN :testo ELSE note || ' / ' || :testo END WHERE voceId = :voceId")
-    suspend fun aggiungiANote(voceId: Long, testo: String): Int
 
     /** Sposta tutte le operazioni della voce [da] sulla voce [a]; restituisce quante ne ha spostate. */
     @Query("UPDATE operazioni SET voceId = :a WHERE voceId = :da")

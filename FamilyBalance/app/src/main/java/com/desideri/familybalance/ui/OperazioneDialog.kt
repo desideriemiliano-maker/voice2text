@@ -55,7 +55,6 @@ fun OperazioneDialog(
     onChiudi: () -> Unit,
     // Valori iniziali per una nuova operazione (es. dal calendario delle ricorrenti).
     tipoIniziale: String? = null,
-    sottotipoIniziale: String? = null,
     dataIniziale: Long? = null
 ) {
     val scope = rememberCoroutineScope()
@@ -76,16 +75,12 @@ fun OperazioneDialog(
     var destinazione by remember { mutableStateOf(esistente?.contoValutaDestId) }
     var importoDest by remember { mutableStateOf((collegata ?: speculare)?.let { centInTesto(abs(it.importoCent)) } ?: "") }
     var tipo by remember { mutableStateOf(voceIniziale?.tipo ?: tipoIniziale ?: "") }
-    var sottotipo by remember { mutableStateOf(voceIniziale?.sottotipo ?: sottotipoIniziale ?: "") }
     var note by remember { mutableStateOf(esistente?.note ?: "") }
     var dataRicorrente by remember { mutableStateOf(esistente?.dataRicorrente) }
     var errore by remember { mutableStateOf<String?>(null) }
     var confermaElimina by remember { mutableStateOf(false) }
 
     val tipi = remember(dati.voci) { dati.vociAttive.map { it.tipo }.distinct().sortedBy { it.lowercase() } }
-    val sottotipi = remember(dati.voci, tipo) {
-        dati.vociAttive.filter { it.tipo.equals(tipo.trim(), ignoreCase = true) }.mapNotNull { it.sottotipo }.distinct().sortedBy { it.lowercase() }
-    }
     val altriConti = dati.contiValutaOrdinati.filter { it.id != contoValutaId }
     val valutaDest = destinazione?.let { dati.contiValutaPerId[it]?.valuta }
     val cambioValuta = spostamento && valutaDest != null && valutaDest != valutaPropria
@@ -144,8 +139,8 @@ fun OperazioneDialog(
                 vm.salvaOperazione(op, if (entrata) -centDest else centDest, scelta?.id)
             } else {
                 if (tipo.isBlank()) return@launch run { errore = "Scegli il tipo di spesa" }
-                val voceId = vm.voceId(tipo, sottotipo)
-                    ?: return@launch run { errore = "Tipo/sottotipo non presente: definiscilo in Anagrafica spese" }
+                val voceId = dati.voci.firstOrNull { it.tipo.equals(tipo.trim(), ignoreCase = true) }?.id
+                    ?: return@launch run { errore = "Tipo non presente: definiscilo in Anagrafica spese" }
                 // Una voce obsoleta resta solo sulle operazioni che l'avevano già.
                 if (dati.vociPerId[voceId]?.obsoleta == true && voceId != esistente?.voceId) {
                     return@launch run { errore = "Voce obsoleta: non si può più usare (Anagrafica spese)" }
@@ -239,10 +234,8 @@ fun OperazioneDialog(
                 } else {
                     CampoAutocompletamento("Tipo", tipo, tipi, {
                         tipo = it
-                        sottotipo = ""
                         if (dati.voci.any { v -> v.tipo.equals(it.trim(), true) && v.entrata }) entrata = true
                     })
-                    CampoAutocompletamento("Sottotipo (opzionale)", sottotipo, sottotipi, { sottotipo = it })
                     val ricorrente = dati.vociAttive.any { it.ricorrente && it.tipo.equals(tipo.trim(), true) } ||
                         (voceIniziale?.ricorrente == true && voceIniziale.tipo.equals(tipo.trim(), true))
                     if (ricorrente) {

@@ -80,7 +80,7 @@ data class DatiApp(
     val contiValutaPerId by lazy { contiValuta.associateBy { it.id } }
     val vociPerId by lazy { voci.associateBy { it.id } }
 
-    /** Voci proponibili come tipo/sottotipo (le obsolete no). */
+    /** Voci proponibili come tipo (le obsolete no). */
     val vociAttive: List<Voce> by lazy { voci.filterNot { it.obsoleta } }
 
     /** Conti/valuta ordinati per nome conto e valuta, come mostrati nelle liste. */
@@ -525,13 +525,10 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
 
     fun salvaVoce(voce: Voce, onFatto: () -> Unit) = viewModelScope.launch {
         val tipo = voce.tipo.trim()
-        val sottotipo = voce.sottotipo?.trim()?.ifEmpty { null }
         if (tipo.isEmpty()) return@launch messaggio("Il tipo è obbligatorio")
-        val duplicata = dati.value.voci.any {
-            it.id != voce.id && it.tipo.equals(tipo, ignoreCase = true) && (it.sottotipo ?: "").equals(sottotipo ?: "", ignoreCase = true)
-        }
+        val duplicata = dati.value.voci.any { it.id != voce.id && it.tipo.equals(tipo, ignoreCase = true) }
         if (duplicata) return@launch messaggio("Voce già presente in anagrafica")
-        val pulita = voce.copy(tipo = tipo, sottotipo = sottotipo, mesiRicorrenza = voce.mesiRicorrenza.coerceAtLeast(1))
+        val pulita = voce.copy(tipo = tipo, mesiRicorrenza = voce.mesiRicorrenza.coerceAtLeast(1))
         if (pulita.id == 0L) dao.inserisciVoce(pulita) else dao.aggiornaVoce(pulita)
         onFatto()
     }
@@ -549,68 +546,23 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
     /** Sposta tutte le operazioni di [da] su [a], poi chiama [onFatto] con il numero di operazioni spostate. */
     fun spostaOperazioniVoce(da: Voce, a: Voce, onFatto: (Int) -> Unit) = viewModelScope.launch {
         if (da.id == a.id) return@launch messaggio("Scegli una voce diversa da quella di origine")
-        val sottotipo = da.sottotipo?.trim()?.takeIf { it.isNotEmpty() && !it.equals(a.sottotipo?.trim(), ignoreCase = true) }
-        val spostate = db.withTransaction {
-            // Il sottotipo di origine non va perso: finisce nelle note delle operazioni.
-            if (sottotipo != null) dao.aggiungiANote(da.id, sottotipo)
-            dao.spostaOperazioniVoce(da.id, a.id)
-        }
+        val spostate = dao.spostaOperazioniVoce(da.id, a.id)
         messaggio("$spostate operazioni spostate su ${a.descrizione}")
         onFatto(spostate)
     }
 
     /**
-     * Toglie il sottotipo dalle operazioni: quelle delle voci con sottotipo passano alla voce di solo
-     * tipo (creata se manca) e il sottotipo si aggiunge alle note (con " / " se c'è già una nota).
-     * Chiama [onFatto] con il numero di operazioni spostate e le voci con sottotipo rimaste vuote.
-     */
-    fun spostaSottotipiInNote(onFatto: (Int, List<Voce>) -> Unit) = viewModelScope.launch {
-        val conSottotipo = dati.value.voci.filter { !it.sottotipo.isNullOrBlank() }
-        val usate = dati.value.operazioni.mapNotNull { it.voceId }.toSet()
-        val daSpostare = conSottotipo.filter { it.id in usate }
-        val destinazioni = HashMap<String, Long>()
-        val spostate = db.withTransaction {
-            daSpostare.sumOf { voce ->
-                val chiave = voce.tipo.trim().lowercase()
-                val dest = destinazioni[chiave] ?: voceId(voce.tipo, null)?.also { destinazioni[chiave] = it } ?: return@sumOf 0
-                dao.aggiungiANote(voce.id, voce.sottotipo!!.trim())
-                dao.spostaOperazioniVoce(voce.id, dest)
-            }
-        }
-        messaggio("$spostate operazioni senza più sottotipo")
-        onFatto(spostate, conSottotipo)
-    }
-
-    /** Elimina le voci [voci] rimaste senza operazioni (con le loro previsioni ricorrenti). */
-    fun eliminaVociVuote(voci: List<Voce>) = viewModelScope.launch {
-        var eliminate = 0
-        voci.forEach { v -> if (dao.contaOperazioniVoce(v.id) == 0) { dao.eliminaVoce(v); eliminate++ } }
-        messaggio("$eliminate voci eliminate")
-    }
-
-    /** Voce per tipo/sottotipo (sottotipo vuoto = voce di solo tipo), creata se manca solo quella di tipo. */
-    /**
      * Associa l'operazione [op] alla spesa ricorrente [voce] nel [mese]: il tipo diventa quello della
-     * spesa, senza sottotipo; se l'operazione è in un altro mese, per la ricorrente viene imputata al
+     * spesa; se l'operazione è in un altro mese, per la ricorrente viene imputata al
      * [mese] (stesso giorno, se esiste).
      */
     fun associaARicorrente(op: Operazione, voce: Voce, mese: YearMonth) = viewModelScope.launch {
-        val id = voceId(voce.tipo, null) ?: return@launch messaggio("Tipo non trovato")
+        val id = voce.id
         val x = dao.operazione(op.id) ?: return@launch
         val giorno = LocalDate.ofEpochDay(x.data)
         val dataRicorrente = if (YearMonth.from(giorno) != mese) mese.atDay(minOf(giorno.dayOfMonth, mese.lengthOfMonth())).toEpochDay() else null
         dao.aggiornaOperazione(x.copy(voceId = id, trasferimento = false, contoValutaDestId = null, dataRicorrente = dataRicorrente))
         messaggio("Operazione associata a ${voce.tipo} (${formattaMese(mese)})")
-    }
-
-    suspend fun voceId(tipo: String, sottotipo: String?): Long? {
-        val voci = dati.value.voci
-        val s = sottotipo?.trim()?.ifEmpty { null }
-        voci.firstOrNull { it.tipo.equals(tipo.trim(), true) && (it.sottotipo ?: "").equals(s ?: "", true) }?.let { return it.id }
-        if (s != null) return null
-        // Tipo esistente ma senza una voce "solo tipo": la si crea con le stesse caratteristiche.
-        val modello = voci.firstOrNull { it.tipo.equals(tipo.trim(), true) } ?: return null
-        return dao.inserisciVoce(modello.copy(id = 0, sottotipo = null, importoPrevistoCent = null))
     }
 
     // --- Import da Excel ---
@@ -878,7 +830,7 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
         _importEstratto.value = null
     }
 
-    /** Registra i movimenti scelti; tipi/sottotipi non ancora in anagrafica vengono creati. */
+    /** Registra i movimenti scelti; i tipi non ancora in anagrafica vengono creati. */
     fun confermaImportEstratto(scelte: List<SceltaEstratto>, aggiornamenti: List<AggiornamentoData> = emptyList()) = viewModelScope.launch {
         _importEstratto.value = null
         var importate = 0
@@ -895,17 +847,9 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
             val voci = dao.voci().toMutableList()
-            suspend fun voceId(tipo: String, sottotipo: String?): Long {
-                voci.firstOrNull { it.tipo.equals(tipo, true) && (it.sottotipo ?: "").equals(sottotipo ?: "", true) }?.let { return it.id }
-                val modello = voci.firstOrNull { it.tipo.equals(tipo, true) }
-                val nuova = Voce(
-                    tipo = modello?.tipo ?: tipo,
-                    sottotipo = sottotipo,
-                    entrata = modello?.entrata ?: false,
-                    ricorrente = modello?.ricorrente ?: false,
-                    mesiRicorrenza = modello?.mesiRicorrenza ?: 1,
-                    meseInizio = if (sottotipo == null) modello?.meseInizio else null
-                )
+            suspend fun voceId(tipo: String): Long {
+                voci.firstOrNull { it.tipo.equals(tipo, true) }?.let { return it.id }
+                val nuova = Voce(tipo = tipo)
                 val id = dao.inserisciVoce(nuova)
                 voci += nuova.copy(id = id)
                 nuoveVoci++
@@ -940,7 +884,7 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
                             contoValutaId = scelta.riga.contoValutaId,
                             data = scelta.data.toEpochDay(),
                             importoCent = m.importoCent,
-                            voceId = voceId(scelta.tipo.trim(), scelta.sottotipo?.trim()?.ifEmpty { null }),
+                            voceId = voceId(scelta.tipo.trim()),
                             note = note,
                             ordine = scelta.riga.ordine,
                             nonContabilizzata = m.nonContabilizzato
@@ -961,8 +905,7 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
     fun salvaAssociazione(associazione: Associazione) = viewModelScope.launch {
         val pulita = associazione.copy(
             chiave = associazione.chiave.trim(),
-            tipo = associazione.tipo.trim(),
-            sottotipo = associazione.sottotipo?.trim()?.ifEmpty { null }
+            tipo = associazione.tipo.trim()
         )
         if (pulita.chiave.isEmpty() || pulita.tipo.isEmpty()) return@launch messaggio("Chiave e tipo sono obbligatori")
         if (pulita.id == 0L) dao.inserisciAssociazione(pulita) else dao.aggiornaAssociazione(pulita)
@@ -972,8 +915,8 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
 
     /** Aggiunge le associazioni di un elenco incollato ("Chiave (Tipo)" per riga), saltando i doppioni. */
     fun importaElencoAssociazioni(testo: String) = viewModelScope.launch {
-        val esistenti = dao.associazioni().map { Triple(it.chiave.lowercase(), it.tipo.lowercase(), (it.sottotipo ?: "").lowercase()) }.toMutableSet()
-        val nuove = Associazioni.leggiElenco(testo).filter { esistenti.add(Triple(it.chiave.lowercase(), it.tipo.lowercase(), (it.sottotipo ?: "").lowercase())) }
+        val esistenti = dao.associazioni().map { it.chiave.lowercase() to it.tipo.lowercase() }.toMutableSet()
+        val nuove = Associazioni.leggiElenco(testo).filter { esistenti.add(it.chiave.lowercase() to it.tipo.lowercase()) }
         dao.inserisciAssociazioni(nuove)
         messaggio("Aggiunte ${nuove.size} associazioni")
     }

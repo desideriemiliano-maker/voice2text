@@ -45,9 +45,8 @@ class AssociazioniTest {
         assertEquals(3, elenco.size)
         assertEquals("211", elenco[0].chiave)
         assertEquals("Parcheggio", elenco[0].tipo)
-        assertNull(elenco[0].sottotipo)
         assertEquals("Pagamento Utenze ( Servizi Pubblici, Luce, Gas, Telefono, Ecc.)", elenco[1].chiave)
         assertEquals("Bollette", elenco[1].tipo)
-        assertEquals("Supermercato", elenco[2].sottotipo)
+        assertEquals("Spesa", elenco[2].tipo)
     }
 }

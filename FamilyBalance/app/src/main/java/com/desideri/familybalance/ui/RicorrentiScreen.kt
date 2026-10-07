@@ -263,7 +263,7 @@ private fun CardMese(mese: MeseRicorrenti, oggi: YearMonth, totalePrecedente: Do
                                 nonPagata -> "⚠ "
                                 riga.previsto != null -> "⏳ "
                                 else -> "✓ "
-                            } + (riga.voce.sottotipo ?: riga.voce.tipo),
+                            } + riga.voce.tipo,
                             style = MaterialTheme.typography.bodyMedium,
                             color = if (riga.annullata) MaterialTheme.colorScheme.onSurfaceVariant else Color.Unspecified
                         )
@@ -653,7 +653,7 @@ internal fun DettaglioRicorrenteDialog(vm: SpeseViewModel, dati: DatiApp, riga: 
             text = {
                 Text(
                     "L'operazione del ${formattaData(op.data)} di ${formattaCent(op.importoCent, dati.contiValutaPerId[op.contoValutaId]?.valuta ?: "EUR")} " +
-                        "su ${dati.etichetta(op.contoValutaId)} prenderà il tipo \"${voce.tipo}\" senza sottotipo" +
+                        "su ${dati.etichetta(op.contoValutaId)} prenderà il tipo \"${voce.tipo}\"" +
                         (if (Calcoli.mese(op.data) != mese) " e sarà imputata alla spesa ricorrente di ${formattaMese(mese)}" else "") + "."
                 )
             },
@@ -672,7 +672,7 @@ internal fun DettaglioRicorrenteDialog(vm: SpeseViewModel, dati: DatiApp, riga: 
         val giorno = if (YearMonth.from(oggi) == mese) oggi else mese.atDay(1)
         OperazioneDialog(
             vm, dati, cv, null, onChiudi = { nuovaSuConto = null },
-            tipoIniziale = voce.tipo, sottotipoIniziale = voce.sottotipo, dataIniziale = giorno.toEpochDay()
+            tipoIniziale = voce.tipo, dataIniziale = giorno.toEpochDay()
         )
     }
 }

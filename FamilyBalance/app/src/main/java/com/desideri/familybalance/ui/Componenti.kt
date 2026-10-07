@@ -53,7 +53,7 @@ import com.desideri.familybalance.ui.tema.coloreImporto
 private const val MILLIS_GIORNO = 86_400_000L
 
 /**
- * Campo di testo con suggerimenti filtrati dal testo digitato (usato per tipo/sottotipo e per le
+ * Campo di testo con suggerimenti filtrati dal testo digitato (usato per il tipo e per le
  * scelte tra liste lunghe). Il valore resta libero: la validazione è a carico del chiamante.
  */
 @OptIn(ExperimentalMaterial3Api::class)

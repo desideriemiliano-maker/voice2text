@@ -2,7 +2,7 @@ package com.desideri.familybalance.logica
 
 import com.desideri.familybalance.data.Associazione
 
-/** Regole dell'anagrafica associazioni (chiave nella descrizione -> tipo/sottotipo). */
+/** Regole dell'anagrafica associazioni (chiave nella descrizione -> tipo). */
 object Associazioni {
 
     private fun compatta(testo: String) = testo.trim().replace(Regex("\\s+"), " ")
@@ -30,26 +30,25 @@ object Associazioni {
     }
 
     /**
-     * Associazioni la cui chiave compare in [descrizione], una per destinazione (tipo/sottotipo):
+     * Associazioni la cui chiave compare in [descrizione], una per tipo:
      * se ne resta una sola la si preseleziona, se sono più d'una l'utente sceglie.
      */
     fun candidate(descrizione: String, associazioni: List<Associazione>): List<Associazione> =
         associazioni.filter { contiene(descrizione, it.chiave) }
             .sortedByDescending { it.chiave.length }
-            .distinctBy { it.tipo.lowercase() to (it.sottotipo ?: "").lowercase() }
+            .distinctBy { it.tipo.lowercase() }
 
     /**
-     * Legge un elenco incollato, una associazione per riga nel formato "Chiave (Tipo)" o
-     * "Chiave (Tipo / Sottotipo)": conta l'ultima coppia di parentesi a fine riga, così la chiave
+     * Legge un elenco incollato, una associazione per riga nel formato "Chiave (Tipo)" (di un
+     * vecchio "Chiave (Tipo / Sottotipo)" si tiene il solo tipo): conta l'ultima coppia di parentesi a fine riga, così la chiave
      * può contenere a sua volta parentesi (es. "Pagamento Utenze ( Servizi Pubblici, ... ) (Bollette)").
      */
     fun leggiElenco(testo: String): List<Associazione> =
         testo.lines().mapNotNull { riga ->
             val m = Regex("^(.*)\\(([^()]*)\\)\\s*$").find(riga.trim()) ?: return@mapNotNull null
             val chiave = compatta(m.groupValues[1])
-            val destinazione = m.groupValues[2].split("/", limit = 2).map { compatta(it) }
-            val tipo = destinazione[0]
+            val tipo = compatta(m.groupValues[2].substringBefore('/'))
             if (chiave.isEmpty() || tipo.isEmpty()) return@mapNotNull null
-            Associazione(chiave = chiave, tipo = tipo, sottotipo = destinazione.getOrNull(1)?.ifEmpty { null })
+            Associazione(chiave = chiave, tipo = tipo)
         }
 }

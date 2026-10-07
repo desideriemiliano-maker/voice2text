@@ -125,8 +125,12 @@ private fun opzioni(c: CombinazioneBollette, analisi: AnalisiImport, memorizzata
     c.sottotipo?.takeIf { it.lowercase() !in nomi && lista.none { o -> o.valore == SceltaBollette.ricorrente(it) } }?.let {
         lista += Opzione(SceltaBollette.ricorrente(it), "Nuova ricorrente «$it»")
     }
-    // Senza sottotipo "non ricorrente" coinciderebbe con la voce generica: basta lasciarla vuota.
-    if (c.sottotipo != null) lista += Opzione(SceltaBollette.NON_RICORRENTE, "Non ricorrente (${c.tipo} / ${c.sottotipo})")
+    // Non ricorrente: voce a parte, con il sottotipo nelle note dell'operazione.
+    lista += Opzione(
+        SceltaBollette.NON_RICORRENTE,
+        "Non ricorrente (${com.desideri.familybalance.importazione.ImportatoreExcel.TIPO_BOLLETTE_NON_RICORRENTI}" +
+            (c.sottotipo?.let { ", «$it» nelle note" } ?: "") + ")"
+    )
     return lista
 }
 

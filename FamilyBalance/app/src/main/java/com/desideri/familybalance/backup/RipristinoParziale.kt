@@ -58,11 +58,14 @@ class LetturaBackup(file: File) : AutoCloseable {
         }
     }
 
+    /** Sottotipi delle voci dei backup precedenti alla loro eliminazione (id voce -> sottotipo). */
+    fun sottotipi(): Map<Long, String> = righe("SELECT * FROM voci") { c -> c.long("id")!! to c.testo("sottotipo")?.trim() }
+        .mapNotNull { (id, s) -> if (s.isNullOrEmpty()) null else id to s }.toMap()
+
     fun voci(): List<Voce> = righe("SELECT * FROM voci") { c ->
         Voce(
             id = c.long("id")!!,
             tipo = c.testo("tipo").orEmpty(),
-            sottotipo = c.testo("sottotipo"),
             entrata = (c.int("entrata") ?: 0) != 0,
             ricorrente = (c.int("ricorrente") ?: 0) != 0,
             mesiRicorrenza = c.int("mesiRicorrenza") ?: 1,
@@ -97,7 +100,7 @@ class LetturaBackup(file: File) : AutoCloseable {
 /**
  * Ripristina da un backup solo le operazioni (e il saldo iniziale) dei conti/valuta scelti,
  * lasciando intatti gli altri. I conti/valuta del backup sono abbinati a quelli attuali per nome
- * del conto e valuta (creati se mancano), le voci per tipo/sottotipo (create se mancano).
+ * del conto e valuta (creati se mancano), le voci per tipo (create se mancano).
  *
  * Collegamenti degli spostamenti:
  * - tra operazioni ripristinate: mantenuti, con i nuovi id;
@@ -111,6 +114,7 @@ class RipristinoParziale(private val db: AppDatabase) {
 
     suspend fun esegui(file: File, cvBackupScelti: Set<Long>): EsitoRipristinoParziale {
         val (contiBackup, vociBackup, opsBackup) = LetturaBackup(file).use { Triple(it.contiValuta(), it.voci(), it.operazioni()) }
+        val sottotipiBackup = LetturaBackup(file).use { it.sottotipi() }
         val contiBackupPerId = contiBackup.associateBy { it.id }
         val opsBackupPerId = opsBackup.associateBy { it.id }
         val dao = db.dao()
@@ -145,12 +149,12 @@ class RipristinoParziale(private val db: AppDatabase) {
                 dao.aggiornaContoValuta(cv.copy(saldoInizialeCent = contiBackupPerId.getValue(idBackup).saldoInizialeCent))
             }
 
-            // Voci: abbinate per tipo/sottotipo, create se mancano.
+            // Voci: abbinate per tipo, create se mancano (il sottotipo dei backup vecchi va nelle note).
             val voci = dao.voci().toMutableList()
             val vociBackupPerId = vociBackup.associateBy { it.id }
             suspend fun voceAttuale(idBackup: Long?): Long? {
                 val b = idBackup?.let { vociBackupPerId[it] } ?: return null
-                voci.firstOrNull { it.tipo.equals(b.tipo, true) && (it.sottotipo ?: "").equals(b.sottotipo ?: "", true) }?.let { return it.id }
+                voci.firstOrNull { it.tipo.equals(b.tipo, true) }?.let { return it.id }
                 val id = dao.inserisciVoce(b.copy(id = 0))
                 voci += b.copy(id = id)
                 nuoveVoci++
@@ -172,6 +176,7 @@ class RipristinoParziale(private val db: AppDatabase) {
                         id = 0,
                         contoValutaId = destinazioni.getValue(op.contoValutaId),
                         voceId = voceAttuale(op.voceId),
+                        note = op.voceId?.let { sottotipiBackup[it] }?.let { st -> if (op.note.isNullOrBlank()) st else "${op.note} / $st" } ?: op.note,
                         contoValutaDestId = cvAttuale(op.contoValutaDestId, crea = false),
                         collegataId = null
                     )
