@@ -248,11 +248,20 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
         messaggio("Scadenza aggiornata")
     }
 
-    /** Aggiunge una scadenza prevista (stimata con la media, senza conto) di [voce] nel [mese] fuori ricorrenza. */
-    fun aggiungiScadenza(voce: Voce, mese: YearMonth) = viewModelScope.launch {
+    /**
+     * Aggiunge una scadenza prevista di [voce] nel [mese] (anche fuori ricorrenza), senza conto né
+     * operazione: con [importoCent] null è stimata con la media (o l'importo dell'anagrafica), con
+     * [data] è pianificata.
+     */
+    fun aggiungiScadenza(voce: Voce, mese: YearMonth, importoCent: Long? = null, data: Long? = null) = viewModelScope.launch {
         val chiave = mese.toString()
         val attuale = personalizzazioni.value.firstOrNull { it.voceId == voce.id && it.mese == chiave }
-        dao.salvaPrevisione((attuale ?: PrevisioneRicorrente(voceId = voce.id, mese = chiave)).copy(aggiunta = true, annullata = false))
+        dao.salvaPrevisione(
+            (attuale ?: PrevisioneRicorrente(voceId = voce.id, mese = chiave)).copy(
+                aggiunta = true, annullata = false,
+                importoCent = importoCent?.let { kotlin.math.abs(it) }, data = data
+            )
+        )
         messaggio("Scadenza prevista aggiunta a ${formattaMese(mese)}")
     }
 

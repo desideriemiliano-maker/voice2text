@@ -58,6 +58,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.desideri.familybalance.DatiApp
 import com.desideri.familybalance.SpeseViewModel
 import com.desideri.familybalance.data.Operazione
+import com.desideri.familybalance.data.PrevisioneRicorrente
 import com.desideri.familybalance.data.Voce
 import com.desideri.familybalance.logica.Calcoli
 import com.desideri.familybalance.logica.FontePrevisione
@@ -371,6 +372,20 @@ internal fun DettaglioRicorrenteDialog(vm: SpeseViewModel, dati: DatiApp, riga: 
     var nuovoMese by remember(riga) { mutableStateOf(mese.plusMonths(1)) }
     var mantieni by remember(riga) { mutableStateOf(true) }
     var errore by remember(riga) { mutableStateOf<String?>(null) }
+    // Nessuna scadenza nel mese: importo proposto per definirla (anagrafica o media), in centesimi.
+    val definibile = riga.previsto == null && !riga.annullata && !voce.obsoleta
+    val personalizzazioni by vm.personalizzazioni.collectAsStateWithLifecycle()
+    val cambi by vm.cambi.collectAsStateWithLifecycle()
+    val proposto: Long? = remember(definibile, dati, cambi, personalizzazioni, voce, mese) {
+        if (!definibile) return@remember null
+        val prova = personalizzazioni.filterNot { it.voceId == voce.id && it.mese == mese.toString() } +
+            PrevisioneRicorrente(voceId = voce.id, mese = mese.toString(), aggiunta = true)
+        Calcoli.ricorrenti(listOf(mese), dati.voci, dati.contiValuta, dati.operazioni, cambi, YearMonth.now(), prova)
+            .firstOrNull()?.righe?.firstOrNull { it.voce.id == voce.id }
+            ?.let { it.importoScadenza ?: it.previsto }?.let { Math.round(abs(it) * 100) }?.takeIf { it > 0 }
+    }
+    var importoNuova by remember(riga, proposto) { mutableStateOf(proposto?.let { centInTesto(it) } ?: "") }
+    var dataNuova by remember(riga) { mutableStateOf<Long?>(null) }
 
     AlertDialog(
         onDismissRequest = onChiudi,
@@ -396,6 +411,38 @@ internal fun DettaglioRicorrenteDialog(vm: SpeseViewModel, dati: DatiApp, riga: 
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.Bold
                 )
+                if (definibile) {
+                    // Spesa non prevista in questo mese (o senza stima): la si definisce con importo e data.
+                    Text("Definisci la spesa in ${formattaMese(mese)}", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                    OutlinedTextField(
+                        value = importoNuova,
+                        onValueChange = { importoNuova = it; errore = null },
+                        label = { Text("Importo previsto (EUR)") },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    CampoData("Data prevista", dataNuova, { dataNuova = it; errore = null }, Modifier.fillMaxWidth(), consentiVuoto = true)
+                    Text(
+                        (if (proposto != null) "Proposto: ${centInTesto(proposto)} (" +
+                            (if (voce.importoPrevistoCent != null) "importo dell'anagrafica" else "media delle ultime occorrenze") + "). " else "") +
+                            "Con la data è pianificata, senza è stimata. Nessun conto né operazione: si paga poi con «Aggiungi operazione» o associandone una.",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    OutlinedButton(onClick = {
+                        val cent = testoInCent(importoNuova)?.let { abs(it) }?.takeIf { it > 0 }
+                        when {
+                            cent == null -> errore = if (importoNuova.isBlank()) "Inserisci l'importo previsto" else "Importo non valido"
+                            dataNuova != null && Calcoli.mese(dataNuova!!) != mese -> errore = "La data deve essere in ${formattaMese(mese)}"
+                            else -> {
+                                // Importo uguale al proposto: non lo si fissa, così segue le variazioni della media.
+                                vm.aggiungiScadenza(voce, mese, cent.takeIf { it != proposto }, dataNuova)
+                                onChiudi()
+                            }
+                        }
+                    }, modifier = Modifier.fillMaxWidth()) { Text("Aggiungi la spesa a ${formattaMese(mese)}") }
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+                }
                 riga.previsto?.let { previsto ->
                     Text("Pianifica: importo e data prevista", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
                     OutlinedTextField(
@@ -488,13 +535,6 @@ internal fun DettaglioRicorrenteDialog(vm: SpeseViewModel, dati: DatiApp, riga: 
                         modifier = Modifier.weight(1f)
                     )
                     OutlinedButton(onClick = { nuovaSuConto = contoNuova }, enabled = contoNuova != null) { Text("Aggiungi") }
-                }
-                // Scadenza prevista in più (es. futura): stimata con la media, senza conto né operazione.
-                if (riga.previsto == null && !riga.annullata) {
-                    OutlinedButton(onClick = {
-                        vm.aggiungiScadenza(voce, mese)
-                        onChiudi()
-                    }) { Text("Aggiungi prevista (stimata con la media, senza conto)") }
                 }
 
                 // Ricerca per importo di un'operazione già registrata da associare alla spesa.
