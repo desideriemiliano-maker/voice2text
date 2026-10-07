@@ -141,7 +141,7 @@ fun CorrentiScreen(vm: SpeseViewModel) {
         }
         LazyColumn(state = stato, contentPadding = PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.weight(1f)) {
             items(mesi, key = { it.mese.toString() }) { mese ->
-                val precedente = mesi.firstOrNull { it.mese == mese.mese.minusMonths(1) }?.totale
+                val precedente = mesi.firstOrNull { it.mese == mese.mese.minusMonths(1) }
                 CardMeseCorrenti(mese, precedente, onGrafico = { graficoMese = it }, onRiga = { aperta = it to mese.mese })
             }
         }
@@ -187,7 +187,7 @@ fun CorrentiScreen(vm: SpeseViewModel) {
 }
 
 @Composable
-private fun CardMeseCorrenti(mese: MeseCorrenti, totalePrecedente: Double?, onGrafico: (YearMonth) -> Unit, onRiga: (RigaCorrente) -> Unit) {
+private fun CardMeseCorrenti(mese: MeseCorrenti, precedente: MeseCorrenti?, onGrafico: (YearMonth) -> Unit, onRiga: (RigaCorrente) -> Unit) {
     val corrente = mese.mese == YearMonth.now()
     // Mesi passati e futuri chiusi per default; il corrente sempre aperto.
     var espanso by rememberSaveable(mese.mese.toString()) { mutableStateOf(corrente) }
@@ -205,7 +205,7 @@ private fun CardMeseCorrenti(mese: MeseCorrenti, totalePrecedente: Double?, onGr
                     modifier = Modifier.weight(1f)
                 )
                 TestoImporto(mese.totale, grassetto = true)
-                VariazioneSpesa(mese.totale, totalePrecedente)
+                VariazioneSpesa(mese.totale, precedente?.totale)
                 IconButton(onClick = { onGrafico(mese.mese) }, modifier = Modifier.size(32.dp)) {
                     Icon(Icons.AutoMirrored.Filled.ShowChart, contentDescription = "Grafico del mese", modifier = Modifier.size(18.dp))
                 }
@@ -230,6 +230,8 @@ private fun CardMeseCorrenti(mese: MeseCorrenti, totalePrecedente: Double?, onGr
                         )
                     }
                     TestoImporto(riga.totale)
+                    // Rispetto alla stessa spesa del mese prima (nessuna se allora non c'era).
+                    VariazioneSpesa(riga.totale, precedente?.righe?.firstOrNull { it.voce?.id == riga.voce?.id }?.totale)
                 }
             }
             }
