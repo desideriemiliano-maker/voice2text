@@ -23,8 +23,6 @@ import com.desideri.familybalance.data.PrevisioneRicorrente
 import com.desideri.familybalance.data.Preferenze
 import com.desideri.familybalance.data.Valute
 import com.desideri.familybalance.data.Voce
-import com.desideri.familybalance.importazione.AnalisiImport
-import com.desideri.familybalance.importazione.ImportatoreExcel
 import com.desideri.familybalance.logica.Spostamenti
 import com.desideri.familybalance.estratto.AggiornamentoData
 import com.desideri.familybalance.estratto.ColonneExcel
@@ -563,64 +561,6 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
         val dataRicorrente = if (YearMonth.from(giorno) != mese) mese.atDay(minOf(giorno.dayOfMonth, mese.lengthOfMonth())).toEpochDay() else null
         dao.aggiornaOperazione(x.copy(voceId = id, trasferimento = false, contoValutaDestId = null, dataRicorrente = dataRicorrente))
         messaggio("Operazione associata a ${voce.tipo} (${formattaMese(mese)})")
-    }
-
-    // --- Import da Excel ---
-
-    /** Import in attesa delle scelte dell'utente su come associare le Bollette alle ricorrenti. */
-    private val _analisiImport = MutableStateFlow<AnalisiImport?>(null)
-    val analisiImport: StateFlow<AnalisiImport?> = _analisiImport.asStateFlow()
-
-    fun mappatureBollette(): Map<String, String> = preferenze.caricaMappatureBollette()
-
-    /** Prima fase: legge il file; se ci sono Bollette da associare attende [confermaImport]. */
-    fun importaExcel(uri: Uri) = viewModelScope.launch {
-        _importazioneInCorso.value = true
-        try {
-            val analisi = withContext(Dispatchers.IO) {
-                getApplication<Application>().contentResolver.openInputStream(uri)?.use { ImportatoreExcel(db).analizza(it) }
-            } ?: throw IllegalStateException("Impossibile aprire il file")
-            if (analisi.combinazioni.isEmpty()) scriviImport(analisi, emptyMap()) else _analisiImport.value = analisi
-        } catch (e: Exception) {
-            messaggio("Importazione non riuscita: ${e.message ?: e.javaClass.simpleName}")
-        } finally {
-            _importazioneInCorso.value = false
-        }
-    }
-
-    /** Seconda fase: memorizza le scelte (riusate nei prossimi import) e sostituisce i dati. */
-    fun confermaImport(scelte: Map<String, String>) = viewModelScope.launch {
-        val analisi = _analisiImport.value ?: return@launch
-        preferenze.salvaMappatureBollette(scelte)
-        _analisiImport.value = null
-        _importazioneInCorso.value = true
-        try {
-            scriviImport(analisi, scelte)
-        } catch (e: Exception) {
-            messaggio("Importazione non riuscita: ${e.message ?: e.javaClass.simpleName}")
-        } finally {
-            _importazioneInCorso.value = false
-        }
-    }
-
-    /** Memorizza le scelte fatte finora senza importare: al prossimo import saranno già compilate. */
-    fun salvaScelteImport(scelte: Map<String, String>) {
-        preferenze.salvaMappatureBollette(scelte)
-        _analisiImport.value = null
-        messaggio("Scelte salvate (${scelte.size}): riprendi da ⋮ › Importa da Excel")
-    }
-
-    fun annullaImport() {
-        _analisiImport.value = null
-    }
-
-    private suspend fun scriviImport(analisi: AnalisiImport, scelte: Map<String, String>) {
-        val esito = ImportatoreExcel(db).scrivi(analisi, scelte)
-        esito.targetRisparmioCent?.let { salvaImpostazioni(_impostazioni.value.copy(targetRisparmioCent = it)) }
-        messaggio(
-            "Importate ${esito.operazioni} operazioni, ${esito.voci} voci (${esito.vociRicorrenti} ricorrenti)" +
-                (esito.targetRisparmioCent?.let { ", target ${formattaCent(it)}" } ?: "")
-        )
     }
 
     // --- Import estratto conto (Gemini) e anagrafica associazioni ---

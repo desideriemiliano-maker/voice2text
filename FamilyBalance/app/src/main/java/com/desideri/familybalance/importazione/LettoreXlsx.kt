@@ -26,7 +26,7 @@ fun Foglio.numero(riga: Int, colonna: Int): Double? = when (val v = cella(riga, 
 /**
  * Lettore minimale di file .xlsx (Office Open XML): uno zip di file XML. Legge solo i valori delle
  * celle (per le formule il valore calcolato salvato da Excel), senza stili né formule: quanto basta
- * per importare i fogli dell'Excel delle spese senza una libreria pesante come Apache POI.
+ * per leggere gli estratti conto Excel delle banche senza una libreria pesante come Apache POI.
  */
 class LettoreXlsx(input: InputStream) {
 

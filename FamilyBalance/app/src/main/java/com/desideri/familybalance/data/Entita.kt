@@ -116,7 +116,7 @@ val Operazione.dataPerRicorrente: Long get() = dataRicorrente ?: data
 /**
  * Associazione dell'anagrafica associazioni: se la descrizione di un movimento di un estratto conto
  * contiene [chiave], all'import si propone il [tipo]. Salvata come testo (non come id
- * della voce) così resta valida anche dopo un nuovo import dell'Excel, che ricrea le voci. Il tipo
+ * della voce) così resta valida anche se le voci cambiano. Il tipo
  * [TIPO_SPOSTAMENTO] indica uno spostamento tra conti.
  */
 @Entity(tableName = "associazioni")
