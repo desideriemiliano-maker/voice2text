@@ -37,7 +37,16 @@ import java.time.YearMonth
  * Le ricorrenti non ci sono: nel bilancio anche il saldo le conta nel mese a cui sono imputate.
  */
 @Composable
-fun AltroBilancioDialog(vm: SpeseViewModel, titolo: String, mesi: Set<YearMonth>, effettoCambio: Double, altro: Double?, onChiudi: () -> Unit) {
+fun AltroBilancioDialog(
+    vm: SpeseViewModel,
+    titolo: String,
+    mesi: Set<YearMonth>,
+    effettoCambio: Double,
+    altro: Double?,
+    /** true: solo gli spostamenti (colonna «Spostamenti»); false: solo «Altro». */
+    soloSpostamenti: Boolean,
+    onChiudi: () -> Unit
+) {
     val dati by vm.dati.collectAsStateWithLifecycle()
     val cambi by vm.cambi.collectAsStateWithLifecycle()
     var inModifica by remember { mutableStateOf<Operazione?>(null) }
@@ -69,12 +78,13 @@ fun AltroBilancioDialog(vm: SpeseViewModel, titolo: String, mesi: Set<YearMonth>
 
     AlertDialog(
         onDismissRequest = onChiudi,
-        title = { Text("Spostamenti e altro · $titolo") },
+        title = { Text((if (soloSpostamenti) "Spostamenti" else "Altro") + " · $titolo") },
         text = {
             Column(modifier = Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+              if (soloSpostamenti) {
                 Text(
                     "Gli spostamenti tra i tuoi conti sommati fanno zero; un totale diverso indica righe senza contro-operazione, " +
-                        "verso conti fuori dall'app o con cambio EUR/CHF. «Altro» è il resto della variazione del saldo.",
+                        "verso conti fuori dall'app o con cambio EUR/CHF.",
                     style = MaterialTheme.typography.bodySmall
                 )
                 if (spostamenti.isEmpty()) Text("Nessuno spostamento nel periodo.", style = MaterialTheme.typography.bodySmall)
@@ -88,7 +98,11 @@ fun AltroBilancioDialog(vm: SpeseViewModel, titolo: String, mesi: Set<YearMonth>
                         (op.contoValutaDestId?.let { dati.etichetta(it) } ?: "conto non indicato") +
                         (if (op.collegataId == null) " · senza contro-operazione collegata" else "")
                 }
-                HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+              } else {
+                Text(
+                    "«Altro» è la variazione del saldo dei conti non spiegata da entrate, spese e spostamenti.",
+                    style = MaterialTheme.typography.bodySmall
+                )
                 Row {
                     Text("Effetto cambio sui saldi CHF", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
                     TestoImporto(effettoCambio)
@@ -103,6 +117,7 @@ fun AltroBilancioDialog(vm: SpeseViewModel, titolo: String, mesi: Set<YearMonth>
                     Text("Totale «Altro»", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
                     if (altro != null) TestoImporto(altro, grassetto = true) else Text("—")
                 }
+              }
                 Text("Importi in EUR (CHF al cambio del mese). Tocca un'operazione per aprirla.", style = MaterialTheme.typography.bodySmall)
             }
         },

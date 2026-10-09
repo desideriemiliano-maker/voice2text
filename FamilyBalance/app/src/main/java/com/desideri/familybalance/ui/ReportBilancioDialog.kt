@@ -140,7 +140,8 @@ fun ReportBilancioDialog(vm: SpeseViewModel, onChiudi: () -> Unit) {
         }
     }
     var ordine by remember { mutableStateOf(vm.ordineColonne(REPORT_BILANCIO)) }
-    var altroAperto by remember { mutableStateOf<RigaReport?>(null) }
+    // Dettaglio di «Spostamenti» (true) o di «Altro» (false) per una riga.
+    var altroAperto by remember { mutableStateOf<Pair<RigaReport, Boolean>?>(null) }
     val colonne = ordinaColonne(COLONNE, ordine) { it.first }
     var sceltaOrdine by remember { mutableStateOf(false) }
 
@@ -213,7 +214,7 @@ fun ReportBilancioDialog(vm: SpeseViewModel, onChiudi: () -> Unit) {
                                                 importo(r.valore(k)), delta(r.valore(k), p?.valore(k)), L_VALORE,
                                                 grassetto = k == "saldo" || k == "risparmio", alta = true, sfondo = sfondo(i),
                                                 // «Spostamenti» e «Altro»: toccando si vede da dove vengono.
-                                                modifier = if ((k == "altro" && r.altro != null) || k == "spostamenti") Modifier.clickable { altroAperto = r } else Modifier
+                                                modifier = if ((k == "altro" && r.altro != null) || k == "spostamenti") Modifier.clickable { altroAperto = r to (k == "spostamenti") } else Modifier
                                             )
                                         }
                                     }
@@ -246,7 +247,7 @@ fun ReportBilancioDialog(vm: SpeseViewModel, onChiudi: () -> Unit) {
             onAnnulla = { sceltaOrdine = false }
         )
     }
-    altroAperto?.let { r ->
-        AltroBilancioDialog(vm, r.etichetta, r.mesi, r.effettoCambio, r.altro, onChiudi = { altroAperto = null })
+    altroAperto?.let { (r, soloSpostamenti) ->
+        AltroBilancioDialog(vm, r.etichetta, r.mesi, r.effettoCambio, r.altro, soloSpostamenti, onChiudi = { altroAperto = null })
     }
 }
