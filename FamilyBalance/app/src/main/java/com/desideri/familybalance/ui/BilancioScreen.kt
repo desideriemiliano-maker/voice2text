@@ -299,8 +299,8 @@ private fun CardMesePassato(r: RigaBilancio) {
                 r.saldoFinale?.let { RigaValore("Saldo finale", it, grassetto = true) }
                 r.saldoFine?.let {
                     Text(
-                        "Saldo finale = saldo iniziale + residuo. Saldo reale dei conti a fine mese: ${formattaImporto(it)} " +
-                            "(può differire per effetto cambio o spostamenti verso conti fuori dall'app).",
+                        "Saldo finale = saldo iniziale + residuo. Saldo dei conti a fine mese: ${formattaImporto(it)}, con le ricorrenti " +
+                            "nel mese a cui sono imputate (può differire per effetto cambio o spostamenti verso conti fuori dall'app).",
                         style = MaterialTheme.typography.bodySmall
                     )
                 }

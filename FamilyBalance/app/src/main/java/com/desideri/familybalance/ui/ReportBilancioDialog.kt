@@ -167,7 +167,7 @@ fun ReportBilancioDialog(vm: SpeseViewModel, onChiudi: () -> Unit) {
                 Text(
                     "Dalla prima operazione al mese corrente, in EUR (CHF come nel Bilancio). Saldo: totale dei conti a fine periodo; " +
                         "entrate e spese solo del periodo; risparmio: entrate − spese correnti e ricorrenti del periodo; altro: la parte della " +
-                        "variazione del saldo non spiegata dal risparmio (spostamenti, ricorrenti imputate a un altro mese, effetto cambio; tocca la cella per il dettaglio). " +
+                        "variazione del saldo non spiegata dal risparmio (spostamenti ed effetto cambio; tocca la cella per il dettaglio). Le ricorrenti contano nel mese a cui sono imputate, anche nel saldo. " +
                         "Tra parentesi la variazione rispetto alla riga prima (verde: migliora, rosso: peggiora). " +
                         "Con il pulsante delle colonne accanto a «Per» ne scegli l'ordine.",
                     style = MaterialTheme.typography.bodySmall,

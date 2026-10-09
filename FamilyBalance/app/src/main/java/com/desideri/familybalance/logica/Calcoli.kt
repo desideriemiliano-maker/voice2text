@@ -74,7 +74,8 @@ data class MeseRicorrenti(
  *
  * - [risparmio] = entrate + spese correnti (le ricorrenti sono escluse, come nel foglio "Totale"
  *   dell'Excel dove il target si confronta con Stipendio+Interessi+spese correnti).
- * - [saldoFine]: saldo reale complessivo a fine mese (per il mese corrente: ad oggi).
+ * - [saldoFine]: saldo complessivo a fine mese (per il mese corrente: ad oggi), con le ricorrenti nel
+ *   mese a cui sono imputate: differisce dal saldo reale dei conti solo per quelle imputate a un altro mese.
  * - [saldoPrevisto]: per mese corrente e futuri, saldo del mese precedente + target di risparmio
  *   + spese ricorrenti (pagate e previste) del mese.
  * - [cambioChfEur]: cambio usato per il mese; le operazioni in CHF del mese sono convertite con questo
@@ -343,16 +344,16 @@ object Calcoli {
         var primoMese = oggi
 
         for (op in operazioni) {
-            val m = mese(op.data)
+            val classe = classifica(op, op.voceId?.let { vociPerId[it] })
+            // Le ricorrenti contano nel mese a cui sono imputate (data per la spesa ricorrente), come
+            // nella sezione Ricorrenti, sia come spesa sia nel saldo del bilancio: così una ricorrente
+            // pagata a fine mese per il mese dopo non sposta il saldo da un mese all'altro.
+            val m = if (classe == Classe.RICORRENTE) mese(op.dataPerRicorrente) else mese(op.data)
             if (m < primoMese) primoMese = m
             val valuta = valutaDi[op.contoValutaId] ?: Valute.EUR
             val movimento = if (valuta == Valute.CHF) movimentoChf else movimentoEur
             movimento[m] = (movimento[m] ?: 0L) + op.importoCent
-            val classe = classifica(op, op.voceId?.let { vociPerId[it] })
-            // Le ricorrenti contano nel mese a cui sono imputate (data per la spesa ricorrente), come
-            // nella sezione Ricorrenti; il saldo resta sul mese del movimento.
-            val mDest = if (classe == Classe.RICORRENTE) mese(op.dataPerRicorrente) else m
-            val eur = cambi.inEuro(op.importoCent, valuta, mDest)
+            val eur = cambi.inEuro(op.importoCent, valuta, m)
             val destinazione = when (classe) {
                 Classe.ENTRATA -> entrate
                 Classe.CORRENTE -> correnti
@@ -362,7 +363,7 @@ object Calcoli {
                     if (altra != null && valutaDi[altra.contoValutaId] != valuta) cambioSpostamenti else null
                 }
             }
-            if (destinazione != null) destinazione[mDest] = (destinazione[mDest] ?: 0.0) + eur
+            if (destinazione != null) destinazione[m] = (destinazione[m] ?: 0.0) + eur
         }
 
         // Stima delle spese correnti del mese corrente (vedi StimaCorrenti).
