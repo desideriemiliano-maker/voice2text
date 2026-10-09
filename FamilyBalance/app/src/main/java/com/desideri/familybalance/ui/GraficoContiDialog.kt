@@ -109,7 +109,7 @@ fun GraficoContiDialog(titolo: String, nota: String, conti: List<ContoGrafico>, 
 
     Dialog(onDismissRequest = onChiudi, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
         Surface(modifier = Modifier.fillMaxSize(), tonalElevation = 4.dp) {
-            Column(modifier = Modifier.fillMaxSize().systemBarsPadding().padding(16.dp)) {
+            Column(modifier = Modifier.fillMaxSize().paddingBarreDialog().padding(16.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(titolo, style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
                     IconButton(onClick = onChiudi) { Icon(Icons.Filled.Close, contentDescription = "Chiudi") }

@@ -15,7 +15,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.Dp
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.systemBars
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.DateRange
@@ -315,5 +318,35 @@ fun VariazioneSpesa(attuale: Double, precedente: Double?, modifier: Modifier = M
             else -> MaterialTheme.colorScheme.onSurfaceVariant
         },
         modifier = modifier.padding(start = 4.dp)
+    )
+}
+
+/**
+ * Barre di sistema lette dalla finestra dell'activity: nei Dialog a schermo intero gli inset non
+ * sempre arrivano (la tabella finiva sotto i pulsanti di navigazione), quindi si usano anche questi.
+ */
+private val LocalBarreActivity = androidx.compose.runtime.staticCompositionLocalOf { androidx.compose.foundation.layout.PaddingValues(0.dp) }
+
+/** Da mettere alla radice dell'activity: rende disponibili gli inset a [paddingBarreDialog]. */
+@Composable
+fun ConBarreDiSistema(content: @Composable () -> Unit) {
+    val barre = WindowInsets.systemBars.asPaddingValues()
+    androidx.compose.runtime.CompositionLocalProvider(LocalBarreActivity provides barre, content = content)
+}
+
+/**
+ * Padding per il contenuto di un Dialog a schermo intero: in alto le barre del dialog; in basso
+ * (pulsanti di navigazione) il maggiore tra l'inset del dialog e quello dell'activity.
+ */
+@Composable
+fun Modifier.paddingBarreDialog(): Modifier {
+    val dialog = WindowInsets.systemBars.asPaddingValues()
+    val activity = LocalBarreActivity.current
+    val direzione = androidx.compose.ui.platform.LocalLayoutDirection.current
+    return this.padding(
+        start = dialog.calculateStartPadding(direzione),
+        top = dialog.calculateTopPadding(),
+        end = dialog.calculateEndPadding(direzione),
+        bottom = maxOf(dialog.calculateBottomPadding(), activity.calculateBottomPadding())
     )
 }

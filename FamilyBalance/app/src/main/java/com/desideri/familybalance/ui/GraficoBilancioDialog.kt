@@ -75,7 +75,7 @@ fun GraficoBilancioDialog(righe: List<RigaBilancio>, onChiudi: () -> Unit) {
 
     Dialog(onDismissRequest = onChiudi, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
         Surface(modifier = Modifier.fillMaxSize(), tonalElevation = 4.dp) {
-            Column(modifier = Modifier.fillMaxSize().systemBarsPadding().padding(16.dp)) {
+            Column(modifier = Modifier.fillMaxSize().paddingBarreDialog().padding(16.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("Andamento del bilancio", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
                     IconButton(onClick = onChiudi) { Icon(Icons.Filled.Close, contentDescription = "Chiudi") }

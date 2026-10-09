@@ -5,6 +5,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.fragment.app.FragmentActivity
 import com.desideri.familybalance.sicurezza.BloccoBiometrico
+import com.desideri.familybalance.ui.ConBarreDiSistema
 import com.desideri.familybalance.ui.SpeseApp
 import com.desideri.familybalance.ui.tema.TemaFamilyBalance
 
@@ -16,8 +17,10 @@ class MainActivity : FragmentActivity() {
         enableEdgeToEdge()
         setContent {
             TemaFamilyBalance {
-                BloccoBiometrico(activity = this) {
-                    SpeseApp()
+                ConBarreDiSistema {
+                    BloccoBiometrico(activity = this) {
+                        SpeseApp()
+                    }
                 }
             }
         }

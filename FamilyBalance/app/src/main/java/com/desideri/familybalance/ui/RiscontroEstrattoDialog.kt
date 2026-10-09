@@ -251,10 +251,10 @@ fun RiscontroEstrattoDialog(vm: SpeseViewModel, dati: DatiApp, stato: StatoRisco
     ScorrimentoAutomatico(trascinata != null, { dito }, { area }, scorrimento)
     LaunchedEffect(periodo, sovrapposizione, filtro) { scorrimento.scrollTo(0) }
 
-    // decorFitsSystemWindows = false + systemBarsPadding: il popup resta dentro lo schermo visibile.
+    // decorFitsSystemWindows = false + paddingBarreDialog: il popup resta dentro lo schermo visibile.
     Dialog(onDismissRequest = onChiudi, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
         Surface(modifier = Modifier.fillMaxSize(), tonalElevation = 4.dp) {
-            Column(modifier = Modifier.fillMaxSize().systemBarsPadding().padding(12.dp)) {
+            Column(modifier = Modifier.fillMaxSize().paddingBarreDialog().padding(12.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("Riscontro estratto · ${dati.etichetta(stato.contoValutaId)}", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
                     // Esito della lettura e istruzioni: si leggono toccando l'icona.

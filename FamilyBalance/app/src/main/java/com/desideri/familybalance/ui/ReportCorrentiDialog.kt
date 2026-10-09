@@ -132,7 +132,7 @@ fun ReportCorrentiDialog(vm: SpeseViewModel, onChiudi: () -> Unit) {
 
     Dialog(onDismissRequest = onChiudi, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
         Surface(modifier = Modifier.fillMaxSize(), tonalElevation = 4.dp) {
-            Column(modifier = Modifier.fillMaxSize().systemBarsPadding().padding(12.dp)) {
+            Column(modifier = Modifier.fillMaxSize().paddingBarreDialog().padding(12.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("Report spese correnti", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
                     IconButton(onClick = onChiudi) { Icon(Icons.Filled.Close, contentDescription = "Chiudi") }

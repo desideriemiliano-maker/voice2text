@@ -145,7 +145,7 @@ fun ImportEstrattoDialog(vm: SpeseViewModel, dati: DatiApp, importazione: Import
 
     Dialog(onDismissRequest = { vm.annullaImportEstratto() }, properties = DialogProperties(usePlatformDefaultWidth = false, dismissOnClickOutside = false)) {
         Surface(modifier = Modifier.fillMaxSize()) {
-            Column(modifier = Modifier.fillMaxSize().systemBarsPadding().imePadding().padding(16.dp)) {
+            Column(modifier = Modifier.fillMaxSize().paddingBarreDialog().imePadding().padding(16.dp)) {
                 Text("Import estratto conto · $conto", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                 Text(
                     "${importazione.righe.size} movimenti letti da Gemini: ${importazione.presenti} già presenti e " +
