@@ -54,6 +54,9 @@ fun bloccoDisponibile(context: Context): Boolean =
  * l'ON_STOP causato dal prompt di sistema stesso (es. schermata del PIN) conti come uscita
  * dall'app. L'impostazione è riletta a ogni ritorno in primo piano.
  */
+/** true mentre l'app è coperta dal blocco: i popup che compaiono da soli (es. promemoria) aspettano lo sblocco. */
+val LocalAppBloccata = androidx.compose.runtime.compositionLocalOf { false }
+
 @Composable
 fun BloccoBiometrico(activity: FragmentActivity, content: @Composable () -> Unit) {
     val context = LocalContext.current
@@ -122,7 +125,7 @@ fun BloccoBiometrico(activity: FragmentActivity, content: @Composable () -> Unit
     when {
         !attivo || sbloccato -> content()
         giaSbloccato -> {
-            content()
+            androidx.compose.runtime.CompositionLocalProvider(LocalAppBloccata provides true, content = content)
             // In una finestra sopra a tutto, compresi i popup aperti: coprono i dati finché si sblocca.
             // Indietro manda l'app in background.
             Dialog(

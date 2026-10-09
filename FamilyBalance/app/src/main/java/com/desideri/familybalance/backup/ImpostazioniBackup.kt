@@ -28,7 +28,8 @@ object ImpostazioniBackup {
                 "giorniIntornoDuplicati" to imp.giorniIntornoDuplicati.toString(),
                 "mesiMediaStipendio" to imp.mesiMediaStipendio.toString(),
                 "giornoStipendio" to imp.giornoStipendio.toString(),
-                "stipendioGiornoLavorativo" to imp.stipendioGiornoLavorativo.toString()
+                "stipendioGiornoLavorativo" to imp.stipendioGiornoLavorativo.toString(),
+                "giorniPromemoriaRicorrenti" to imp.giorniPromemoriaRicorrenti.toString()
             ).plus(altre).forEach { (k, v) -> db.execSQL("INSERT INTO $TABELLA (chiave, valore) VALUES (?, ?)", arrayOf(k, v)) }
         }
     }
@@ -62,7 +63,8 @@ object ImpostazioniBackup {
             giorniIntornoDuplicati = valori["giorniIntornoDuplicati"]?.toIntOrNull() ?: attuali.giorniIntornoDuplicati,
             mesiMediaStipendio = valori["mesiMediaStipendio"]?.toIntOrNull() ?: attuali.mesiMediaStipendio,
             giornoStipendio = valori["giornoStipendio"]?.toIntOrNull() ?: attuali.giornoStipendio,
-            stipendioGiornoLavorativo = valori["stipendioGiornoLavorativo"]?.toBooleanStrictOrNull() ?: attuali.stipendioGiornoLavorativo
+            stipendioGiornoLavorativo = valori["stipendioGiornoLavorativo"]?.toBooleanStrictOrNull() ?: attuali.stipendioGiornoLavorativo,
+            giorniPromemoriaRicorrenti = valori["giorniPromemoriaRicorrenti"]?.toIntOrNull() ?: attuali.giorniPromemoriaRicorrenti
         )
     }
 }

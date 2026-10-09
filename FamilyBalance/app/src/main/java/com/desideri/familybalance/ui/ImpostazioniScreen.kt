@@ -46,6 +46,7 @@ fun ImpostazioniScreen(vm: SpeseViewModel, onIndietro: () -> Unit) {
     var mesiMedia by remember { mutableStateOf(impostazioni.mesiMediaStipendio.toString()) }
     var giornoStipendio by remember { mutableStateOf(impostazioni.giornoStipendio.toString()) }
     var giornoLavorativo by remember { mutableStateOf(impostazioni.stipendioGiornoLavorativo) }
+    var giorniPromemoria by remember { mutableStateOf(impostazioni.giorniPromemoriaRicorrenti.toString()) }
     val bloccoPossibile = bloccoDisponibile(LocalContext.current)
     var errore by remember { mutableStateOf<String?>(null) }
 
@@ -95,6 +96,15 @@ fun ImpostazioniScreen(vm: SpeseViewModel, onIndietro: () -> Unit) {
                 onValueChange = { mesiMedia = it },
                 label = { Text("Mesi per la media dello stipendio") },
                 supportingText = { Text("Nel mese corrente, finché lo stipendio non è entrato, si usa la media degli ultimi mesi (1-24, predefinito 5).") },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                modifier = Modifier.fillMaxWidth()
+            )
+            OutlinedTextField(
+                value = giorniPromemoria,
+                onValueChange = { giorniPromemoria = it },
+                label = { Text("Promemoria ricorrenti (giorni)") },
+                supportingText = { Text("Alla prima apertura del giorno un popup mostra le spese ricorrenti previste nei prossimi giorni (0-60, predefinito 7; 0 = nessun promemoria).") },
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                 modifier = Modifier.fillMaxWidth()
@@ -168,6 +178,7 @@ fun ImpostazioniScreen(vm: SpeseViewModel, onIndietro: () -> Unit) {
                     val intorno = giorniIntorno.trim().toIntOrNull()
                     val media = mesiMedia.trim().toIntOrNull()
                     val giornoStip = giornoStipendio.trim().toIntOrNull()
+                    val promemoria = giorniPromemoria.trim().toIntOrNull()
                     errore = when {
                         targetCent == null -> "Target non valido"
                         tasso == null || tasso <= 0 -> "Cambio non valido"
@@ -178,6 +189,7 @@ fun ImpostazioniScreen(vm: SpeseViewModel, onIndietro: () -> Unit) {
                         intorno == null || intorno !in 0..90 -> "Intorno dei duplicati non valido (0-90)"
                         media == null || media !in 1..24 -> "Mesi per la media dello stipendio non validi (1-24)"
                         giornoStip == null || giornoStip !in 1..31 -> "Giorno dello stipendio non valido (1-31)"
+                        promemoria == null || promemoria !in 0..60 -> "Giorni del promemoria non validi (0-60)"
                         else -> {
                             vm.salvaImpostazioni(
                                 impostazioni.copy(
@@ -191,7 +203,8 @@ fun ImpostazioniScreen(vm: SpeseViewModel, onIndietro: () -> Unit) {
                                     giorniIntornoDuplicati = intorno,
                                     mesiMediaStipendio = media,
                                     giornoStipendio = giornoStip,
-                                    stipendioGiornoLavorativo = giornoLavorativo
+                                    stipendioGiornoLavorativo = giornoLavorativo,
+                                    giorniPromemoriaRicorrenti = promemoria
                                 )
                             )
                             onIndietro()

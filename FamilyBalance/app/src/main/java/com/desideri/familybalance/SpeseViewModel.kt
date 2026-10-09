@@ -324,6 +324,11 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
 
     // --- Impostazioni ---
 
+    /** true se il promemoria delle ricorrenti è già stato confermato oggi. */
+    fun promemoriaConfermatoOggi(): Boolean = preferenze.promemoriaConfermatoIl() == LocalDate.now().toEpochDay()
+
+    fun confermaPromemoria() = preferenze.confermaPromemoria(LocalDate.now().toEpochDay())
+
     fun salvaImpostazioni(nuove: Impostazioni) {
         preferenze.salva(nuove)
         _impostazioni.value = nuove

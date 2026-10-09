@@ -26,7 +26,9 @@ data class Impostazioni(
     /** Giorno del mese in cui arriva lo stipendio. */
     val giornoStipendio: Int = 20,
     /** Se il giorno dello stipendio cade nel weekend si considera il lunedì successivo. */
-    val stipendioGiornoLavorativo: Boolean = true
+    val stipendioGiornoLavorativo: Boolean = true,
+    /** Giorni in avanti delle spese ricorrenti mostrate nel promemoria all'apertura (0 = nessun promemoria). */
+    val giorniPromemoriaRicorrenti: Int = 7
 )
 
 class Preferenze(context: Context) {
@@ -44,7 +46,8 @@ class Preferenze(context: Context) {
         giorniIntornoDuplicati = prefs.getInt(CHIAVE_GIORNI_INTORNO_DUPLICATI, 10),
         mesiMediaStipendio = prefs.getInt(CHIAVE_MESI_MEDIA_STIPENDIO, 5),
         giornoStipendio = prefs.getInt(CHIAVE_GIORNO_STIPENDIO, 20),
-        stipendioGiornoLavorativo = prefs.getBoolean(CHIAVE_STIPENDIO_LAVORATIVO, true)
+        stipendioGiornoLavorativo = prefs.getBoolean(CHIAVE_STIPENDIO_LAVORATIVO, true),
+        giorniPromemoriaRicorrenti = prefs.getInt(CHIAVE_GIORNI_PROMEMORIA, 7)
     )
 
     /** Con [subito] la scrittura è sincrona (es. prima di riavviare l'app dopo un ripristino). */
@@ -62,8 +65,14 @@ class Preferenze(context: Context) {
             .putInt(CHIAVE_MESI_MEDIA_STIPENDIO, impostazioni.mesiMediaStipendio)
             .putInt(CHIAVE_GIORNO_STIPENDIO, impostazioni.giornoStipendio)
             .putBoolean(CHIAVE_STIPENDIO_LAVORATIVO, impostazioni.stipendioGiornoLavorativo)
+            .putInt(CHIAVE_GIORNI_PROMEMORIA, impostazioni.giorniPromemoriaRicorrenti)
         if (subito) editor.commit() else editor.apply()
     }
+
+    /** Giorno (epochDay) in cui il promemoria delle ricorrenti è stato confermato; null se mai. */
+    fun promemoriaConfermatoIl(): Long? = prefs.getLong(CHIAVE_PROMEMORIA_CONFERMATO, -1).takeIf { it >= 0 }
+
+    fun confermaPromemoria(giorno: Long) = prefs.edit().putLong(CHIAVE_PROMEMORIA_CONFERMATO, giorno).apply()
 
     /** Data da registrare negli import di estratti conto, ricordata per conto. */
     fun caricaTipoDataEstratto(contoId: Long): com.desideri.familybalance.estratto.TipoData =
@@ -141,6 +150,8 @@ class Preferenze(context: Context) {
         const val CHIAVE_MESI_MEDIA_STIPENDIO = "mesi_media_stipendio"
         const val CHIAVE_GIORNO_STIPENDIO = "giorno_stipendio"
         const val CHIAVE_STIPENDIO_LAVORATIVO = "stipendio_giorno_lavorativo"
+        const val CHIAVE_GIORNI_PROMEMORIA = "giorni_promemoria_ricorrenti"
+        const val CHIAVE_PROMEMORIA_CONFERMATO = "promemoria_ricorrenti_confermato"
         const val PREFISSO_DUPLICATI = "duplicati_fino_"
     }
 }
