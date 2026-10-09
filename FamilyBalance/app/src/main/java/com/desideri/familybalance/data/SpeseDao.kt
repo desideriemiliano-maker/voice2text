@@ -68,6 +68,13 @@ interface SpeseDao {
     suspend fun eliminaVoce(voce: Voce)
 
     /** Sposta tutte le operazioni della voce [da] sulla voce [a]; restituisce quante ne ha spostate. */
+    /** Toglie la chiave dell'estratto [chiave] alle operazioni del conto/valuta [contoValutaId]. */
+    @Query("UPDATE operazioni SET chiaveEstratto = NULL WHERE contoValutaId = :contoValutaId AND chiaveEstratto = :chiave")
+    suspend fun togliChiaveEstratto(contoValutaId: Long, chiave: String)
+
+    @Query("UPDATE operazioni SET chiaveEstratto = :chiave WHERE id = :id")
+    suspend fun impostaChiaveEstratto(id: Long, chiave: String?)
+
     @Query("UPDATE operazioni SET voceId = :a WHERE voceId = :da")
     suspend fun spostaOperazioniVoce(da: Long, a: Long): Int
 

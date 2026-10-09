@@ -107,7 +107,13 @@ data class Operazione(
      * con la data dell'import, da sanare con un riscontro successivo (che ne aggiorna la data).
      */
     @ColumnInfo(defaultValue = "0")
-    val nonContabilizzata: Boolean = false
+    val nonContabilizzata: Boolean = false,
+    /**
+     * Movimento dell'estratto conto Excel a cui l'operazione è legata dal riscontro: data
+     * ("yyyy-MM-dd"), importo e numero progressivo tra i movimenti con la stessa data e lo stesso
+     * importo nel file (vedi EstrattoExcel). Unico nel conto/valuta; null se non legata.
+     */
+    val chiaveEstratto: String? = null
 )
 
 /** Giorno che conta per le spese ricorrenti (fuori dall'entità: non è una colonna). */

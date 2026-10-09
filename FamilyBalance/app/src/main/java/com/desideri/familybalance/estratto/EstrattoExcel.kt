@@ -107,6 +107,7 @@ object EstrattoExcel {
                 nonContabilizzato = letta == null
             )
         }
+            .let(::conChiavi)
         val avvisi = buildList {
             movimenti.count { it.nonContabilizzato }.takeIf { it > 0 }?.let {
                 add("$it movimenti non ancora contabilizzati: registrati con la data di oggi, da sanare con un riscontro successivo")
@@ -114,6 +115,25 @@ object EstrattoExcel {
             if (valutaFile != null && valutaFile != valutaConto) add("Valuta del file ($valutaFile) diversa da quella del conto ($valutaConto)")
         }
         return EsitoEstrattoExcel(movimenti, avvisi)
+    }
+
+    /**
+     * Chiave stabile di un movimento contabilizzato: data, importo e numero progressivo tra i
+     * movimenti con la stessa data e lo stesso importo, nell'ordine in cui compaiono nel file. Per un
+     * giorno passato le righe dell'estratto non cambiano più, quindi la chiave è la stessa in ogni
+     * estratto che lo comprende. I non contabilizzati non hanno chiave (la data non è ancora vera).
+     */
+    fun chiave(data: LocalDate, importoCent: Long, progressivo: Int) = "$data|$importoCent|$progressivo"
+
+    private fun conChiavi(movimenti: List<MovimentoEstratto>): List<MovimentoEstratto> {
+        val contatori = HashMap<Pair<LocalDate, Long>, Int>()
+        return movimenti.map { m ->
+            val data = m.dataOperazione
+            if (m.nonContabilizzato || data == null) return@map m
+            val n = (contatori[data to m.importoCent] ?: 0) + 1
+            contatori[data to m.importoCent] = n
+            m.copy(chiave = chiave(data, m.importoCent, n))
+        }
     }
 
     private val PAROLE_USCITE = listOf("dare", "addebit", "uscit")

@@ -90,7 +90,8 @@ class LetturaBackup(file: File) : AutoCloseable {
             ordine = c.long("ordine"),
             esclusaDaMedia = (c.int("esclusaDaMedia") ?: 0) != 0,
             nonContabilizzata = (c.int("nonContabilizzata") ?: 0) != 0,
-            dataRicorrente = c.long("dataRicorrente")
+            dataRicorrente = c.long("dataRicorrente"),
+            chiaveEstratto = c.testo("chiaveEstratto")
         )
     }
 

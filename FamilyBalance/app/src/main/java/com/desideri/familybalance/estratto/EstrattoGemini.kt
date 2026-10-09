@@ -68,7 +68,9 @@ data class MovimentoEstratto(
     /** Numero della riga del file da cui proviene (per mantenere l'ordine dell'estratto conto). */
     val rigaFile: Int? = null,
     /** Movimento senza data contabile ("non contabilizzato"): ha la data di oggi, da sanare in seguito. */
-    val nonContabilizzato: Boolean = false
+    val nonContabilizzato: Boolean = false,
+    /** Riferimento stabile del movimento negli estratti Excel (vedi EstrattoExcel.chiave); null se non c'è. */
+    val chiave: String? = null
 ) {
     fun dataDi(tipo: TipoData): LocalDate? = when (tipo) {
         TipoData.OPERAZIONE -> dataOperazione

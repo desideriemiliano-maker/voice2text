@@ -368,7 +368,10 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
                 suspend fun aggiornaControparte(x: Operazione): Long {
                     val data = if (op.data == precedente?.data) x.data else op.data
                     dao.aggiornaOperazione(
-                        controparte.copy(id = x.id, data = data, collegataId = id, note = x.note ?: op.note, ordine = x.ordine)
+                        controparte.copy(
+                            id = x.id, data = data, collegataId = id, note = x.note ?: op.note, ordine = x.ordine,
+                            chiaveEstratto = x.chiaveEstratto.takeIf { x.importoCent == controparte.importoCent }
+                        )
                     )
                     return x.id
                 }
@@ -420,7 +423,8 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
         db.withTransaction {
             for (op in operazioni) {
                 if (op.contoValutaId == contoValutaId || op.contoValutaDestId == contoValutaId) continue
-                dao.aggiornaOperazione(op.copy(contoValutaId = contoValutaId))
+                // Il legame con l'estratto vale solo nel conto di origine.
+                dao.aggiornaOperazione(op.copy(contoValutaId = contoValutaId, chiaveEstratto = null))
                 // La contro-operazione collegata ora proviene dal nuovo conto.
                 op.collegataId?.let { dao.operazione(it) }?.let { dao.aggiornaOperazione(it.copy(contoValutaDestId = contoValutaId)) }
                 spostate++
@@ -737,6 +741,22 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
         _riscontroEstratto.value = null
     }
 
+    /**
+     * Salva i legami operazione ↔ movimento dell'estratto del conto/valuta: [salva] id operazione ->
+     * chiave del movimento (tolta alle altre operazioni del conto che l'avevano), [togli] le
+     * operazioni il cui legame è stato eliminato nel riscontro.
+     */
+    fun salvaLegamiEstratto(contoValutaId: Long, salva: Map<Long, String>, togli: Set<Long>) = viewModelScope.launch {
+        db.withTransaction {
+            togli.forEach { dao.impostaChiaveEstratto(it, null) }
+            salva.forEach { (id, chiave) ->
+                dao.togliChiaveEstratto(contoValutaId, chiave)
+                dao.impostaChiaveEstratto(id, chiave)
+            }
+        }
+        messaggio("Legami con l'estratto salvati: ${salva.size}" + if (togli.isNotEmpty()) ", tolti ${togli.size}" else "")
+    }
+
     /** Porta la data delle operazioni a quella del movimento collegato dell'estratto. */
     fun aggiornaDateDaEstratto(nuoveDate: Map<Long, Long>) = viewModelScope.launch {
         db.withTransaction {
@@ -813,13 +833,14 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
                         contoValutaDestId = dest,
                         note = note,
                         ordine = scelta.riga.ordine,
-                        nonContabilizzata = m.nonContabilizzato
+                        nonContabilizzata = m.nonContabilizzato,
+                        chiaveEstratto = m.chiave
                     )
                     val id = dao.inserisciOperazione(op)
                     // Contro-operazione solo nella stessa valuta: con un cambio l'importo accreditato non è noto.
                     if (dati.value.contiValutaPerId[dest]?.valuta == dati.value.contiValutaPerId[op.contoValutaId]?.valuta) {
                         val idControparte = dao.inserisciOperazione(
-                            op.copy(contoValutaId = dest, importoCent = -m.importoCent, contoValutaDestId = op.contoValutaId, collegataId = id)
+                            op.copy(contoValutaId = dest, importoCent = -m.importoCent, contoValutaDestId = op.contoValutaId, collegataId = id, chiaveEstratto = null)
                         )
                         dao.aggiornaOperazione(op.copy(id = id, collegataId = idControparte))
                     }
@@ -832,7 +853,8 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
                             voceId = voceId(scelta.tipo.trim()),
                             note = note,
                             ordine = scelta.riga.ordine,
-                            nonContabilizzata = m.nonContabilizzato
+                            nonContabilizzata = m.nonContabilizzato,
+                            chiaveEstratto = m.chiave
                         )
                     )
                 }

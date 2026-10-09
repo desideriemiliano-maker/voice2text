@@ -3,8 +3,11 @@ package com.desideri.familybalance.logica
 import com.desideri.familybalance.data.Operazione
 import kotlin.math.abs
 
-/** Collegamento tra un'operazione del conto ([operazioneId]) e un movimento dell'estratto ([movimento], indice). */
-data class Collegamento(val operazioneId: Long, val movimento: Int, val manuale: Boolean = false)
+/**
+ * Collegamento tra un'operazione del conto ([operazioneId]) e un movimento dell'estratto ([movimento],
+ * indice); [stabile] se viene dal legame salvato in un riscontro precedente (chiave dell'estratto).
+ */
+data class Collegamento(val operazioneId: Long, val movimento: Int, val manuale: Boolean = false, val stabile: Boolean = false)
 
 /** Un movimento dell'estratto ridotto a ciò che serve per il riscontro: importo e data scelta. */
 data class MovimentoRiscontro(val importoCent: Long, val data: Long)

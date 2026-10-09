@@ -45,6 +45,21 @@ class EstrattoExcelTest {
     }
 
     @Test
+    fun chiaveConProgressivoTraMovimentiUguali() {
+        val r = righe(
+            listOf("Data", "Descrizione", "Importo"),
+            listOf("Non contabilizzato", "Bar", "-1.5"),
+            listOf("12/9/2026", "Bar", "-1.5"),
+            listOf("12/9/2026", "Edicola", "-1.5"),
+            listOf("12/9/2026", "Spesa", "-30"),
+            listOf("11/9/2026", "Bar", "-1.5")
+        )
+        val m = EstrattoExcel.leggi(r, ColonneExcel(0, data = 0, importo = 2, descrizioni = listOf(1)), "EUR", LocalDate.of(2026, 9, 13)).movimenti
+        // Il non contabilizzato non ha chiave e non conta nel progressivo.
+        assertEquals(listOf(null, "2026-09-12|-150|1", "2026-09-12|-150|2", "2026-09-12|-3000|1", "2026-09-11|-150|1"), m.map { it.chiave })
+    }
+
+    @Test
     fun laSceltaMemorizzataPrevaleSuiNomi() {
         val salvate = EstrattoExcel.daSalvare(estratto, ColonneExcel(2, data = 2, importo = 5, descrizioni = listOf(4)))
         assertEquals(ColonneExcel(2, data = 2, importo = 5, entrate = null, descrizioni = listOf(4)), EstrattoExcel.proponi(estratto, salvate))

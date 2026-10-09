@@ -139,14 +139,21 @@ fun RiscontroEstrattoDialog(vm: SpeseViewModel, dati: DatiApp, stato: StatoRisco
     // Collegamenti creati a mano e automatici tolti dall'utente; gli altri si calcolano.
     val manuali = remember(stato) { mutableStateListOf<Collegamento>() }
     val rimossi = remember(stato) { mutableStateListOf<Pair<Long, Int>>() }
-    val automatici = remember(opsConto, movimenti, manuali.toList(), rimossi.toList()) {
+    // Legami salvati nei riscontri precedenti: operazione con la stessa chiave del movimento (estratti Excel).
+    val chiaviMov = remember(stato) { stato.movimenti.map { it.chiave } }
+    val stabili = remember(opsConto, chiaviMov, rimossi.toList()) {
+        val perChiave = opsConto.filter { it.chiaveEstratto != null }.associateBy { it.chiaveEstratto }
+        chiaviMov.mapIndexedNotNull { i, k -> k?.let { perChiave[it] }?.let { Collegamento(it.id, i, stabile = true) } }
+            .filter { (it.operazioneId to it.movimento) !in rimossi }
+    }
+    val automatici = remember(opsConto, movimenti, manuali.toList(), rimossi.toList(), stabili) {
         RiscontroEstratto.abbina(
             opsConto, movimenti,
-            esclusiOperazioni = manuali.map { it.operazioneId }.toSet(),
-            esclusiMovimenti = manuali.map { it.movimento }.toSet()
+            esclusiOperazioni = (manuali.map { it.operazioneId } + stabili.map { it.operazioneId }).toSet(),
+            esclusiMovimenti = (manuali.map { it.movimento } + stabili.map { it.movimento }).toSet()
         ).filter { (it.operazioneId to it.movimento) !in rimossi }
     }
-    val collegamenti = manuali.filter { it.operazioneId in perIdOp } + automatici
+    val collegamenti = manuali.filter { it.operazioneId in perIdOp } + stabili + automatici
     val opCollegate = collegamenti.associateBy { it.operazioneId }
     val movCollegati = collegamenti.associateBy { it.movimento }
 
@@ -221,6 +228,33 @@ fun RiscontroEstrattoDialog(vm: SpeseViewModel, dati: DatiApp, stato: StatoRisco
     var confermaAssocia by remember { mutableStateOf(false) }
     var confermaCrea by remember { mutableStateOf(false) }
     var esitoImporto by remember { mutableStateOf<RiscontroEstratto.EsitoPerImporto?>(null) }
+    var confermaSalva by remember { mutableStateOf(false) }
+
+    /**
+     * Legami da salvare rispetto a quelli già sul conto: chiave del movimento per ogni operazione
+     * collegata a un movimento con chiave (se diversa da quella che ha) e operazioni da slegare
+     * (legate a un movimento di questo estratto ma ora non più collegate a lui).
+     */
+    fun legamiDaSalvare(): Pair<Map<Long, String>, Set<Long>> {
+        val salva = collegamenti.mapNotNull { c ->
+            val k = chiaviMov[c.movimento] ?: return@mapNotNull null
+            if (perIdOp[c.operazioneId]?.chiaveEstratto == k) null else c.operazioneId to k
+        }.toMap()
+        val chiaviFile = chiaviMov.filterNotNull().toSet()
+        val togli = opsConto.filter { op ->
+            op.chiaveEstratto in chiaviFile && op.id !in salva && opCollegate[op.id]?.let { chiaviMov[it.movimento] } != op.chiaveEstratto
+        }.map { it.id }.toSet()
+        return salva to togli
+    }
+    fun salvaLegami() {
+        val (salva, togli) = legamiDaSalvare()
+        if (salva.isNotEmpty() || togli.isNotEmpty()) vm.salvaLegamiEstratto(stato.contoValutaId, salva, togli)
+    }
+    /** Chiudendo, se i collegamenti cambiano i legami salvati si chiede se salvarli. */
+    fun chiudi() {
+        val (salva, togli) = legamiDaSalvare()
+        if (salva.isEmpty() && togli.isEmpty()) onChiudi() else confermaSalva = true
+    }
 
     val colAuto = MaterialTheme.colorScheme.primary
     val colManuale = MaterialTheme.colorScheme.tertiary
@@ -252,7 +286,7 @@ fun RiscontroEstrattoDialog(vm: SpeseViewModel, dati: DatiApp, stato: StatoRisco
     LaunchedEffect(periodo, sovrapposizione, filtro) { scorrimento.scrollTo(0) }
 
     // decorFitsSystemWindows = false + paddingBarreDialog: il popup resta dentro lo schermo visibile.
-    Dialog(onDismissRequest = onChiudi, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
+    Dialog(onDismissRequest = ::chiudi, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
         Surface(modifier = Modifier.fillMaxSize(), tonalElevation = 4.dp) {
             Column(modifier = Modifier.fillMaxSize().paddingBarreDialog().padding(12.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -265,7 +299,7 @@ fun RiscontroEstrattoDialog(vm: SpeseViewModel, dati: DatiApp, stato: StatoRisco
                             tint = if (problemi.isEmpty()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
                         )
                     }
-                    IconButton(onClick = onChiudi) { Icon(Icons.Filled.Close, contentDescription = "Chiudi") }
+                    IconButton(onClick = ::chiudi) { Icon(Icons.Filled.Close, contentDescription = "Chiudi") }
                 }
                 // Periodo mostrato (due mesi) con frecce e scelta diretta; sovrapposizione ai bordi.
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
@@ -441,6 +475,8 @@ fun RiscontroEstrattoDialog(vm: SpeseViewModel, dati: DatiApp, stato: StatoRisco
                     problemi.forEach { Text(it, color = MaterialTheme.colorScheme.error) }
                     Text(
                         "Linea continua: stessa data; tratteggiata: data vicina; colorata diversa: collegata a mano. " +
+                            "Le operazioni legate in un riscontro precedente (estratti Excel) sono collegate subito al loro movimento; " +
+                            "chiudendo si possono salvare i collegamenti come legami stabili. " +
                             "Tocca una linea per eliminarla; tieni premuta una riga non collegata e trascinala su una con lo stesso importo per collegarla.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -484,12 +520,15 @@ fun RiscontroEstrattoDialog(vm: SpeseViewModel, dati: DatiApp, stato: StatoRisco
                 Text(
                     "Registra sul conto ${dati.etichetta(stato.contoValutaId)} i ${mancanti.size} movimenti dell'estratto che non sono collegati a " +
                         "nessuna operazione, con la data (${tipoData.etichetta.lowercase()}) dell'estratto. Prima del salvataggio si apre l'elenco " +
-                        "dove scegliere il tipo di ogni operazione e deselezionare quelle da non creare."
+                        "dove scegliere il tipo di ogni operazione e deselezionare quelle da non creare. I collegamenti attuali vengono salvati " +
+                        "come legami stabili con l'estratto (e le nuove operazioni nascono già legate)."
                 )
             },
             confirmButton = {
                 TextButton(onClick = {
                     confermaCrea = false
+                    // Il riscontro si chiude: i collegamenti fatti finora diventano legami stabili.
+                    salvaLegami()
                     vm.salvaTipoDataEstratto(stato.contoId, tipoData)
                     vm.creaDaEstratto(mancanti)
                 }) { Text("Continua") }
@@ -523,6 +562,34 @@ fun RiscontroEstrattoDialog(vm: SpeseViewModel, dati: DatiApp, stato: StatoRisco
                 }) { Text("Aggiorna") }
             },
             dismissButton = { TextButton(onClick = { confermaDate = false }) { Text("Annulla") } }
+        )
+    }
+    if (confermaSalva) {
+        val (salva, togli) = legamiDaSalvare()
+        AlertDialog(
+            onDismissRequest = { confermaSalva = false },
+            title = { Text("Salvare i legami con l'estratto?") },
+            text = {
+                Text(
+                    "${salva.size} operazioni verranno legate al loro movimento dell'estratto (tutti i collegamenti attuali, " +
+                        "automatici compresi)" + (if (togli.isNotEmpty()) " e ${togli.size} perderanno il legame che avevano" else "") +
+                        ". Ai prossimi riscontri con un estratto Excel le operazioni legate saranno collegate subito al loro movimento, " +
+                        "anche con una data diversa. Il legame si basa su data, importo e posizione tra i movimenti uguali dello stesso giorno."
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    confermaSalva = false
+                    salvaLegami()
+                    onChiudi()
+                }) { Text("Salva") }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    confermaSalva = false
+                    onChiudi()
+                }) { Text("Non salvare") }
+            }
         )
     }
     inModifica?.let { op ->

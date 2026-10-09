@@ -134,7 +134,8 @@ fun OperazioneDialog(
                     contoValutaDestId = dest,
                     collegataId = esistente?.collegataId,
                     note = note.trim().ifEmpty { null },
-                    ordine = esistente?.ordine
+                    ordine = esistente?.ordine,
+                    chiaveEstratto = esistente?.chiaveEstratto.takeIf { esistente?.importoCent == importoConSegno }
                 )
                 vm.salvaOperazione(op, if (entrata) -centDest else centDest, scelta?.id)
             } else {
@@ -158,7 +159,9 @@ fun OperazioneDialog(
                     // Resta "non contabilizzata" finché la data non viene cambiata (a mano o da un riscontro).
                     nonContabilizzata = esistente?.nonContabilizzata == true && esistente.data == data,
                     // La data per la ricorrente conta solo per le voci ricorrenti e se diversa dalla data.
-                    dataRicorrente = dataRicorrente.takeIf { dati.vociPerId[voceId]?.ricorrente == true && it != data }
+                    dataRicorrente = dataRicorrente.takeIf { dati.vociPerId[voceId]?.ricorrente == true && it != data },
+                    // Il legame con il movimento dell'estratto resta finché l'importo non cambia.
+                    chiaveEstratto = esistente?.chiaveEstratto.takeIf { esistente?.importoCent == importoConSegno }
                 )
                 vm.salvaOperazione(op, null)
             }
