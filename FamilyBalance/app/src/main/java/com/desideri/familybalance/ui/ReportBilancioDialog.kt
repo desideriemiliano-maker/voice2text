@@ -60,13 +60,15 @@ private data class RigaReport(
     val variazioneSaldo: Double? = null,
     /** Mesi del periodo ed effetto cambio sui saldi CHF, per spiegare «Altro». */
     val mesi: Set<YearMonth> = emptySet(),
-    val effettoCambio: Double = 0.0
+    val effettoCambio: Double = 0.0,
+    /** Somma degli spostamenti del periodo (EUR): zero se tutte le contro-operazioni sono nell'app e nel periodo. */
+    val spostamenti: Double = 0.0
 ) {
     /** Risparmio del solo periodo: entrate meno tutte le spese (correnti e ricorrenti). */
     val risparmio: Double get() = entrate + correnti + ricorrenti
 
-    /** Movimenti del saldo non spiegati dal risparmio: spostamenti verso conti fuori dall'app, effetto cambio… */
-    val altro: Double? get() = variazioneSaldo?.let { it - risparmio }
+    /** Variazione del saldo non spiegata da risparmio e spostamenti: effetto cambio e arrotondamenti. */
+    val altro: Double? get() = variazioneSaldo?.let { it - risparmio - spostamenti }
 
     fun valore(colonna: String): Double? = when (colonna) {
         "saldo" -> saldo
@@ -74,6 +76,7 @@ private data class RigaReport(
         "correnti" -> correnti
         "ricorrenti" -> ricorrenti
         "risparmio" -> risparmio
+        "spostamenti" -> spostamenti
         else -> altro
     }
 }
@@ -85,6 +88,7 @@ private val COLONNE = listOf(
     "correnti" to "Correnti",
     "ricorrenti" to "Ricorrenti",
     "risparmio" to "Risparmio",
+    "spostamenti" to "Spostamenti",
     "altro" to "Altro"
 )
 private const val REPORT_BILANCIO = "report_bilancio"
@@ -110,16 +114,23 @@ fun ReportBilancioDialog(vm: SpeseViewModel, onChiudi: () -> Unit) {
             YearMonth.now(), mesiFuturi = 0, personalizzazioni = personalizzazioni, mesiMediaStipendio = impostazioni.mesiMediaStipendio
         )
     }
+    // Spostamenti per mese (EUR, CHF al cambio del mese): sommati danno zero se ogni riga ha la sua controparte.
+    val spostamentiMese = remember(dati, cambi) {
+        dati.operazioni.filter { it.trasferimento }.groupBy { Calcoli.mese(it.data) }.mapValues { (m, ops) ->
+            ops.sumOf { cambi.inEuro(it.importoCent, dati.contiValutaPerId[it.contoValutaId]?.valuta ?: "EUR", m) }
+        }
+    }
     // Entrate e spese sono solo del periodo (mese o anno); il saldo è quello a fine periodo.
-    val righe = remember(mesi, aggregazione) {
+    val righe = remember(mesi, aggregazione, spostamentiMese) {
         val base = when (aggregazione) {
             AggregazioneReport.MESE -> mesi.map {
-                RigaReport(formattaMeseBreve(it.mese), it.saldoFine, it.entrate, it.correnti, it.ricorrentiTotali, mesi = setOf(it.mese), effettoCambio = it.effettoCambio)
+                RigaReport(formattaMeseBreve(it.mese), it.saldoFine, it.entrate, it.correnti, it.ricorrentiTotali, mesi = setOf(it.mese), effettoCambio = it.effettoCambio, spostamenti = spostamentiMese[it.mese] ?: 0.0)
             }
             AggregazioneReport.ANNO -> mesi.groupBy { it.mese.year }.toSortedMap().map { (anno, rr) ->
                 RigaReport(
                     anno.toString(), rr.last().saldoFine, rr.sumOf { it.entrate }, rr.sumOf { it.correnti }, rr.sumOf { it.ricorrentiTotali },
-                    mesi = rr.map { it.mese }.toSet(), effettoCambio = rr.sumOf { it.effettoCambio }
+                    mesi = rr.map { it.mese }.toSet(), effettoCambio = rr.sumOf { it.effettoCambio },
+                    spostamenti = rr.sumOf { spostamentiMese[it.mese] ?: 0.0 }
                 )
             }
         }
@@ -137,6 +148,7 @@ fun ReportBilancioDialog(vm: SpeseViewModel, onChiudi: () -> Unit) {
     val meglio = if (scuro) Color(0xFF81C784) else Color(0xFF2E7D32)
     val peggio = if (scuro) Color(0xFFFF8A80) else Color(0xFFC62828)
     val zebra = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
+    val coloreTotali = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f)
 
     /** Variazione % di [attuale] rispetto a [precedente]: verde se il valore sale (per le spese, negative, se si spende meno). */
     fun delta(attuale: Double?, precedente: Double?): Pair<String, Color>? {
@@ -167,7 +179,7 @@ fun ReportBilancioDialog(vm: SpeseViewModel, onChiudi: () -> Unit) {
                 Text(
                     "Dalla prima operazione al mese corrente, in EUR (CHF come nel Bilancio). Saldo: totale dei conti a fine periodo; " +
                         "entrate e spese solo del periodo; risparmio: entrate − spese correnti e ricorrenti del periodo; altro: la parte della " +
-                        "variazione del saldo non spiegata dal risparmio (spostamenti ed effetto cambio; tocca la cella per il dettaglio). Le ricorrenti contano nel mese a cui sono imputate, anche nel saldo. " +
+                        "variazione del saldo non spiegata da risparmio e spostamenti (effetto cambio, arrotondamenti); spostamenti: somma di tutti gli spostamenti del periodo, zero se ognuno ha la sua contro-operazione nell'app (tocca la cella per il dettaglio). Le ricorrenti contano nel mese a cui sono imputate, anche nel saldo. " +
                         "Tra parentesi la variazione rispetto alla riga prima (verde: migliora, rosso: peggiora). " +
                         "Con il pulsante delle colonne accanto a «Per» ne scegli l'ordine.",
                     style = MaterialTheme.typography.bodySmall,
@@ -200,11 +212,21 @@ fun ReportBilancioDialog(vm: SpeseViewModel, onChiudi: () -> Unit) {
                                             CellaReport(
                                                 importo(r.valore(k)), delta(r.valore(k), p?.valore(k)), L_VALORE,
                                                 grassetto = k == "saldo" || k == "risparmio", alta = true, sfondo = sfondo(i),
-                                                // «Altro»: toccando si vede da dove viene.
-                                                modifier = if (k == "altro" && r.altro != null) Modifier.clickable { altroAperto = r } else Modifier
+                                                // «Spostamenti» e «Altro»: toccando si vede da dove vengono.
+                                                modifier = if ((k == "altro" && r.altro != null) || k == "spostamenti") Modifier.clickable { altroAperto = r } else Modifier
                                             )
                                         }
                                     }
+                                }
+                            }
+                        }
+                        // Totali del periodo mostrato, fermi in fondo (il saldo non si somma: resta vuoto).
+                        Row {
+                            CellaReport("Totale", null, L_PERIODO, grassetto = true, alta = true, sfondo = coloreTotali)
+                            Row(modifier = Modifier.horizontalScroll(orizzontale)) {
+                                colonne.forEach { (k, _) ->
+                                    val totale = if (k == "saldo") null else righe.mapNotNull { it.valore(k) }.sum()
+                                    CellaReport(importo(totale), null, L_VALORE, grassetto = true, alta = true, sfondo = coloreTotali)
                                 }
                             }
                         }
@@ -225,6 +247,6 @@ fun ReportBilancioDialog(vm: SpeseViewModel, onChiudi: () -> Unit) {
         )
     }
     altroAperto?.let { r ->
-        AltroBilancioDialog(vm, r.etichetta, r.mesi, r.effettoCambio, r.altro ?: 0.0, onChiudi = { altroAperto = null })
+        AltroBilancioDialog(vm, r.etichetta, r.mesi, r.effettoCambio, r.altro, onChiudi = { altroAperto = null })
     }
 }

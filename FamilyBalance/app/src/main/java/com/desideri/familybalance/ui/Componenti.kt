@@ -46,6 +46,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -337,18 +338,46 @@ fun ConBarreDiSistema(content: @Composable () -> Unit) {
 }
 
 /**
- * Padding per il contenuto di un Dialog a schermo intero: in alto le barre del dialog; in basso
- * (pulsanti di navigazione) il maggiore tra l'inset del dialog e quello dell'activity.
+ * Padding per il contenuto di un Dialog a schermo intero: in alto le barre del dialog; in basso il
+ * maggiore tra l'inset del dialog, quello dell'activity e la parte della finestra del dialog che
+ * scende sotto il bordo utile dello schermo (sopra i pulsanti di navigazione), misurata con le
+ * posizioni reali delle finestre: su alcuni telefoni il dialog è spostato sotto la barra di stato
+ * e la sua parte bassa finiva fuori schermo o sotto i pulsanti.
  */
 @Composable
 fun Modifier.paddingBarreDialog(): Modifier {
     val dialog = WindowInsets.systemBars.asPaddingValues()
     val activity = LocalBarreActivity.current
     val direzione = androidx.compose.ui.platform.LocalLayoutDirection.current
-    return this.padding(
-        start = dialog.calculateStartPadding(direzione),
-        top = dialog.calculateTopPadding(),
-        end = dialog.calculateEndPadding(direzione),
-        bottom = maxOf(dialog.calculateBottomPadding(), activity.calculateBottomPadding())
-    )
+    val view = androidx.compose.ui.platform.LocalView.current
+    val densita = androidx.compose.ui.platform.LocalDensity.current
+    var sporgenzaPx by remember { androidx.compose.runtime.mutableIntStateOf(0) }
+    val sporgenza = with(densita) { sporgenzaPx.toDp() }
+    return this
+        .onGloballyPositioned {
+            val decor = trovaActivity(view.context)?.window?.decorView ?: return@onGloballyPositioned
+            val radice = view.rootView
+            val posDialog = IntArray(2).also { radice.getLocationOnScreen(it) }
+            val posActivity = IntArray(2).also { decor.getLocationOnScreen(it) }
+            val navigazione = androidx.core.view.ViewCompat.getRootWindowInsets(decor)
+                ?.getInsets(androidx.core.view.WindowInsetsCompat.Type.navigationBars())?.bottom ?: 0
+            val limite = posActivity[1] + decor.height - navigazione
+            val nuova = (posDialog[1] + radice.height - limite).coerceAtLeast(0)
+            if (nuova != sporgenzaPx) sporgenzaPx = nuova
+        }
+        .padding(
+            start = dialog.calculateStartPadding(direzione),
+            top = dialog.calculateTopPadding(),
+            end = dialog.calculateEndPadding(direzione),
+            bottom = maxOf(dialog.calculateBottomPadding(), activity.calculateBottomPadding(), sporgenza)
+        )
+}
+
+private fun trovaActivity(context: android.content.Context): android.app.Activity? {
+    var c: android.content.Context? = context
+    while (c is android.content.ContextWrapper) {
+        if (c is android.app.Activity) return c
+        c = c.baseContext
+    }
+    return null
 }
