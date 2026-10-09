@@ -31,6 +31,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.FilterListOff
+import androidx.compose.material.icons.filled.Link
+import androidx.compose.material3.FilterChip
+import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FloatingActionButton
@@ -62,7 +65,13 @@ import com.desideri.familybalance.logica.formattaData
 import com.desideri.familybalance.logica.testoInCent
 import kotlin.math.abs
 
-/** Filtri della lista operazioni: periodo, intervallo di importo (valore assoluto), tipi (uno o più) e testo nelle note. */
+/** Filtro sul legame con l'estratto conto (salvato dal riscontro da Excel). */
+private enum class FiltroEstratto(val etichetta: String) { TUTTE("Tutte"), ASSOCIATE("Associate"), NON_ASSOCIATE("Non associate") }
+
+/**
+ * Filtri della lista operazioni: periodo, intervallo di importo (valore assoluto), tipi (uno o più),
+ * testo nelle note e legame con l'estratto conto.
+ */
 private data class Filtri(
     val da: Long? = null,
     val a: Long? = null,
@@ -70,7 +79,8 @@ private data class Filtri(
     val importoMax: String = "",
     /** Tipi ammessi (minuscoli; [TIPO_VUOTO] = operazioni senza tipo); vuoto = tutti. */
     val tipi: Set<String> = emptySet(),
-    val note: String = ""
+    val note: String = "",
+    val estratto: FiltroEstratto = FiltroEstratto.TUTTE
 ) {
     val attivi: Boolean get() = this != Filtri()
 }
@@ -171,7 +181,7 @@ fun OperazioniScreen(vm: SpeseViewModel, contoValutaId: Long, onIndietro: () -> 
                         Text("Saldo iniziale ${formattaCent(cv.saldoInizialeCent, cv.valuta)}", style = MaterialTheme.typography.bodySmall)
                         if (filtri.attivi) {
                             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp)) {
-                                Text("Totale filtrato (${filtrate.size} operazioni)", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                                Text("Totale filtrato (${filtrate.size} di ${righe.size} operazioni)", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
                                 TestoImporto(filtrate.sumOf { it.operazione.importoCent } / 100.0, cv.valuta, grassetto = true)
                             }
                         }
@@ -342,6 +352,8 @@ private fun corrisponde(op: Operazione, f: Filtri, dati: DatiApp): Boolean {
     val tipo = if (op.trasferimento) "Spostamento" else voce?.tipo ?: ""
     if (f.tipi.isNotEmpty() && tipo.lowercase() !in f.tipi) return false
     if (f.note.isNotBlank() && !(op.note ?: "").contains(f.note.trim(), ignoreCase = true)) return false
+    if (f.estratto == FiltroEstratto.ASSOCIATE && op.chiaveEstratto == null) return false
+    if (f.estratto == FiltroEstratto.NON_ASSOCIATE && op.chiaveEstratto != null) return false
     return true
 }
 
@@ -397,6 +409,12 @@ private fun PannelloFiltri(filtri: Filtri, dati: DatiApp, onFiltri: (Filtri) -> 
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth()
             )
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("Estratto conto", style = MaterialTheme.typography.labelMedium)
+                FiltroEstratto.entries.forEach { e ->
+                    FilterChip(selected = filtri.estratto == e, onClick = { onFiltri(filtri.copy(estratto = e)) }, label = { Text(e.etichetta) })
+                }
+            }
             if (filtri.attivi) {
                 TextButton(onClick = { onFiltri(Filtri()) }, modifier = Modifier.align(Alignment.End)) { Text("Azzera filtri") }
             }
@@ -500,6 +518,13 @@ private fun RigaListaOperazione(
             if (op.nonContabilizzata) {
                 Text("⏳ non ancora contabilizzata (data dell'import)", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.tertiary)
             }
+        }
+        // Legata a un movimento dell'estratto conto (riscontro da Excel).
+        if (op.chiaveEstratto != null) {
+            Icon(
+                Icons.Filled.Link, contentDescription = "Associata all'estratto conto",
+                tint = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(end = 6.dp).size(18.dp)
+            )
         }
         Column(horizontalAlignment = Alignment.End) {
             TestoImporto(op.importoCent / 100.0, valuta, grassetto = true)
