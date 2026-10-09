@@ -17,11 +17,14 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.PieChart
 import androidx.compose.material.icons.filled.TableChart
 import androidx.compose.material.icons.automirrored.filled.ShowChart
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -81,6 +84,9 @@ fun CorrentiScreen(vm: SpeseViewModel) {
     var mostraGrafico by remember { mutableStateOf(false) }
     var mostraReport by remember { mutableStateOf(false) }
     var graficoMese by remember { mutableStateOf<YearMonth?>(null) }
+    // Torta delle spese filtrate: di un mese o di tutto il periodo.
+    var tortaMese by remember { mutableStateOf<YearMonth?>(null) }
+    var tortaPeriodo by remember { mutableStateOf(false) }
     var aperta by remember { mutableStateOf<Pair<RigaCorrente, YearMonth>?>(null) }
 
     // Voci correnti (più "Senza tipo") per il filtro.
@@ -130,6 +136,7 @@ fun CorrentiScreen(vm: SpeseViewModel) {
                 MenuSezione(
                     listOf(
                         VoceMenuSezione("Grafico", Icons.AutoMirrored.Filled.ShowChart, abilitata = correnti.isNotEmpty()) { mostraGrafico = true },
+                        VoceMenuSezione("Ripartito", Icons.Filled.PieChart, abilitata = correnti.isNotEmpty()) { tortaPeriodo = true },
                         VoceMenuSezione("Report", Icons.Filled.TableChart) { mostraReport = true }
                     )
                 )
@@ -142,7 +149,7 @@ fun CorrentiScreen(vm: SpeseViewModel) {
         LazyColumn(state = stato, contentPadding = PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.weight(1f)) {
             items(mesi, key = { it.mese.toString() }) { mese ->
                 val precedente = mesi.firstOrNull { it.mese == mese.mese.minusMonths(1) }
-                CardMeseCorrenti(mese, precedente, onGrafico = { graficoMese = it }, onRiga = { aperta = it to mese.mese })
+                CardMeseCorrenti(mese, precedente, onGrafico = { graficoMese = it }, onTorta = { tortaMese = it }, onRiga = { aperta = it to mese.mese })
             }
         }
     }
@@ -183,11 +190,42 @@ fun CorrentiScreen(vm: SpeseViewModel) {
             m, serieCorrenti(dati, cambi, m, filtroVoci.toSet().ifEmpty { null }), onChiudi = { graficoMese = null }
         )
     }
+    tortaMese?.let { m ->
+        val righe = mesi.firstOrNull { it.mese == m }?.righe.orEmpty()
+        GraficoTortaDialog(
+            "Spese correnti · ${formattaMese(m)}",
+            "Ripartizione delle spese del mese per voce, in EUR (spese filtrate). Tocca una fetta per evidenziarla.",
+            fetteCorrenti(righe.map { it.voce to it.totale }),
+            onChiudi = { tortaMese = null }
+        )
+    }
+    if (tortaPeriodo) {
+        val perVoce = remember(correnti, cambi) {
+            correnti.groupBy { it.voceId }.map { (voceId, ops) -> voceId?.let { dati.vociPerId[it] } to ops.sumOf { inEuro(it) } }
+        }
+        GraficoTortaDialog(
+            "Spese correnti",
+            "Totale di ogni spesa filtrata da ${formattaMese(periodo.first)} a ${formattaMese(periodo.second)}, in EUR. Tocca una fetta per evidenziarla.",
+            fetteCorrenti(perVoce),
+            onChiudi = { tortaPeriodo = false }
+        )
+    }
     aperta?.let { (riga, mese) -> OperazioniCorrentiDialog(vm, dati, riga, mese, onChiudi = { aperta = null }) }
 }
 
+/** Fette della torta dalle spese per voce (totali EUR negativi = spesa); colore della voce o della serie. */
+private fun fetteCorrenti(perVoce: List<Pair<Voce?, Double>>): List<FettaTorta> =
+    perVoce.sortedBy { it.second }.mapIndexed { i, (voce, totale) ->
+        FettaTorta(voce?.descrizione ?: "Senza tipo", -totale, coloreSerie(i, voce?.colore))
+    }
+
 @Composable
-private fun CardMeseCorrenti(mese: MeseCorrenti, precedente: MeseCorrenti?, onGrafico: (YearMonth) -> Unit, onRiga: (RigaCorrente) -> Unit) {
+private fun CardMeseCorrenti(
+    mese: MeseCorrenti,
+    precedente: MeseCorrenti?,
+    onGrafico: (YearMonth) -> Unit,
+    onTorta: (YearMonth) -> Unit,
+    onRiga: (RigaCorrente) -> Unit) {
     val corrente = mese.mese == YearMonth.now()
     // Mesi passati e futuri chiusi per default; il corrente sempre aperto.
     var espanso by rememberSaveable(mese.mese.toString()) { mutableStateOf(corrente) }
@@ -206,8 +244,25 @@ private fun CardMeseCorrenti(mese: MeseCorrenti, precedente: MeseCorrenti?, onGr
                 )
                 TestoImporto(mese.totale, grassetto = true)
                 VariazioneSpesa(mese.totale, precedente?.totale)
-                IconButton(onClick = { onGrafico(mese.mese) }, modifier = Modifier.size(32.dp)) {
-                    Icon(Icons.AutoMirrored.Filled.ShowChart, contentDescription = "Grafico del mese", modifier = Modifier.size(18.dp))
+                // Il grafico del mese: cumulato per giorno o ripartito per voce.
+                Box {
+                    var menuGrafico by remember { mutableStateOf(false) }
+                    IconButton(onClick = { menuGrafico = true }, modifier = Modifier.size(32.dp)) {
+                        Icon(Icons.AutoMirrored.Filled.ShowChart, contentDescription = "Grafico del mese", modifier = Modifier.size(18.dp))
+                    }
+                    DropdownMenu(expanded = menuGrafico, onDismissRequest = { menuGrafico = false }) {
+                        DropdownMenuItem(
+                            text = { Text("Cumulato") },
+                            leadingIcon = { Icon(Icons.AutoMirrored.Filled.ShowChart, contentDescription = null) },
+                            onClick = { menuGrafico = false; onGrafico(mese.mese) }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Ripartito") },
+                            leadingIcon = { Icon(Icons.Filled.PieChart, contentDescription = null) },
+                            enabled = mese.righe.isNotEmpty(),
+                            onClick = { menuGrafico = false; onTorta(mese.mese) }
+                        )
+                    }
                 }
             }
             if (espanso) {
