@@ -1,5 +1,6 @@
 package com.desideri.familybalance.ui
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -55,7 +56,10 @@ private data class RigaReport(
     val correnti: Double,
     val ricorrenti: Double,
     /** Variazione del saldo rispetto alla fine del periodo prima (null per il primo). */
-    val variazioneSaldo: Double? = null
+    val variazioneSaldo: Double? = null,
+    /** Mesi del periodo ed effetto cambio sui saldi CHF, per spiegare «Altro». */
+    val mesi: Set<YearMonth> = emptySet(),
+    val effettoCambio: Double = 0.0
 ) {
     /** Risparmio del solo periodo: entrate meno tutte le spese (correnti e ricorrenti). */
     val risparmio: Double get() = entrate + correnti + ricorrenti
@@ -108,9 +112,14 @@ fun ReportBilancioDialog(vm: SpeseViewModel, onChiudi: () -> Unit) {
     // Entrate e spese sono solo del periodo (mese o anno); il saldo è quello a fine periodo.
     val righe = remember(mesi, aggregazione) {
         val base = when (aggregazione) {
-            AggregazioneReport.MESE -> mesi.map { RigaReport(formattaMeseBreve(it.mese), it.saldoFine, it.entrate, it.correnti, it.ricorrentiTotali) }
+            AggregazioneReport.MESE -> mesi.map {
+                RigaReport(formattaMeseBreve(it.mese), it.saldoFine, it.entrate, it.correnti, it.ricorrentiTotali, mesi = setOf(it.mese), effettoCambio = it.effettoCambio)
+            }
             AggregazioneReport.ANNO -> mesi.groupBy { it.mese.year }.toSortedMap().map { (anno, rr) ->
-                RigaReport(anno.toString(), rr.last().saldoFine, rr.sumOf { it.entrate }, rr.sumOf { it.correnti }, rr.sumOf { it.ricorrentiTotali })
+                RigaReport(
+                    anno.toString(), rr.last().saldoFine, rr.sumOf { it.entrate }, rr.sumOf { it.correnti }, rr.sumOf { it.ricorrentiTotali },
+                    mesi = rr.map { it.mese }.toSet(), effettoCambio = rr.sumOf { it.effettoCambio }
+                )
             }
         }
         base.mapIndexed { i, r ->
@@ -119,6 +128,7 @@ fun ReportBilancioDialog(vm: SpeseViewModel, onChiudi: () -> Unit) {
         }
     }
     var ordine by remember { mutableStateOf(vm.ordineColonne(REPORT_BILANCIO)) }
+    var altroAperto by remember { mutableStateOf<RigaReport?>(null) }
     val colonne = ordinaColonne(COLONNE, ordine) { it.first }
     fun sposta(da: Int, a: Int) {
         ordine = colonne.spostato(da, a).map { it.first }
@@ -158,7 +168,7 @@ fun ReportBilancioDialog(vm: SpeseViewModel, onChiudi: () -> Unit) {
                 Text(
                     "Dalla prima operazione al mese corrente, in EUR (CHF come nel Bilancio). Saldo: totale dei conti a fine periodo; " +
                         "entrate e spese solo del periodo; risparmio: entrate − spese correnti e ricorrenti del periodo; altro: la parte della " +
-                        "variazione del saldo non spiegata dal risparmio (spostamenti verso conti non nell'app, effetto cambio…). " +
+                        "variazione del saldo non spiegata dal risparmio (spostamenti, ricorrenti imputate a un altro mese, effetto cambio; tocca la cella per il dettaglio). " +
                         "Tra parentesi la variazione rispetto alla riga prima (verde: migliora, rosso: peggiora). " +
                         "Tieni premuta un'intestazione e trascinala per spostare la colonna.",
                     style = MaterialTheme.typography.bodySmall,
@@ -190,7 +200,9 @@ fun ReportBilancioDialog(vm: SpeseViewModel, onChiudi: () -> Unit) {
                                         colonne.forEach { (k, _) ->
                                             CellaReport(
                                                 importo(r.valore(k)), delta(r.valore(k), p?.valore(k)), L_VALORE,
-                                                grassetto = k == "saldo" || k == "risparmio", alta = true, sfondo = sfondo(i)
+                                                grassetto = k == "saldo" || k == "risparmio", alta = true, sfondo = sfondo(i),
+                                                // «Altro»: toccando si vede da dove viene.
+                                                modifier = if (k == "altro" && r.altro != null) Modifier.clickable { altroAperto = r } else Modifier
                                             )
                                         }
                                     }
@@ -201,5 +213,8 @@ fun ReportBilancioDialog(vm: SpeseViewModel, onChiudi: () -> Unit) {
                 }
             }
         }
+    }
+    altroAperto?.let { r ->
+        AltroBilancioDialog(vm, r.etichetta, r.mesi, r.effettoCambio, r.altro ?: 0.0, onChiudi = { altroAperto = null })
     }
 }
