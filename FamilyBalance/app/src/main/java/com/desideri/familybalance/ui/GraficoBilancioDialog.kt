@@ -49,6 +49,7 @@ private enum class VoceBilancio(val etichetta: String, val valore: (RigaBilancio
     ENTRATE("Stipendio / interessi", { it.entrate }),
     CORRENTI("Spese correnti", { it.correnti }),
     RICORRENTI("Spese ricorrenti", { it.ricorrentiTotali }),
+    SPESE_TOTALI("Spese totali", { it.correnti + it.ricorrentiTotali }),
     RISPARMIO("Risparmio", { it.risparmio }),
     DELTA("Rispetto al target", { it.deltaTarget }),
     CAMBIO("Effetto cambio", { it.effettoCambio })
