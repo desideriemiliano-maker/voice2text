@@ -12,6 +12,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ViewColumn
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -130,10 +131,7 @@ fun ReportBilancioDialog(vm: SpeseViewModel, onChiudi: () -> Unit) {
     var ordine by remember { mutableStateOf(vm.ordineColonne(REPORT_BILANCIO)) }
     var altroAperto by remember { mutableStateOf<RigaReport?>(null) }
     val colonne = ordinaColonne(COLONNE, ordine) { it.first }
-    fun sposta(da: Int, a: Int) {
-        ordine = colonne.spostato(da, a).map { it.first }
-        vm.salvaOrdineColonne(REPORT_BILANCIO, ordine)
-    }
+    var sceltaOrdine by remember { mutableStateOf(false) }
 
     val scuro = MaterialTheme.colorScheme.surface.luminance() < 0.5f
     val meglio = if (scuro) Color(0xFF81C784) else Color(0xFF2E7D32)
@@ -164,13 +162,14 @@ fun ReportBilancioDialog(vm: SpeseViewModel, onChiudi: () -> Unit) {
                     AggregazioneReport.entries.forEach { a ->
                         FilterChip(selected = aggregazione == a, onClick = { aggregazione = a }, label = { Text(a.etichetta) })
                     }
+                    IconButton(onClick = { sceltaOrdine = true }) { Icon(Icons.Filled.ViewColumn, contentDescription = "Ordine delle colonne") }
                 }
                 Text(
                     "Dalla prima operazione al mese corrente, in EUR (CHF come nel Bilancio). Saldo: totale dei conti a fine periodo; " +
                         "entrate e spese solo del periodo; risparmio: entrate − spese correnti e ricorrenti del periodo; altro: la parte della " +
                         "variazione del saldo non spiegata dal risparmio (spostamenti, ricorrenti imputate a un altro mese, effetto cambio; tocca la cella per il dettaglio). " +
                         "Tra parentesi la variazione rispetto alla riga prima (verde: migliora, rosso: peggiora). " +
-                        "Tieni premuta un'intestazione e trascinala per spostare la colonna.",
+                        "Con il pulsante delle colonne accanto a «Per» ne scegli l'ordine.",
                     style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier.padding(vertical = 4.dp)
                 )
@@ -186,7 +185,7 @@ fun ReportBilancioDialog(vm: SpeseViewModel, onChiudi: () -> Unit) {
                         Row {
                             CellaReport(aggregazione.etichetta, null, L_PERIODO, grassetto = true, alta = true)
                             Row(modifier = Modifier.horizontalScroll(orizzontale)) {
-                                colonne.forEachIndexed { c, (_, titolo) -> IntestazioneSpostabile(titolo, c, colonne.size, L_VALORE, onSposta = ::sposta) }
+                                colonne.forEach { (_, titolo) -> CellaReport(titolo, null, L_VALORE, grassetto = true, alta = true) }
                             }
                         }
                         Row(modifier = Modifier.weight(1f)) {
@@ -213,6 +212,17 @@ fun ReportBilancioDialog(vm: SpeseViewModel, onChiudi: () -> Unit) {
                 }
             }
         }
+    }
+    if (sceltaOrdine) {
+        OrdineColonneDialog(
+            colonne.map { it.second },
+            onConferma = { indici ->
+                ordine = indici.map { colonne[it].first }
+                vm.salvaOrdineColonne(REPORT_BILANCIO, ordine)
+                sceltaOrdine = false
+            },
+            onAnnulla = { sceltaOrdine = false }
+        )
     }
     altroAperto?.let { r ->
         AltroBilancioDialog(vm, r.etichetta, r.mesi, r.effettoCambio, r.altro ?: 0.0, onChiudi = { altroAperto = null })

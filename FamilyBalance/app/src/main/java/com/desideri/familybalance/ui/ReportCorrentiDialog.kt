@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.systemBarsPadding
@@ -17,17 +18,16 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.ViewColumn
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.rememberUpdatedState
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.zIndex
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -108,14 +108,10 @@ fun ReportCorrentiDialog(vm: SpeseViewModel, onChiudi: () -> Unit) {
     fun totale(m: YearMonth) = mostrate.sumOf { valore(it.first, m) }
     fun nome(id: Long) = if (id == COLONNA_TOTALE) "Totale" else colonne.firstOrNull { it.first == id }?.second.orEmpty()
 
-    // Colonne nell'ordine scelto dall'utente (trascinando le intestazioni), memorizzato e nel backup.
+    // Colonne nell'ordine scelto dall'utente (pulsante accanto al filtro), memorizzato e nel backup.
     var ordine by remember { mutableStateOf(vm.ordineColonne(REPORT_CORRENTI)) }
     val colonneTabella = ordinaColonne(listOf(COLONNA_TOTALE) + mostrate.map { it.first }, ordine) { it.toString() }
-    fun sposta(da: Int, a: Int) {
-        val nuove = colonneTabella.spostato(da, a).map { it.toString() }
-        ordine = nuove + ordine.filter { it !in nuove }
-        vm.salvaOrdineColonne(REPORT_CORRENTI, ordine)
-    }
+    var sceltaOrdine by remember { mutableStateOf(false) }
 
     val scuro = MaterialTheme.colorScheme.surface.luminance() < 0.5f
     val coloreAumento = if (scuro) Color(0xFFFF8A80) else Color(0xFFC62828)
@@ -152,10 +148,11 @@ fun ReportCorrentiDialog(vm: SpeseViewModel, onChiudi: () -> Unit) {
                         modifier = Modifier.weight(1f),
                         conTutti = true
                     )
+                    IconButton(onClick = { sceltaOrdine = true }) { Icon(Icons.Filled.ViewColumn, contentDescription = "Ordine delle colonne") }
                 }
                 Text(
                     "Spese del mese in EUR (CHF come nel Bilancio); tra parentesi la variazione rispetto al mese prima " +
-                        "(rosso: si è speso di più, verde: di meno). Tieni premuta un'intestazione e trascinala per spostare la colonna.",
+                        "(rosso: si è speso di più, verde: di meno). Con il pulsante delle colonne ne scegli l'ordine.",
                     style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier.padding(vertical = 4.dp)
                 )
@@ -171,10 +168,10 @@ fun ReportCorrentiDialog(vm: SpeseViewModel, onChiudi: () -> Unit) {
                         Row {
                             CellaReport("Mese", null, L_MESE, grassetto = true, alta = true)
                             Row(modifier = Modifier.horizontalScroll(orizzontale)) {
-                                colonneTabella.forEachIndexed { c, id ->
-                                    IntestazioneSpostabile(
-                                        nome(id), c, colonneTabella.size, L_COLONNA,
-                                        sfondo = if (id == COLONNA_TOTALE) coloreTotali else Color.Transparent, onSposta = ::sposta
+                                colonneTabella.forEach { id ->
+                                    CellaReport(
+                                        nome(id), null, L_COLONNA, grassetto = true, alta = true,
+                                        sfondo = if (id == COLONNA_TOTALE) coloreTotali else Color.Transparent
                                     )
                                 }
                             }
@@ -209,6 +206,19 @@ fun ReportCorrentiDialog(vm: SpeseViewModel, onChiudi: () -> Unit) {
                 }
             }
         }
+    }
+
+    if (sceltaOrdine) {
+        OrdineColonneDialog(
+            colonneTabella.map { nome(it) },
+            onConferma = { indici ->
+                val nuove = indici.map { colonneTabella[it].toString() }
+                ordine = nuove + ordine.filter { it !in nuove }
+                vm.salvaOrdineColonne(REPORT_CORRENTI, ordine)
+                sceltaOrdine = false
+            },
+            onAnnulla = { sceltaOrdine = false }
+        )
     }
 }
 
@@ -253,43 +263,32 @@ internal fun <T> ordinaColonne(colonne: List<T>, salvato: List<String>, chiave: 
 }
 
 /**
- * Intestazione di una colonna spostabile: tenendola premuta la si trascina a destra o a sinistra e,
- * rilasciandola, [onSposta] riceve la posizione di partenza e quella di arrivo (colonne di [larghezza] fissa).
+ * Scelta dell'ordine delle colonne di un report: frecce per spostare ogni colonna su o giù.
+ * [onConferma] riceve i [titoli] nel nuovo ordine, come indici della lista di partenza.
  */
 @Composable
-internal fun IntestazioneSpostabile(
-    testo: String,
-    indice: Int,
-    numeroColonne: Int,
-    larghezza: Dp,
-    sfondo: Color = Color.Transparent,
-    onSposta: (Int, Int) -> Unit
-) {
-    var spostamento by remember { mutableStateOf(0f) }
-    var trascinata by remember { mutableStateOf(false) }
-    val sposta by rememberUpdatedState(onSposta)
-    val indiceAttuale by rememberUpdatedState(indice)
-    val colori = MaterialTheme.colorScheme
-    CellaReport(
-        testo, null, larghezza, grassetto = true, alta = true,
-        sfondo = if (trascinata) colori.primaryContainer else sfondo,
-        modifier = Modifier
-            .zIndex(if (trascinata) 1f else 0f)
-            .graphicsLayer { translationX = spostamento }
-            .pointerInput(Unit) {
-                detectDragGesturesAfterLongPress(
-                    onDragStart = { trascinata = true },
-                    onDrag = { change, delta -> change.consume(); spostamento += delta.x },
-                    onDragEnd = {
-                        val passi = (spostamento / larghezza.toPx()).roundToInt()
-                        val arrivo = (indiceAttuale + passi).coerceIn(0, numeroColonne - 1)
-                        trascinata = false
-                        spostamento = 0f
-                        if (arrivo != indiceAttuale) sposta(indiceAttuale, arrivo)
-                    },
-                    onDragCancel = { trascinata = false; spostamento = 0f }
-                )
+internal fun OrdineColonneDialog(titoli: List<String>, onConferma: (List<Int>) -> Unit, onAnnulla: () -> Unit) {
+    var ordine by remember(titoli) { mutableStateOf(titoli.indices.toList()) }
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onAnnulla,
+        title = { Text("Ordine delle colonne") },
+        text = {
+            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                ordine.forEachIndexed { pos, indice ->
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                        Text("${pos + 1}. ${titoli[indice]}", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                        IconButton(onClick = { ordine = ordine.spostato(pos, pos - 1) }, enabled = pos > 0) {
+                            Icon(Icons.Filled.KeyboardArrowUp, contentDescription = "Sposta su")
+                        }
+                        IconButton(onClick = { ordine = ordine.spostato(pos, pos + 1) }, enabled = pos < ordine.lastIndex) {
+                            Icon(Icons.Filled.KeyboardArrowDown, contentDescription = "Sposta giù")
+                        }
+                    }
+                }
             }
+        },
+        confirmButton = { TextButton(onClick = { onConferma(ordine) }) { Text("Applica") } },
+        dismissButton = { TextButton(onClick = onAnnulla) { Text("Annulla") } }
     )
 }
 
