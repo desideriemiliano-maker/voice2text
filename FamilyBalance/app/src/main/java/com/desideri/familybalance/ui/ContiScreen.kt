@@ -23,6 +23,8 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.DragIndicator
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.ui.zIndex
@@ -102,6 +104,9 @@ fun ContiScreen(vm: SpeseViewModel, onApriConto: (Long) -> Unit, onAnagraficaCon
     // Ordine dei conti, cambiato trascinando la maniglia di una carta; salvato al rilascio.
     val ordinati = dati.contiValutaOrdinati
     var ordineLocale by remember(ordinati) { mutableStateOf(ordinati.map { it.id }) }
+    // Conti mostrati: i virtuali solo se scelto con il pulsante dell'occhio (ricordato nelle impostazioni).
+    val mostraVirtuali = impostazioni.mostraContiVirtuali
+    val visibili = ordineLocale.filter { mostraVirtuali || !dati.virtuale(it) }
     var trascinato by remember { mutableStateOf<Long?>(null) }
     var spostamento by remember { mutableFloatStateOf(0f) }
     val altezze = remember { HashMap<Long, Int>() }
@@ -109,14 +114,16 @@ fun ContiScreen(vm: SpeseViewModel, onApriConto: (Long) -> Unit, onAnagraficaCon
     /** Scambia la carta trascinata con la vicina quando la supera di metà altezza. */
     fun trascina(id: Long, dy: Float) {
         spostamento += dy
-        val i = ordineLocale.indexOf(id)
-        val sotto = ordineLocale.getOrNull(i + 1)
-        val sopra = ordineLocale.getOrNull(i - 1)
+        // Vicini tra le carte mostrate; lo spostamento avviene nell'ordine completo (con i conti nascosti).
+        val mostrati = ordineLocale.filter { mostraVirtuali || !dati.virtuale(it) }
+        val i = mostrati.indexOf(id)
+        val sotto = mostrati.getOrNull(i + 1)
+        val sopra = mostrati.getOrNull(i - 1)
         if (sotto != null && spostamento > (altezze[sotto] ?: 0) / 2f) {
-            ordineLocale = ordineLocale.toMutableList().apply { add(i + 1, removeAt(i)) }
+            ordineLocale = (ordineLocale - id).toMutableList().apply { add(indexOf(sotto) + 1, id) }
             spostamento -= (altezze[sotto] ?: 0) + spazioPx
         } else if (sopra != null && spostamento < -(altezze[sopra] ?: 0) / 2f) {
-            ordineLocale = ordineLocale.toMutableList().apply { add(i - 1, removeAt(i)) }
+            ordineLocale = (ordineLocale - id).toMutableList().apply { add(indexOf(sopra), id) }
             spostamento += (altezze[sopra] ?: 0) + spazioPx
         }
     }
@@ -145,13 +152,21 @@ fun ContiScreen(vm: SpeseViewModel, onApriConto: (Long) -> Unit, onAnagraficaCon
                             )
                         }
                     }
+                    if (dati.contiValutaVirtuali.isNotEmpty()) {
+                        IconButton(onClick = { vm.salvaImpostazioni(impostazioni.copy(mostraContiVirtuali = !mostraVirtuali)) }) {
+                            Icon(
+                                if (mostraVirtuali) Icons.Filled.Visibility else Icons.Filled.VisibilityOff,
+                                contentDescription = if (mostraVirtuali) "Nascondi i conti virtuali" else "Mostra i conti virtuali"
+                            )
+                        }
+                    }
                     IconButton(onClick = { mostraGrafico = true }, enabled = dati.operazioni.isNotEmpty()) {
                         Icon(Icons.AutoMirrored.Filled.ShowChart, contentDescription = "Grafico del saldo")
                     }
                     }
                 }
             }
-            items(ordineLocale.mapNotNull { dati.contiValutaPerId[it] }, key = { it.id }) { cv ->
+            items(visibili.mapNotNull { dati.contiValutaPerId[it] }, key = { it.id }) { cv ->
                 val questo = trascinato == cv.id
                 Card(
                     modifier = Modifier

@@ -28,7 +28,9 @@ data class Impostazioni(
     /** Se il giorno dello stipendio cade nel weekend si considera il lunedì successivo. */
     val stipendioGiornoLavorativo: Boolean = true,
     /** Giorni in avanti delle spese ricorrenti mostrate nel promemoria all'apertura (0 = nessun promemoria). */
-    val giorniPromemoriaRicorrenti: Int = 7
+    val giorniPromemoriaRicorrenti: Int = 7,
+    /** Nella sezione Conti mostra anche i conti virtuali. */
+    val mostraContiVirtuali: Boolean = true
 )
 
 class Preferenze(context: Context) {
@@ -47,7 +49,8 @@ class Preferenze(context: Context) {
         mesiMediaStipendio = prefs.getInt(CHIAVE_MESI_MEDIA_STIPENDIO, 5),
         giornoStipendio = prefs.getInt(CHIAVE_GIORNO_STIPENDIO, 20),
         stipendioGiornoLavorativo = prefs.getBoolean(CHIAVE_STIPENDIO_LAVORATIVO, true),
-        giorniPromemoriaRicorrenti = prefs.getInt(CHIAVE_GIORNI_PROMEMORIA, 7)
+        giorniPromemoriaRicorrenti = prefs.getInt(CHIAVE_GIORNI_PROMEMORIA, 7),
+        mostraContiVirtuali = prefs.getBoolean(CHIAVE_MOSTRA_VIRTUALI, true)
     )
 
     /** Con [subito] la scrittura è sincrona (es. prima di riavviare l'app dopo un ripristino). */
@@ -66,6 +69,7 @@ class Preferenze(context: Context) {
             .putInt(CHIAVE_GIORNO_STIPENDIO, impostazioni.giornoStipendio)
             .putBoolean(CHIAVE_STIPENDIO_LAVORATIVO, impostazioni.stipendioGiornoLavorativo)
             .putInt(CHIAVE_GIORNI_PROMEMORIA, impostazioni.giorniPromemoriaRicorrenti)
+            .putBoolean(CHIAVE_MOSTRA_VIRTUALI, impostazioni.mostraContiVirtuali)
         if (subito) editor.commit() else editor.apply()
     }
 
@@ -151,6 +155,7 @@ class Preferenze(context: Context) {
         const val CHIAVE_GIORNO_STIPENDIO = "giorno_stipendio"
         const val CHIAVE_STIPENDIO_LAVORATIVO = "stipendio_giorno_lavorativo"
         const val CHIAVE_GIORNI_PROMEMORIA = "giorni_promemoria_ricorrenti"
+        const val CHIAVE_MOSTRA_VIRTUALI = "mostra_conti_virtuali"
         const val CHIAVE_PROMEMORIA_CONFERMATO = "promemoria_ricorrenti_confermato"
         const val PREFISSO_DUPLICATI = "duplicati_fino_"
     }
