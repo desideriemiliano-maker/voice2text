@@ -13,11 +13,17 @@ object Valute {
     val TUTTE = listOf(EUR, CHF)
 }
 
-/** Conto corrente (es. HelloBank, LGT). I saldi sono per valuta, vedi [ContoValuta]. */
+/**
+ * Conto corrente (es. HelloBank, LGT). I saldi sono per valuta, vedi [ContoValuta]. Un conto
+ * [virtuale] (es. un salvadanaio o un fondo accantonato) ha le sue operazioni ma non entra nel
+ * saldo totale né nel bilancio.
+ */
 @Entity(tableName = "conti")
 data class Conto(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
-    val nome: String
+    val nome: String,
+    @ColumnInfo(defaultValue = "0")
+    val virtuale: Boolean = false
 )
 
 /**

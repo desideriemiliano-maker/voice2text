@@ -53,7 +53,7 @@ fun AltroBilancioDialog(
     fun eur(op: Operazione, mese: YearMonth) = cambi.inEuro(op.importoCent, dati.contiValutaPerId[op.contoValutaId]?.valuta ?: "EUR", mese)
 
     // Ogni gruppo: operazioni con il loro effetto (EUR con segno) su «Altro».
-    val spostamenti = dati.operazioni.filter { it.trasferimento && Calcoli.mese(it.data) in mesi }
+    val spostamenti = dati.operazioniReali.filter { it.trasferimento && Calcoli.mese(it.data) in mesi }
         .map { it to eur(it, Calcoli.mese(it.data)) }
 
     @Composable

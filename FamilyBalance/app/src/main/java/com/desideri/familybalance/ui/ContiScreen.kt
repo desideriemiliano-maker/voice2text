@@ -87,7 +87,8 @@ fun ContiScreen(vm: SpeseViewModel, onApriConto: (Long) -> Unit, onAnagraficaCon
         return
     }
 
-    val totaleEuro = dati.contiValuta.sumOf { Calcoli.inEuro(saldi[it.id] ?: 0L, it.valuta, impostazioni.cambioChfEur) }
+    // I conti virtuali non entrano nel saldo totale.
+    val totaleEuro = dati.contiValutaReali.sumOf { Calcoli.inEuro(saldi[it.id] ?: 0L, it.valuta, impostazioni.cambioChfEur) }
     val ultimaPerConto = dati.operazioni.groupBy { it.contoValutaId }.mapValues { (_, ops) -> ops.maxOf { it.data } }
 
     // Trascinando verso il basso si rileggono i dati dal database.
@@ -117,6 +118,9 @@ fun ContiScreen(vm: SpeseViewModel, onApriConto: (Long) -> Unit, onAnagraficaCon
                     Row(modifier = Modifier.padding(start = 16.dp, top = 12.dp, bottom = 12.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                         Column(modifier = Modifier.weight(1f)) {
                             Text(dati.etichetta(cv.id), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                            if (dati.virtuale(cv.id)) {
+                                Text("Virtuale · escluso dal totale e dal bilancio", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.tertiary)
+                            }
                             ultimaPerConto[cv.id]?.let {
                                 Text("Ultima operazione: ${formattaData(it)}", style = MaterialTheme.typography.bodySmall)
                             }
@@ -202,13 +206,15 @@ fun ContiScreen(vm: SpeseViewModel, onApriConto: (Long) -> Unit, onAnagraficaCon
                 var somma = 0.0
                 colonne.forEach { cv ->
                     val eur = cambi.inEuro(saldiCent.getValue(cv.id), cv.valuta, mese)
-                    somma += eur
+                    if (!dati.virtuale(cv.id)) somma += eur
                     saldi.getValue(cv.id).add(giorno to eur)
                 }
                 totale += giorno to somma
             }
             colonne.map { cv -> ContoGrafico(dati.etichetta(cv.id), saldi.getValue(cv.id), entrate.getValue(cv.id), uscite.getValue(cv.id)) } +
-                ContoGrafico("Totale", totale, colonne.flatMap { entrate.getValue(it.id) }, colonne.flatMap { uscite.getValue(it.id) })
+                colonne.filterNot { dati.virtuale(it.id) }.let { reali ->
+                    ContoGrafico("Totale", totale, reali.flatMap { entrate.getValue(it.id) }, reali.flatMap { uscite.getValue(it.id) })
+                }
         }
         GraficoContiDialog(
             titolo = "Andamento dei conti",

@@ -66,6 +66,7 @@ fun AnagraficaContiScreen(vm: SpeseViewModel, onIndietro: () -> Unit) {
                 Card(modifier = Modifier.fillMaxWidth().clickable { inModifica = conto }) {
                     Column(modifier = Modifier.padding(16.dp)) {
                         Text(conto.nome, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                        if (conto.virtuale) Text("Virtuale: escluso dal saldo totale e dal bilancio", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.tertiary)
                         valute.forEach { cv ->
                             Text("${cv.valuta} · saldo iniziale ${formattaCent(cv.saldoInizialeCent, cv.valuta)}", style = MaterialTheme.typography.bodyMedium)
                         }
@@ -79,8 +80,8 @@ fun AnagraficaContiScreen(vm: SpeseViewModel, onIndietro: () -> Unit) {
         ContoDialog(
             conto = conto,
             valuteEsistenti = dati.contiValuta.filter { it.contoId == conto.id && conto.id != 0L },
-            onSalva = { nome, saldi ->
-                vm.salvaConto(conto.copy(nome = nome), saldi)
+            onSalva = { nome, virtuale, saldi ->
+                vm.salvaConto(conto.copy(nome = nome, virtuale = virtuale), saldi)
                 inModifica = null
             },
             onElimina = {
@@ -96,11 +97,12 @@ fun AnagraficaContiScreen(vm: SpeseViewModel, onIndietro: () -> Unit) {
 private fun ContoDialog(
     conto: Conto,
     valuteEsistenti: List<ContoValuta>,
-    onSalva: (String, Map<String, Long>) -> Unit,
+    onSalva: (String, Boolean, Map<String, Long>) -> Unit,
     onElimina: () -> Unit,
     onChiudi: () -> Unit
 ) {
     var nome by remember { mutableStateOf(conto.nome) }
+    var virtuale by remember { mutableStateOf(conto.virtuale) }
     val attive = remember {
         mutableStateMapOf<String, Boolean>().apply {
             Valute.TUTTE.forEach { v -> put(v, valuteEsistenti.any { it.valuta == v } || (conto.id == 0L && v == Valute.EUR)) }
@@ -122,7 +124,7 @@ private fun ContoDialog(
             risultato[v] = testoInCent(saldi[v] ?: "0") ?: return run { errore = "Saldo iniziale $v non valido" }
         }
         if (risultato.isEmpty()) return run { errore = "Seleziona almeno una valuta" }
-        onSalva(nome.trim(), risultato)
+        onSalva(nome.trim(), virtuale, risultato)
     }
 
     AlertDialog(
@@ -131,6 +133,13 @@ private fun ContoDialog(
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(value = nome, onValueChange = { nome = it }, label = { Text("Nome") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(checked = virtuale, onCheckedChange = { virtuale = it })
+                    Column {
+                        Text("Conto virtuale")
+                        Text("Escluso dal saldo totale e dal bilancio (es. fondo accantonato).", style = MaterialTheme.typography.bodySmall)
+                    }
+                }
                 Valute.TUTTE.forEach { v ->
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Checkbox(checked = attive[v] == true, onCheckedChange = { attive[v] = it })

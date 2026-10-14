@@ -78,6 +78,20 @@ data class DatiApp(
     val contiValutaPerId by lazy { contiValuta.associateBy { it.id } }
     val vociPerId by lazy { voci.associateBy { it.id } }
 
+    /** Conti/valuta dei conti virtuali: fuori dal saldo totale e dal bilancio. */
+    val contiValutaVirtuali: Set<Long> by lazy {
+        val virtuali = conti.filter { it.virtuale }.map { it.id }.toSet()
+        contiValuta.filter { it.contoId in virtuali }.map { it.id }.toSet()
+    }
+
+    /** Conti/valuta e operazioni dei soli conti reali (non virtuali), per saldo totale e bilancio. */
+    val contiValutaReali: List<ContoValuta> by lazy { contiValuta.filter { it.id !in contiValutaVirtuali } }
+    val operazioniReali: List<Operazione> by lazy {
+        if (contiValutaVirtuali.isEmpty()) operazioni else operazioni.filter { it.contoValutaId !in contiValutaVirtuali }
+    }
+
+    fun virtuale(contoValutaId: Long?): Boolean = contoValutaId != null && contoValutaId in contiValutaVirtuali
+
     /** Voci proponibili come tipo (le obsolete no). */
     val vociAttive: List<Voce> by lazy { voci.filterNot { it.obsoleta } }
 
@@ -194,7 +208,7 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
     val bilancio: StateFlow<List<RigaBilancio>> = combine(dati, _impostazioni, cambi, personalizzazioni, _periodoBilancio) { d, imp, cambi, pers, periodo ->
         val oggi = YearMonth.now()
         val mesiFuturi = java.time.temporal.ChronoUnit.MONTHS.between(oggi, periodo.second).toInt().coerceAtLeast(0)
-        Calcoli.bilancio(d.contiValuta, d.voci, d.operazioni, cambi, imp.targetRisparmioCent / 100.0, oggi, mesiFuturi, personalizzazioni = pers, mesiMediaStipendio = imp.mesiMediaStipendio)
+        Calcoli.bilancio(d.contiValutaReali, d.voci, d.operazioniReali, cambi, imp.targetRisparmioCent / 100.0, oggi, mesiFuturi, personalizzazioni = pers, mesiMediaStipendio = imp.mesiMediaStipendio)
             .filter { it.mese >= periodo.first && it.mese <= periodo.second }
     }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 

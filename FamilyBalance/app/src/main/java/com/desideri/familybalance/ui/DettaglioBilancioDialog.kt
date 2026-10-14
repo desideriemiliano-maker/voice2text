@@ -56,9 +56,9 @@ fun DettaglioBilancioDialog(vm: SpeseViewModel, mese: YearMonth, componente: Com
     val cambi by vm.cambi.collectAsStateWithLifecycle()
     var inModifica by remember { mutableStateOf<Operazione?>(null) }
     fun classe(op: Operazione) = Calcoli.classifica(op, op.voceId?.let { dati.vociPerId[it] })
-    val entrate = { dati.operazioni.filter { classe(it) == Classe.ENTRATA && Calcoli.mese(it.data) == mese } }
-    val correnti = { dati.operazioni.filter { classe(it) == Classe.CORRENTE && Calcoli.mese(it.data) == mese } }
-    val ricorrenti = { dati.operazioni.filter { classe(it) == Classe.RICORRENTE && Calcoli.mese(it.dataPerRicorrente) == mese } }
+    val entrate = { dati.operazioniReali.filter { classe(it) == Classe.ENTRATA && Calcoli.mese(it.data) == mese } }
+    val correnti = { dati.operazioniReali.filter { classe(it) == Classe.CORRENTE && Calcoli.mese(it.data) == mese } }
+    val ricorrenti = { dati.operazioniReali.filter { classe(it) == Classe.RICORRENTE && Calcoli.mese(it.dataPerRicorrente) == mese } }
     val operazioni = when (componente) {
         ComponenteBilancio.ENTRATE -> entrate()
         ComponenteBilancio.CORRENTI -> correnti()
