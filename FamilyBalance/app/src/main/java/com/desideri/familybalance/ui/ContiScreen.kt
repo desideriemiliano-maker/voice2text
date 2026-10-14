@@ -130,6 +130,14 @@ fun ContiScreen(vm: SpeseViewModel, onApriConto: (Long) -> Unit, onAnagraficaCon
                     Column(modifier = Modifier.weight(1f)) {
                         Text("Saldo totale (in EUR)", style = MaterialTheme.typography.labelLarge)
                         TestoImporto(totaleEuro, grassetto = true)
+                        // Con i conti virtuali (esclusi dal totale) anche il saldo complessivo.
+                        if (dati.contiValutaVirtuali.isNotEmpty()) {
+                            val conVirtuali = dati.contiValuta.sumOf { Calcoli.inEuro(saldi[it.id] ?: 0L, it.valuta, impostazioni.cambioChfEur) }
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text("Con i conti virtuali: ", style = MaterialTheme.typography.bodySmall)
+                                TestoImporto(conVirtuali)
+                            }
+                        }
                         if (dati.contiValuta.any { it.valuta != "EUR" }) {
                             Text(
                                 "CHF convertiti a ${impostazioni.cambioChfEur} (Impostazioni)",
