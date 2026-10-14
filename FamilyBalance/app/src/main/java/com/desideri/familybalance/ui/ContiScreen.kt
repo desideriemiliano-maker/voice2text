@@ -22,6 +22,14 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Box
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.DragIndicator
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.ui.zIndex
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.material.icons.filled.TableChart
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.HorizontalDivider
@@ -91,6 +99,28 @@ fun ContiScreen(vm: SpeseViewModel, onApriConto: (Long) -> Unit, onAnagraficaCon
     val totaleEuro = dati.contiValutaReali.sumOf { Calcoli.inEuro(saldi[it.id] ?: 0L, it.valuta, impostazioni.cambioChfEur) }
     val ultimaPerConto = dati.operazioni.groupBy { it.contoValutaId }.mapValues { (_, ops) -> ops.maxOf { it.data } }
 
+    // Ordine dei conti, cambiato trascinando la maniglia di una carta; salvato al rilascio.
+    val ordinati = dati.contiValutaOrdinati
+    var ordineLocale by remember(ordinati) { mutableStateOf(ordinati.map { it.id }) }
+    var trascinato by remember { mutableStateOf<Long?>(null) }
+    var spostamento by remember { mutableFloatStateOf(0f) }
+    val altezze = remember { HashMap<Long, Int>() }
+    val spazioPx = with(LocalDensity.current) { 8.dp.toPx() }
+    /** Scambia la carta trascinata con la vicina quando la supera di metà altezza. */
+    fun trascina(id: Long, dy: Float) {
+        spostamento += dy
+        val i = ordineLocale.indexOf(id)
+        val sotto = ordineLocale.getOrNull(i + 1)
+        val sopra = ordineLocale.getOrNull(i - 1)
+        if (sotto != null && spostamento > (altezze[sotto] ?: 0) / 2f) {
+            ordineLocale = ordineLocale.toMutableList().apply { add(i + 1, removeAt(i)) }
+            spostamento -= (altezze[sotto] ?: 0) + spazioPx
+        } else if (sopra != null && spostamento < -(altezze[sopra] ?: 0) / 2f) {
+            ordineLocale = ordineLocale.toMutableList().apply { add(i - 1, removeAt(i)) }
+            spostamento += (altezze[sopra] ?: 0) + spazioPx
+        }
+    }
+
     // Trascinando verso il basso si rileggono i dati dal database.
     PullToRefreshBox(isRefreshing = ricaricaInCorso, onRefresh = vm::ricaricaDati, modifier = Modifier.fillMaxSize()) {
         LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -113,9 +143,34 @@ fun ContiScreen(vm: SpeseViewModel, onApriConto: (Long) -> Unit, onAnagraficaCon
                     }
                 }
             }
-            items(dati.contiValutaOrdinati, key = { it.id }) { cv ->
-                Card(modifier = Modifier.fillMaxWidth().clickable { onApriConto(cv.id) }) {
-                    Row(modifier = Modifier.padding(start = 16.dp, top = 12.dp, bottom = 12.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            items(ordineLocale.mapNotNull { dati.contiValutaPerId[it] }, key = { it.id }) { cv ->
+                val questo = trascinato == cv.id
+                Card(
+                    modifier = Modifier
+                        .then(if (questo) Modifier.zIndex(1f).graphicsLayer { translationY = spostamento; shadowElevation = 8f } else Modifier.animateItem())
+                        .onSizeChanged { altezze[cv.id] = it.height }
+                        .fillMaxWidth()
+                        .clickable { onApriConto(cv.id) }
+                ) {
+                    Row(modifier = Modifier.padding(start = 4.dp, top = 12.dp, bottom = 12.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                        // Maniglia: trascinandola si sposta il conto nella lista.
+                        Icon(
+                            Icons.Filled.DragIndicator, contentDescription = "Trascina per riordinare",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(end = 4.dp).pointerInput(cv.id, ordinati) {
+                                detectDragGestures(
+                                    onDragStart = { trascinato = cv.id; spostamento = 0f },
+                                    onDrag = { change, delta -> change.consume(); trascina(cv.id, delta.y) },
+                                    onDragEnd = {
+                                        trascinato = null
+                                        spostamento = 0f
+                                        if (ordineLocale != ordinati.map { it.id }) vm.ordinaContiValuta(ordineLocale)
+                                    },
+                                    onDragCancel = { trascinato = null; spostamento = 0f }
+                                )
+                            }
+                        )
+                        PallinoColore(dati.coloreConto(cv.id), modifier = Modifier.padding(end = 8.dp), dimensione = 14.dp)
                         Column(modifier = Modifier.weight(1f)) {
                             Text(dati.etichetta(cv.id), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                             if (dati.virtuale(cv.id)) {
@@ -211,7 +266,7 @@ fun ContiScreen(vm: SpeseViewModel, onApriConto: (Long) -> Unit, onAnagraficaCon
                 }
                 totale += giorno to somma
             }
-            colonne.map { cv -> ContoGrafico(dati.etichetta(cv.id), saldi.getValue(cv.id), entrate.getValue(cv.id), uscite.getValue(cv.id)) } +
+            colonne.map { cv -> ContoGrafico(dati.etichetta(cv.id), saldi.getValue(cv.id), entrate.getValue(cv.id), uscite.getValue(cv.id), dati.coloreConto(cv.id)) } +
                 colonne.filterNot { dati.virtuale(it.id) }.let { reali ->
                     ContoGrafico("Totale", totale, reali.flatMap { entrate.getValue(it.id) }, reali.flatMap { uscite.getValue(it.id) })
                 }

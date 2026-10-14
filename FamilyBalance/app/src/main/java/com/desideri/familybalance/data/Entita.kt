@@ -23,7 +23,9 @@ data class Conto(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val nome: String,
     @ColumnInfo(defaultValue = "0")
-    val virtuale: Boolean = false
+    val virtuale: Boolean = false,
+    /** Colore del conto (ARGB) nelle liste e nei grafici; null = nessuno. */
+    val colore: Int? = null
 )
 
 /**
@@ -39,7 +41,9 @@ data class ContoValuta(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val contoId: Long,
     val valuta: String,
-    val saldoInizialeCent: Long = 0
+    val saldoInizialeCent: Long = 0,
+    /** Posizione nella lista dei conti (scelta trascinando); null = in coda, per nome. */
+    val ordine: Int? = null
 )
 
 /**

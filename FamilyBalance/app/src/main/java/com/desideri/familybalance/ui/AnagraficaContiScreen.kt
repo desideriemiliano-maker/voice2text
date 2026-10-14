@@ -31,6 +31,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -65,7 +67,10 @@ fun AnagraficaContiScreen(vm: SpeseViewModel, onIndietro: () -> Unit) {
                 val valute = dati.contiValuta.filter { it.contoId == conto.id }.sortedBy { it.valuta }
                 Card(modifier = Modifier.fillMaxWidth().clickable { inModifica = conto }) {
                     Column(modifier = Modifier.padding(16.dp)) {
-                        Text(conto.nome, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            PallinoColore(conto.colore, modifier = Modifier.padding(end = 8.dp), dimensione = 14.dp)
+                            Text(conto.nome, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                        }
                         if (conto.virtuale) Text("Virtuale: escluso dal saldo totale e dal bilancio", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.tertiary)
                         valute.forEach { cv ->
                             Text("${cv.valuta} · saldo iniziale ${formattaCent(cv.saldoInizialeCent, cv.valuta)}", style = MaterialTheme.typography.bodyMedium)
@@ -80,8 +85,8 @@ fun AnagraficaContiScreen(vm: SpeseViewModel, onIndietro: () -> Unit) {
         ContoDialog(
             conto = conto,
             valuteEsistenti = dati.contiValuta.filter { it.contoId == conto.id && conto.id != 0L },
-            onSalva = { nome, virtuale, saldi ->
-                vm.salvaConto(conto.copy(nome = nome, virtuale = virtuale), saldi)
+            onSalva = { nome, virtuale, colore, saldi ->
+                vm.salvaConto(conto.copy(nome = nome, virtuale = virtuale, colore = colore), saldi)
                 inModifica = null
             },
             onElimina = {
@@ -97,12 +102,13 @@ fun AnagraficaContiScreen(vm: SpeseViewModel, onIndietro: () -> Unit) {
 private fun ContoDialog(
     conto: Conto,
     valuteEsistenti: List<ContoValuta>,
-    onSalva: (String, Boolean, Map<String, Long>) -> Unit,
+    onSalva: (String, Boolean, Int?, Map<String, Long>) -> Unit,
     onElimina: () -> Unit,
     onChiudi: () -> Unit
 ) {
     var nome by remember { mutableStateOf(conto.nome) }
     var virtuale by remember { mutableStateOf(conto.virtuale) }
+    var colore by remember { mutableStateOf(conto.colore) }
     val attive = remember {
         mutableStateMapOf<String, Boolean>().apply {
             Valute.TUTTE.forEach { v -> put(v, valuteEsistenti.any { it.valuta == v } || (conto.id == 0L && v == Valute.EUR)) }
@@ -124,15 +130,16 @@ private fun ContoDialog(
             risultato[v] = testoInCent(saldi[v] ?: "0") ?: return run { errore = "Saldo iniziale $v non valido" }
         }
         if (risultato.isEmpty()) return run { errore = "Seleziona almeno una valuta" }
-        onSalva(nome.trim(), virtuale, risultato)
+        onSalva(nome.trim(), virtuale, colore, risultato)
     }
 
     AlertDialog(
         onDismissRequest = onChiudi,
         title = { Text(if (conto.id == 0L) "Nuovo conto" else "Modifica conto") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(modifier = Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(value = nome, onValueChange = { nome = it }, label = { Text("Nome") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                SelettoreColore(colore) { colore = it }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Checkbox(checked = virtuale, onCheckedChange = { virtuale = it })
                     Column {

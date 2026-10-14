@@ -64,7 +64,9 @@ data class ContoGrafico(
     val nome: String,
     val saldi: List<Pair<Long, Double>>,
     val entrate: List<Pair<Long, Double>>,
-    val uscite: List<Pair<Long, Double>>
+    val uscite: List<Pair<Long, Double>>,
+    /** Colore del conto (null = colore della serie). */
+    val colore: Int? = null
 ) {
     fun valori(m: Misura) = when (m) {
         Misura.SALDO -> saldi
@@ -100,7 +102,8 @@ fun GraficoContiDialog(titolo: String, nota: String, conti: List<ContoGrafico>, 
             conti.size == 1 -> m.etichetta
             else -> "${conti[c].nome} · ${m.etichetta}"
         }
-        SerieGrafico(nome, coloreSerie(i, null))
+        // Con una sola misura ogni serie è un conto: si usa il suo colore, se ne ha uno.
+        SerieGrafico(nome, coloreSerie(i, if (misure.size == 1) conti[c].colore else null))
     }
     val punti = remember(conti, combinazioni, raggruppamento) {
         val valori = combinazioni.flatMapIndexed { i, (c, m) -> conti[c].valori(m).map { (giorno, v) -> ValoreGrafico(i, giorno, v) } }

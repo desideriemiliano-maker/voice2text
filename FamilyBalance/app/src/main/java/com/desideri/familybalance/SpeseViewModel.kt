@@ -97,8 +97,11 @@ data class DatiApp(
 
     /** Conti/valuta ordinati per nome conto e valuta, come mostrati nelle liste. */
     val contiValutaOrdinati: List<ContoValuta> by lazy {
-        contiValuta.sortedWith(compareBy({ contiPerId[it.contoId]?.nome?.lowercase() ?: "" }, { it.valuta }))
+        contiValuta.sortedWith(compareBy({ it.ordine ?: Int.MAX_VALUE }, { contiPerId[it.contoId]?.nome?.lowercase() ?: "" }, { it.valuta }))
     }
+
+    /** Colore del conto a cui appartiene il conto/valuta (null = nessuno). */
+    fun coloreConto(contoValutaId: Long?): Int? = contoValutaId?.let { contiValutaPerId[it] }?.let { contiPerId[it.contoId]?.colore }
 
     fun etichetta(contoValutaId: Long?): String {
         val cv = contoValutaId?.let { contiValutaPerId[it] } ?: return "Conto eliminato"
@@ -538,6 +541,11 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
                 else dao.eliminaContoValuta(cv)
             }
         }
+    }
+
+    /** Ordine dei conti/valuta nella sezione Conti (e in tutte le liste dei conti). */
+    fun ordinaContiValuta(ids: List<Long>) = viewModelScope.launch {
+        db.withTransaction { ids.forEachIndexed { i, id -> dao.impostaOrdineContoValuta(id, i) } }
     }
 
     fun eliminaConto(conto: Conto) = viewModelScope.launch { dao.eliminaConto(conto) }

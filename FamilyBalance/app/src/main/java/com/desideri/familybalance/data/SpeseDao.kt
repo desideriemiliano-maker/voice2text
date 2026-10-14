@@ -52,6 +52,9 @@ interface SpeseDao {
     @Query("SELECT * FROM conti_valuta")
     suspend fun contiValuta(): List<ContoValuta>
 
+    @Query("UPDATE conti_valuta SET ordine = :ordine WHERE id = :id")
+    suspend fun impostaOrdineContoValuta(id: Long, ordine: Int)
+
     @Query("SELECT * FROM operazioni")
     suspend fun operazioni(): List<Operazione>
 
