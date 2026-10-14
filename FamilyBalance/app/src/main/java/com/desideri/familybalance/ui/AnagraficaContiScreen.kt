@@ -173,6 +173,10 @@ private fun ContoDialog(
                             value = descrizioni[v].orEmpty(),
                             onValueChange = { descrizioni[v] = it },
                             label = { Text("Descrizione $v (facoltativa)") },
+                            // Testo su più righe: Invio va a capo.
+                            singleLine = false,
+                            minLines = 3,
+                            maxLines = 8,
                             modifier = Modifier.fillMaxWidth()
                         )
                     }
