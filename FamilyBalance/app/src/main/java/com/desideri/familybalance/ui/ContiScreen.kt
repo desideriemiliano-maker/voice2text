@@ -181,6 +181,7 @@ fun ContiScreen(vm: SpeseViewModel, onApriConto: (Long) -> Unit, onAnagraficaCon
                         PallinoColore(dati.coloreConto(cv.id), modifier = Modifier.padding(end = 8.dp), dimensione = 14.dp)
                         Column(modifier = Modifier.weight(1f)) {
                             Text(dati.etichetta(cv.id), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                            cv.descrizione?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
                             if (dati.virtuale(cv.id)) {
                                 Text("Virtuale · escluso dal totale e dal bilancio", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.tertiary)
                             }

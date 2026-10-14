@@ -43,7 +43,9 @@ data class ContoValuta(
     val valuta: String,
     val saldoInizialeCent: Long = 0,
     /** Posizione nella lista dei conti (scelta trascinando); null = in coda, per nome. */
-    val ordine: Int? = null
+    val ordine: Int? = null,
+    /** Testo libero mostrato sotto il conto/valuta (es. IBAN, uso del conto); null = nessuno. */
+    val descrizione: String? = null
 )
 
 /**

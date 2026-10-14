@@ -522,7 +522,7 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
     // --- Anagrafica conti ---
 
     /** [saldiIniziali]: valuta -> saldo iniziale in centesimi, solo per le valute attive sul conto. */
-    fun salvaConto(conto: Conto, saldiIniziali: Map<String, Long>) = viewModelScope.launch {
+    fun salvaConto(conto: Conto, saldiIniziali: Map<String, Long>, descrizioni: Map<String, String> = emptyMap()) = viewModelScope.launch {
         val nome = conto.nome.trim()
         if (nome.isEmpty()) return@launch messaggio("Il nome del conto è obbligatorio")
         if (saldiIniziali.isEmpty()) return@launch messaggio("Seleziona almeno una valuta")
@@ -531,8 +531,9 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
             val esistenti = dao.contiValutaDelConto(idConto).associateBy { it.valuta }
             for ((valuta, saldo) in saldiIniziali) {
                 val cv = esistenti[valuta]
-                if (cv == null) dao.inserisciContoValuta(ContoValuta(contoId = idConto, valuta = valuta, saldoInizialeCent = saldo))
-                else dao.aggiornaContoValuta(cv.copy(saldoInizialeCent = saldo))
+                val descrizione = descrizioni[valuta]?.trim()?.ifEmpty { null }
+                if (cv == null) dao.inserisciContoValuta(ContoValuta(contoId = idConto, valuta = valuta, saldoInizialeCent = saldo, descrizione = descrizione))
+                else dao.aggiornaContoValuta(cv.copy(saldoInizialeCent = saldo, descrizione = descrizione))
             }
             for ((valuta, cv) in esistenti) {
                 if (valuta in saldiIniziali) continue

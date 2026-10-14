@@ -74,6 +74,7 @@ fun AnagraficaContiScreen(vm: SpeseViewModel, onIndietro: () -> Unit) {
                         if (conto.virtuale) Text("Virtuale: escluso dal saldo totale e dal bilancio", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.tertiary)
                         valute.forEach { cv ->
                             Text("${cv.valuta} · saldo iniziale ${formattaCent(cv.saldoInizialeCent, cv.valuta)}", style = MaterialTheme.typography.bodyMedium)
+                            cv.descrizione?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
                         }
                     }
                 }
@@ -85,8 +86,8 @@ fun AnagraficaContiScreen(vm: SpeseViewModel, onIndietro: () -> Unit) {
         ContoDialog(
             conto = conto,
             valuteEsistenti = dati.contiValuta.filter { it.contoId == conto.id && conto.id != 0L },
-            onSalva = { nome, virtuale, colore, saldi ->
-                vm.salvaConto(conto.copy(nome = nome, virtuale = virtuale, colore = colore), saldi)
+            onSalva = { nome, virtuale, colore, saldi, descrizioni ->
+                vm.salvaConto(conto.copy(nome = nome, virtuale = virtuale, colore = colore), saldi, descrizioni)
                 inModifica = null
             },
             onElimina = {
@@ -102,7 +103,7 @@ fun AnagraficaContiScreen(vm: SpeseViewModel, onIndietro: () -> Unit) {
 private fun ContoDialog(
     conto: Conto,
     valuteEsistenti: List<ContoValuta>,
-    onSalva: (String, Boolean, Int?, Map<String, Long>) -> Unit,
+    onSalva: (String, Boolean, Int?, Map<String, Long>, Map<String, String>) -> Unit,
     onElimina: () -> Unit,
     onChiudi: () -> Unit
 ) {
@@ -119,6 +120,11 @@ private fun ContoDialog(
             Valute.TUTTE.forEach { v -> put(v, valuteEsistenti.firstOrNull { it.valuta == v }?.let { centInTesto(it.saldoInizialeCent) } ?: "0") }
         }
     }
+    val descrizioni = remember {
+        mutableStateMapOf<String, String>().apply {
+            Valute.TUTTE.forEach { v -> put(v, valuteEsistenti.firstOrNull { it.valuta == v }?.descrizione.orEmpty()) }
+        }
+    }
     var errore by remember { mutableStateOf<String?>(null) }
     var confermaElimina by remember { mutableStateOf(false) }
 
@@ -130,7 +136,7 @@ private fun ContoDialog(
             risultato[v] = testoInCent(saldi[v] ?: "0") ?: return run { errore = "Saldo iniziale $v non valido" }
         }
         if (risultato.isEmpty()) return run { errore = "Seleziona almeno una valuta" }
-        onSalva(nome.trim(), virtuale, colore, risultato)
+        onSalva(nome.trim(), virtuale, colore, risultato, risultato.keys.associateWith { descrizioni[it].orEmpty() })
     }
 
     AlertDialog(
@@ -159,6 +165,15 @@ private fun ContoDialog(
                             singleLine = true,
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                             modifier = Modifier.weight(1f)
+                        )
+                    }
+                    // Testo libero sotto il saldo iniziale, solo per le valute abilitate.
+                    if (attive[v] == true) {
+                        OutlinedTextField(
+                            value = descrizioni[v].orEmpty(),
+                            onValueChange = { descrizioni[v] = it },
+                            label = { Text("Descrizione $v (facoltativa)") },
+                            modifier = Modifier.fillMaxWidth()
                         )
                     }
                 }
