@@ -150,6 +150,10 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
     fun cambiaMostraSaldi() {
         _mostraSaldi.value = !_mostraSaldi.value
     }
+
+    fun nascondiSaldi() {
+        _mostraSaldi.value = false
+    }
     val impostazioni: StateFlow<Impostazioni> = _impostazioni.asStateFlow()
 
     private val _messaggi = MutableSharedFlow<String>(extraBufferCapacity = 8)

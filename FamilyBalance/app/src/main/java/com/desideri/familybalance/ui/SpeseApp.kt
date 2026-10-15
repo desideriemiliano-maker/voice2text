@@ -80,6 +80,9 @@ sealed interface Schermata {
 fun SpeseApp(vm: SpeseViewModel = viewModel()) {
     val snackbar = remember { SnackbarHostState() }
     LaunchedEffect(Unit) { vm.messaggi.collect { snackbar.showSnackbar(it) } }
+    // Quando l'app si blocca di nuovo (ritorno dopo i minuti in background) i saldi tornano nascosti.
+    val bloccata = com.desideri.familybalance.sicurezza.LocalAppBloccata.current
+    LaunchedEffect(bloccata) { if (bloccata) vm.nascondiSaldi() }
 
     var sezione by rememberSaveable { mutableStateOf(Sezione.CONTI) }
     var pila by remember { mutableStateOf(listOf<Schermata>()) }
