@@ -142,6 +142,14 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
     private val preferenze = Preferenze(application)
 
     private val _impostazioni = MutableStateFlow(preferenze.carica())
+
+    /** Saldi della sezione Conti visibili: nascosti a ogni avvio dell'app, non salvato. */
+    private val _mostraSaldi = MutableStateFlow(false)
+    val mostraSaldi: StateFlow<Boolean> = _mostraSaldi.asStateFlow()
+
+    fun cambiaMostraSaldi() {
+        _mostraSaldi.value = !_mostraSaldi.value
+    }
     val impostazioni: StateFlow<Impostazioni> = _impostazioni.asStateFlow()
 
     private val _messaggi = MutableSharedFlow<String>(extraBufferCapacity = 8)

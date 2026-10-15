@@ -24,6 +24,8 @@ import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.DragIndicator
 import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.AttachMoney
+import androidx.compose.material.icons.filled.MoneyOff
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.runtime.mutableFloatStateOf
@@ -106,6 +108,13 @@ fun ContiScreen(vm: SpeseViewModel, onApriConto: (Long) -> Unit, onAnagraficaCon
     var ordineLocale by remember(ordinati) { mutableStateOf(ordinati.map { it.id }) }
     // Conti mostrati: i virtuali solo se scelto con il pulsante dell'occhio (ricordato nelle impostazioni).
     val mostraVirtuali = impostazioni.mostraContiVirtuali
+    // Saldi nascosti a ogni apertura dell'app; si mostrano con il pulsante del dollaro.
+    val mostraSaldi by vm.mostraSaldi.collectAsStateWithLifecycle()
+    @Composable
+    fun Saldo(valore: Double, valuta: String = "EUR", grassetto: Boolean = false) {
+        if (mostraSaldi) TestoImporto(valore, valuta, grassetto = grassetto)
+        else Text("••••• ${if (valuta == "EUR") "€" else valuta}", fontWeight = if (grassetto) FontWeight.Bold else null)
+    }
     val visibili = ordineLocale.filter { mostraVirtuali || !dati.virtuale(it) }
     var trascinato by remember { mutableStateOf<Long?>(null) }
     var spostamento by remember { mutableFloatStateOf(0f) }
@@ -136,13 +145,13 @@ fun ContiScreen(vm: SpeseViewModel, onApriConto: (Long) -> Unit, onAnagraficaCon
                     Row(modifier = Modifier.padding(start = 16.dp, top = 16.dp, bottom = 16.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text("Saldo totale (in EUR)", style = MaterialTheme.typography.labelLarge)
-                        TestoImporto(totaleEuro, grassetto = true)
+                        Saldo(totaleEuro, grassetto = true)
                         // Con i conti virtuali (esclusi dal totale) anche il saldo complessivo, se sono mostrati.
                         if (dati.contiValutaVirtuali.isNotEmpty() && mostraVirtuali) {
                             val conVirtuali = dati.contiValuta.sumOf { Calcoli.inEuro(saldi[it.id] ?: 0L, it.valuta, impostazioni.cambioChfEur) }
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text("Con i conti virtuali: ", style = MaterialTheme.typography.bodySmall)
-                                TestoImporto(conVirtuali)
+                                Saldo(conVirtuali)
                             }
                         }
                         if (dati.contiValuta.any { it.valuta != "EUR" }) {
@@ -151,6 +160,12 @@ fun ContiScreen(vm: SpeseViewModel, onApriConto: (Long) -> Unit, onAnagraficaCon
                                 style = MaterialTheme.typography.bodySmall
                             )
                         }
+                    }
+                    IconButton(onClick = vm::cambiaMostraSaldi) {
+                        Icon(
+                            if (mostraSaldi) Icons.Filled.AttachMoney else Icons.Filled.MoneyOff,
+                            contentDescription = if (mostraSaldi) "Nascondi i saldi" else "Mostra i saldi"
+                        )
                     }
                     if (dati.contiValutaVirtuali.isNotEmpty()) {
                         IconButton(onClick = { vm.salvaImpostazioni(impostazioni.copy(mostraContiVirtuali = !mostraVirtuali)) }) {
@@ -203,7 +218,7 @@ fun ContiScreen(vm: SpeseViewModel, onApriConto: (Long) -> Unit, onAnagraficaCon
                                 Text("Ultima operazione: ${formattaData(it)}", style = MaterialTheme.typography.bodySmall)
                             }
                         }
-                        TestoImporto((saldi[cv.id] ?: 0L) / 100.0, cv.valuta, grassetto = true)
+                        Saldo((saldi[cv.id] ?: 0L) / 100.0, cv.valuta, grassetto = true)
                         Box {
                             IconButton(onClick = { menuRiscontro = cv.id }) {
                                 Icon(Icons.Filled.MoreVert, contentDescription = "Menu del conto")
