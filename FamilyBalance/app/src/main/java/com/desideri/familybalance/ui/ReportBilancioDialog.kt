@@ -114,9 +114,10 @@ fun ReportBilancioDialog(vm: SpeseViewModel, onChiudi: () -> Unit) {
             YearMonth.now(), mesiFuturi = 0, personalizzazioni = personalizzazioni, mesiMediaStipendio = impostazioni.mesiMediaStipendio
         )
     }
-    // Spostamenti per mese (EUR, CHF al cambio del mese): sommati danno zero se ogni riga ha la sua controparte.
+    // Spostamenti per mese (EUR, CHF al cambio del mese), anche quelli dei conti virtuali: sommati danno
+    // zero se ogni riga ha la sua controparte (quanto va nei virtuali finisce in «Altro»).
     val spostamentiMese = remember(dati, cambi) {
-        dati.operazioniReali.filter { it.trasferimento }.groupBy { Calcoli.mese(it.data) }.mapValues { (m, ops) ->
+        dati.operazioni.filter { it.trasferimento }.groupBy { Calcoli.mese(it.data) }.mapValues { (m, ops) ->
             ops.sumOf { cambi.inEuro(it.importoCent, dati.contiValutaPerId[it.contoValutaId]?.valuta ?: "EUR", m) }
         }
     }

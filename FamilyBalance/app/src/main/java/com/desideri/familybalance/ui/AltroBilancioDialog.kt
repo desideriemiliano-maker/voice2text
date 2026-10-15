@@ -53,7 +53,8 @@ fun AltroBilancioDialog(
     fun eur(op: Operazione, mese: YearMonth) = cambi.inEuro(op.importoCent, dati.contiValutaPerId[op.contoValutaId]?.valuta ?: "EUR", mese)
 
     // Ogni gruppo: operazioni con il loro effetto (EUR con segno) su «Altro».
-    val spostamenti = dati.operazioniReali.filter { it.trasferimento && Calcoli.mese(it.data) in mesi }
+    // Anche le righe dei conti virtuali, così ogni spostamento verso un virtuale ha la sua controparte.
+    val spostamenti = dati.operazioni.filter { it.trasferimento && Calcoli.mese(it.data) in mesi }
         .map { it to eur(it, Calcoli.mese(it.data)) }
 
     @Composable
@@ -107,10 +108,18 @@ fun AltroBilancioDialog(
                     Text("Effetto cambio sui saldi CHF", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
                     TestoImporto(effettoCambio)
                 }
-                if (altro != null && kotlin.math.abs(altro - effettoCambio) >= 0.01) {
+                // Quanto è passato dai conti reali ai virtuali (esclusi dal saldo del bilancio).
+                val versoVirtuali = -spostamenti.filter { dati.virtuale(it.first.contoValutaId) }.sumOf { it.second }
+                if (dati.contiValutaVirtuali.isNotEmpty()) {
+                    Row {
+                        Text("Spostamenti verso i conti virtuali", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                        TestoImporto(versoVirtuali)
+                    }
+                }
+                if (altro != null && kotlin.math.abs(altro - effettoCambio - versoVirtuali) >= 0.01) {
                     Row {
                         Text("Arrotondamenti / altro", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
-                        TestoImporto(altro - effettoCambio)
+                        TestoImporto(altro - effettoCambio - versoVirtuali)
                     }
                 }
                 Row {
