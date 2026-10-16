@@ -6,6 +6,7 @@ import androidx.compose.ui.graphics.luminance
 import androidx.compose.foundation.background
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -52,6 +53,8 @@ import com.desideri.familybalance.logica.Calcoli
 import com.desideri.familybalance.logica.Cambi
 import com.desideri.familybalance.logica.RigaRicorrente
 import com.desideri.familybalance.logica.formattaImporto
+import com.desideri.familybalance.logica.formattaData
+import com.desideri.familybalance.data.dataPerRicorrente
 import com.desideri.familybalance.logica.formattaMese
 import java.time.LocalDate
 import java.time.YearMonth
@@ -63,6 +66,11 @@ private val FORMATO_NOME_MESE = DateTimeFormatter.ofPattern("MMM", Locale.ITALIA
 private val LARGHEZZA_MESE: Dp = 56.dp
 private val LARGHEZZA_COLONNA: Dp = 104.dp
 private val FORMATO_GIORNO_MESE = DateTimeFormatter.ofPattern("dd/MM")
+
+/** Colonne dei totali del calendario, di cui si può vedere il dettaglio. */
+private enum class TotaleCalendario(val titolo: String) {
+    TOTALE("Totale"), EFFETTIVO("Effettivo"), GIA_PAGATO("Già pagato"), MANCANTE("Mancante")
+}
 
 /** Stato di una spesa ricorrente in un mese. */
 private enum class StatoSpesa { STIMATA, PIANIFICATA, EFFETTIVA }
@@ -109,6 +117,8 @@ fun CalendarioRicorrentiDialog(vm: SpeseViewModel, onChiudi: () -> Unit) {
     // Cella stimata o pianificata da eliminare (pressione lunga), in attesa di conferma.
     var daEliminare by remember { mutableStateOf<Pair<Long, YearMonth>?>(null) }
     var graficoMese by remember { mutableStateOf<YearMonth?>(null) }
+    // Dettaglio di una cella dei totali: colonna e mese (null = tutto l'anno).
+    var dettaglioTotale by remember { mutableStateOf<Pair<TotaleCalendario, YearMonth?>?>(null) }
     // Totali espansi: effettivo e quanto manca, oltre al totale.
     var totaliEspansi by rememberSaveable { mutableStateOf(false) }
     // null = tutte le spese (anche quelle aggiunte in seguito); lista vuota = nessuna.
@@ -217,7 +227,10 @@ fun CalendarioRicorrentiDialog(vm: SpeseViewModel, onChiudi: () -> Unit) {
                                         val contate = (if (m != null) listOf(m) else mesi).flatMap { mm ->
                                             mostrate.mapNotNull { v -> celle[v.id to mm]?.takeIf { !it.annullata } }
                                         }
-                                        CelleTotali(contate.sumOf { it.effettivo }, contate.sumOf { it.previsto }, contate.sumOf { it.giaPagato }, totaliEspansi, coloreTotali)
+                                        CelleTotali(
+                                            contate.sumOf { it.effettivo }, contate.sumOf { it.previsto }, contate.sumOf { it.giaPagato }, totaliEspansi, coloreTotali,
+                                            onClick = { t -> dettaglioTotale = t to m }
+                                        )
                                         if (m != null) {
                                             mostrate.forEach { v ->
                                                 val c = celle[v.id to m]
@@ -259,6 +272,95 @@ fun CalendarioRicorrentiDialog(vm: SpeseViewModel, onChiudi: () -> Unit) {
                 }
             }
         }
+    }
+
+    dettaglioTotale?.let { (tipo, mese) ->
+        val mesiDettaglio = if (mese != null) listOf(mese) else mesi
+        val oggi = LocalDate.now().toEpochDay()
+        val vociMostrate = mostrate.map { it.id }.toSet()
+        val operazioni = remember(dati, cambi, tipo, mese, vociMostrate) {
+            if (tipo != TotaleCalendario.EFFETTIVO && tipo != TotaleCalendario.GIA_PAGATO) return@remember emptyList<Pair<com.desideri.familybalance.data.Operazione, Double>>()
+            dati.operazioni.filter { op ->
+                !op.trasferimento && op.voceId in vociMostrate && Calcoli.mese(op.dataPerRicorrente) in mesiDettaglio &&
+                    (tipo == TotaleCalendario.EFFETTIVO || op.data <= oggi)
+            }.sortedBy { it.dataPerRicorrente }.map { op ->
+                // Spese in positivo, come nelle celle.
+                op to -cambi.inEuro(op.importoCent, dati.contiValutaPerId[op.contoValutaId]?.valuta ?: "EUR", Calcoli.mese(op.dataPerRicorrente))
+            }
+        }
+        // Per Totale e Mancante: le celle (spesa e mese) con il loro importo.
+        val voci = mesiDettaglio.flatMap { mm ->
+            mostrate.mapNotNull { v ->
+                val c = celle[v.id to mm]?.takeIf { !it.annullata } ?: return@mapNotNull null
+                val valore = if (tipo == TotaleCalendario.MANCANTE) c.importo - c.giaPagato else c.importo
+                if (abs(valore) < 0.005) null else Triple(v, mm, valore to c)
+            }
+        }
+        var inModifica by remember { mutableStateOf<com.desideri.familybalance.data.Operazione?>(null) }
+        AlertDialog(
+            onDismissRequest = { dettaglioTotale = null },
+            title = { Text("${tipo.titolo} · ${mese?.let { formattaMese(it) } ?: anno.toString()}") },
+            text = {
+                Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                    Text(
+                        when (tipo) {
+                            TotaleCalendario.TOTALE -> "Ogni spesa: il pagato e, dove manca, il previsto. Tocca una riga per il dettaglio."
+                            TotaleCalendario.EFFETTIVO -> "Operazioni imputate alle spese ricorrenti mostrate. Tocca un'operazione per aprirla."
+                            TotaleCalendario.GIA_PAGATO -> "Operazioni con data fino a oggi. Tocca un'operazione per aprirla."
+                            TotaleCalendario.MANCANTE -> "Quanto resta per ogni spesa: il previsto e i pagamenti con data futura. Tocca una riga per il dettaglio."
+                        },
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    if (tipo == TotaleCalendario.EFFETTIVO || tipo == TotaleCalendario.GIA_PAGATO) {
+                        operazioni.forEach { (op, eur) ->
+                            Column(modifier = Modifier.fillMaxWidth().clickable { inModifica = op }.padding(vertical = 4.dp)) {
+                                Row {
+                                    Text(
+                                        (op.voceId?.let { dati.vociPerId[it]?.descrizione } ?: "") + " · " + formattaData(op.data),
+                                        style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f)
+                                    )
+                                    Text(formattaImporto(eur), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
+                                }
+                                Text(dati.etichetta(op.contoValutaId) + (op.note?.let { " · $it" } ?: ""), style = MaterialTheme.typography.labelSmall, maxLines = 2)
+                            }
+                        }
+                        if (operazioni.isEmpty()) Text("Nessuna operazione.", modifier = Modifier.padding(vertical = 8.dp))
+                    } else {
+                        voci.forEach { (v, mm, valoreCella) ->
+                            val (valore, c) = valoreCella
+                            Row(
+                                modifier = Modifier.fillMaxWidth().clickable { aperta = v.id to mm }.padding(vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(v.descrizione + if (mese == null) " · ${formattaMese(mm)}" else "", style = MaterialTheme.typography.bodyMedium)
+                                    Text(
+                                        when (c.stato) {
+                                            StatoSpesa.EFFETTIVA -> "effettiva"
+                                            StatoSpesa.PIANIFICATA -> "pianificata"
+                                            StatoSpesa.STIMATA -> "stimata"
+                                        } + (c.dataMostrata?.let { " · " + LocalDate.ofEpochDay(it).format(FORMATO_GIORNO_MESE) } ?: ""),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                Text(formattaImporto(valore), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                    androidx.compose.material3.HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+                    Row {
+                        Text("Totale", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                        Text(
+                            formattaImporto(if (operazioni.isNotEmpty()) operazioni.sumOf { it.second } else voci.sumOf { it.third.first }),
+                            style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { dettaglioTotale = null }) { Text("Chiudi") } }
+        )
+        inModifica?.let { op -> OperazioneDialog(vm, dati, op.contoValutaId, op, onChiudi = { inModifica = null }) }
     }
 
     aperta?.let { (voceId, mese) ->
@@ -313,14 +415,23 @@ fun CalendarioRicorrentiDialog(vm: SpeseViewModel, onChiudi: () -> Unit) {
  * [espansi], l'effettivo, il già pagato (operazioni fino a oggi) e quanto manca al totale.
  */
 @Composable
-private fun CelleTotali(effettivo: Double, previsto: Double, giaPagato: Double, espansi: Boolean, sfondo: Color) {
+private fun CelleTotali(
+    effettivo: Double,
+    previsto: Double,
+    giaPagato: Double,
+    espansi: Boolean,
+    sfondo: Color,
+    onClick: (TotaleCalendario) -> Unit
+) {
     val totale = effettivo + previsto
     val mancante = totale - giaPagato
-    CellaTesto(if (totale != 0.0) formattaImporto(totale) else "", LARGHEZZA_COLONNA, grassetto = true, allineaDestra = true, righe = 2, sfondo = sfondo)
+    // Toccando una cella con un importo si vede da cosa è composta.
+    fun click(valore: Double, t: TotaleCalendario): (() -> Unit)? = if (valore != 0.0) ({ onClick(t) }) else null
+    CellaTesto(if (totale != 0.0) formattaImporto(totale) else "", LARGHEZZA_COLONNA, grassetto = true, allineaDestra = true, righe = 2, sfondo = sfondo, onClick = click(totale, TotaleCalendario.TOTALE))
     if (espansi) {
-        CellaTesto(if (effettivo != 0.0) formattaImporto(effettivo) else "", LARGHEZZA_COLONNA, allineaDestra = true, righe = 2, sfondo = sfondo)
-        CellaTesto(if (giaPagato != 0.0) formattaImporto(giaPagato) else "", LARGHEZZA_COLONNA, allineaDestra = true, righe = 2, sfondo = sfondo)
-        CellaTesto(if (mancante != 0.0) formattaImporto(mancante) else "", LARGHEZZA_COLONNA, corsivo = true, allineaDestra = true, righe = 2, sfondo = sfondo)
+        CellaTesto(if (effettivo != 0.0) formattaImporto(effettivo) else "", LARGHEZZA_COLONNA, allineaDestra = true, righe = 2, sfondo = sfondo, onClick = click(effettivo, TotaleCalendario.EFFETTIVO))
+        CellaTesto(if (giaPagato != 0.0) formattaImporto(giaPagato) else "", LARGHEZZA_COLONNA, allineaDestra = true, righe = 2, sfondo = sfondo, onClick = click(giaPagato, TotaleCalendario.GIA_PAGATO))
+        CellaTesto(if (mancante != 0.0) formattaImporto(mancante) else "", LARGHEZZA_COLONNA, corsivo = true, allineaDestra = true, righe = 2, sfondo = sfondo, onClick = click(mancante, TotaleCalendario.MANCANTE))
     }
 }
 
