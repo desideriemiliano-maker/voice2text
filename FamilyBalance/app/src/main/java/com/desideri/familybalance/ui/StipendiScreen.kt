@@ -457,7 +457,7 @@ fun StipendiDialog(vm: SpeseViewModel, onChiudi: () -> Unit) {
                         }
                         OutlinedButton(onClick = { nuovoMese = true }) { Text("+ Mese") }
                     }
-                    Text("Celle in giallo: valori modificati a mano.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("Celle in giallo: valori modificati a mano. Tieni premuta un'intestazione e trascinala per spostare la colonna.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     // Colonne mostrate: le nascoste si ricordano solo se scelto (anche le voci nuove sono mostrate).
                     var nascoste by remember(tipo.id) { mutableStateOf(vm.colonneNascosteStipendio(tipo.id) ?: emptySet()) }
                     var ricordaColonne by remember(tipo.id) { mutableStateOf(vm.colonneNascosteStipendio(tipo.id) != null) }
@@ -509,6 +509,15 @@ fun StipendiDialog(vm: SpeseViewModel, onChiudi: () -> Unit) {
                         valuta = tipo.valuta,
                         onCella = { s, v -> cella = s to v },
                         onMese = { meseAperto = it },
+                        // Intestazione trascinata: la voce va al posto di quella su cui è rilasciata (ordine completo, anche con colonne nascoste).
+                        onSposta = { daId, aId ->
+                            val ids = vociTipo.map { it.id }.toMutableList()
+                            val arrivo = ids.indexOf(aId)
+                            ids.remove(daId)
+                            ids.add(arrivo.coerceIn(0, ids.size), daId)
+                            ordine = ids.map { it.toString() }
+                            vm.salvaOrdineColonne("stipendi_${tipo.id}", ordine)
+                        },
                         modifier = Modifier.weight(1f)
                     )
                 }
@@ -738,6 +747,7 @@ private fun TabellaStipendi(
     valuta: String,
     onCella: (Stipendio, VoceStipendio) -> Unit,
     onMese: (Stipendio) -> Unit,
+    onSposta: (Long, Long) -> Unit,
     modifier: Modifier = Modifier
 ) {
     if (righe.isEmpty()) {
@@ -756,7 +766,15 @@ private fun TabellaStipendi(
         Row {
             CellaReport("Mese", null, L_MESE_STIPENDIO, grassetto = true, alta = true)
             Row(modifier = Modifier.horizontalScroll(orizzontale)) {
-                voci.forEach { CellaReport(if (it.calcolata) "ƒ ${it.descrizione}" else it.descrizione, null, L_VOCE_STIPENDIO, grassetto = true, alta = true, sfondo = if (it.calcolata) coloreCalcolate else Color.Transparent) }
+                voci.forEachIndexed { c, v ->
+                    key(v.id) {
+                        IntestazioneTrascinabile(
+                            if (v.calcolata) "ƒ ${v.descrizione}" else v.descrizione, c, voci.size, L_VOCE_STIPENDIO,
+                            sfondo = if (v.calcolata) coloreCalcolate else Color.Transparent,
+                            onSposta = { da, a -> onSposta(voci[da].id, voci[a].id) }
+                        )
+                    }
+                }
             }
         }
         Row(modifier = Modifier.weight(1f)) {
@@ -909,5 +927,45 @@ private fun ConfermaImportStipendioDialog(vm: SpeseViewModel, tipo: TipoStipendi
             }) { Text("Importa") }
         },
         dismissButton = { TextButton(onClick = { vm.annullaImportStipendio() }) { Text("Annulla") } }
+    )
+}
+
+/**
+ * Intestazione di colonna che si sposta tenendola premuta e trascinandola: al rilascio [onSposta]
+ * riceve la posizione di partenza e quella di arrivo (colonne di [larghezza] fissa).
+ */
+@Composable
+private fun IntestazioneTrascinabile(
+    testo: String,
+    indice: Int,
+    numeroColonne: Int,
+    larghezza: androidx.compose.ui.unit.Dp,
+    sfondo: Color,
+    onSposta: (Int, Int) -> Unit
+) {
+    var spostamento by remember { mutableStateOf(0f) }
+    var trascinata by remember { mutableStateOf(false) }
+    val sposta by androidx.compose.runtime.rememberUpdatedState(onSposta)
+    val indiceAttuale by androidx.compose.runtime.rememberUpdatedState(indice)
+    CellaReport(
+        testo, null, larghezza, grassetto = true, alta = true,
+        sfondo = if (trascinata) MaterialTheme.colorScheme.primaryContainer else sfondo,
+        modifier = Modifier
+            .zIndex(if (trascinata) 1f else 0f)
+            .graphicsLayer { translationX = spostamento }
+            .pointerInput(Unit) {
+                androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress(
+                    onDragStart = { trascinata = true },
+                    onDrag = { change, delta -> change.consume(); spostamento += delta.x },
+                    onDragEnd = {
+                        val passi = kotlin.math.round(spostamento / larghezza.toPx()).toInt()
+                        val arrivo = (indiceAttuale + passi).coerceIn(0, numeroColonne - 1)
+                        trascinata = false
+                        spostamento = 0f
+                        if (arrivo != indiceAttuale) sposta(indiceAttuale, arrivo)
+                    },
+                    onDragCancel = { trascinata = false; spostamento = 0f }
+                )
+            }
     )
 }
