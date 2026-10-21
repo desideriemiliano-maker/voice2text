@@ -100,15 +100,78 @@ fun valoriStipendio(
         val somma = if (parti.isEmpty() && v.valoreFissoCent == null) null else parti.sum() + (v.valoreFissoCent ?: 0L)
         // La percentuale dello stipendio, se memorizzata, prevale su quella dell'anagrafica.
         val percentuale = if (v.percentuale != null) percentuali[id] ?: v.percentuale else null
-        val calcolato = somma?.let { s -> percentuale?.let { Math.round(s * it / 100.0) } ?: s }
-            // Arrotondamento a [arrotondaDecimali] cifre (con 1: 7,64 → 7,6 e 7,68 → 7,7), o all'ultima
-            // cifra 0 o 5 con [arrotondaCinque] (con 1: 7,62 → 7,60 e 7,63 → 7,65).
-            ?.let { c -> v.arrotondaDecimali?.takeIf { it in 0..1 }?.let { d -> arrotonda(c, d, v.arrotondaCinque) } ?: c }
-            ?.let { c -> if (v.invertiSegno) -c else c }
+        val calcolato = somma?.let { passiFormula(v, it, percentuale).risultato }
         risultato[id] = calcolato
         return calcolato
     }
     return voci.mapNotNull { v -> valore(v.id, emptySet())?.let { v.id to it } }.toMap()
+}
+
+/** Valori intermedi di una voce calcolata dopo la somma: percentuale, arrotondamento e segno. */
+data class PassiFormula(val conPercentuale: Long, val arrotondato: Long, val risultato: Long)
+
+fun passiFormula(v: VoceStipendio, somma: Long, percentuale: Double?): PassiFormula {
+    val conPercentuale = percentuale?.let { Math.round(somma * it / 100.0) } ?: somma
+    // Arrotondamento a [arrotondaDecimali] cifre (con 1: 7,64 → 7,6 e 7,68 → 7,7), o all'ultima
+    // cifra 0 o 5 con [arrotondaCinque] (con 1: 7,62 → 7,60 e 7,63 → 7,65).
+    val arrotondato = v.arrotondaDecimali?.takeIf { it in 0..1 }?.let { d -> arrotonda(conPercentuale, d, v.arrotondaCinque) } ?: conPercentuale
+    return PassiFormula(conPercentuale, arrotondato, if (v.invertiSegno) -arrotondato else arrotondato)
+}
+
+/**
+ * Livello di dipendenza di ogni voce: 0 per le voci non calcolate, per le calcolate 1 più il
+ * livello massimo delle voci sommate (i riferimenti circolari non contano).
+ */
+fun livelliVoci(voci: List<VoceStipendio>): Map<Long, Int> {
+    val perId = voci.associateBy { it.id }
+    val livelli = HashMap<Long, Int>()
+    fun livello(id: Long, inCorso: Set<Long>): Int {
+        livelli[id]?.let { return it }
+        val v = perId[id] ?: return 0
+        if (!v.calcolata) return 0
+        if (id in inCorso) return 0
+        val l = 1 + (v.idAddendi.maxOfOrNull { livello(it, inCorso + id) } ?: 0)
+        livelli[id] = l
+        return l
+    }
+    return voci.associate { it.id to livello(it.id, emptySet()) }
+}
+
+/** Un addendo nel calcolo: la voce, il valore usato e se è sostituito solo per la voce calcolata. */
+data class AddendoCalcolo(val voce: VoceStipendio, val valore: Long?, val sostituito: Boolean)
+
+/** Dettaglio del calcolo di una voce calcolata in uno stipendio. */
+data class CalcoloVoce(
+    val voce: VoceStipendio,
+    val livello: Int,
+    val addendi: List<AddendoCalcolo>,
+    val somma: Long?,
+    val percentuale: Double?,
+    val passi: PassiFormula?
+)
+
+/** I calcoli delle voci calcolate di uno stipendio, prima quelle con meno dipendenze (a parità, nell'ordine di [voci]). */
+fun calcoliStipendio(
+    voci: List<VoceStipendio>,
+    importi: Map<Long, Long>,
+    percentuali: Map<Long, Double> = emptyMap(),
+    sostituzioni: Map<Long, Map<Long, Long>> = emptyMap()
+): List<CalcoloVoce> {
+    val valori = valoriStipendio(voci, importi, percentuali, sostituzioni)
+    val livelli = livelliVoci(voci)
+    val perId = voci.associateBy { it.id }
+    return voci.filter { it.calcolata }.map { v ->
+        val addendi = v.idAddendi.mapNotNull { a ->
+            perId[a]?.let { av ->
+                val sost = sostituzioni[v.id]?.get(a)
+                AddendoCalcolo(av, sost ?: valori[a], sost != null)
+            }
+        }
+        val parti = addendi.mapNotNull { it.valore }
+        val somma = if (parti.isEmpty() && v.valoreFissoCent == null) null else parti.sum() + (v.valoreFissoCent ?: 0L)
+        val percentuale = if (v.percentuale != null) percentuali[v.id] ?: v.percentuale else null
+        CalcoloVoce(v, livelli[v.id] ?: 1, addendi, somma, percentuale, somma?.let { passiFormula(v, it, percentuale) })
+    }.sortedBy { it.livello }
 }
 
 /** Uno stipendio registrato (es. importato da una busta paga) di una tipologia, per il [mese] "yyyy-MM". */

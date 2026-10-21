@@ -3,7 +3,9 @@ package com.desideri.familybalance.ui
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -83,6 +85,7 @@ import com.desideri.familybalance.data.TipoStipendio
 import com.desideri.familybalance.data.Valute
 import com.desideri.familybalance.data.VoceStipendio
 import com.desideri.familybalance.data.valoriStipendio
+import com.desideri.familybalance.data.calcoliStipendio
 import com.desideri.familybalance.logica.centInTesto
 import com.desideri.familybalance.logica.formattaCent
 import com.desideri.familybalance.logica.formattaMese
@@ -444,6 +447,7 @@ fun StipendiScreen(vm: SpeseViewModel) {
     val tipo = tipi.getOrNull(scheda.coerceAtMost(tipi.lastIndex.coerceAtLeast(0)))
     var cella by remember { mutableStateOf<Pair<Stipendio, VoceStipendio>?>(null) }
     var meseAperto by remember { mutableStateOf<Stipendio?>(null) }
+    var dettaglio by remember { mutableStateOf<Stipendio?>(null) }
     var nuovoMese by remember { mutableStateOf(false) }
     val sceltaFile = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null && tipo != null) vm.importaBustaPaga(uri, tipo.id)
@@ -535,6 +539,7 @@ fun StipendiScreen(vm: SpeseViewModel) {
                         valuta = tipo.valuta,
                         onCella = { s, v -> cella = s to v },
                         onMese = { meseAperto = it },
+                        onDettaglio = { dettaglio = it },
                         // Intestazione trascinata: la voce va al posto di quella su cui è rilasciata (ordine completo, anche con colonne nascoste).
                         onSposta = { daId, aId ->
                             val ids = vociTipo.map { it.id }.toMutableList()
@@ -557,7 +562,7 @@ fun StipendiScreen(vm: SpeseViewModel) {
             text = {
                 Text(
                     "Celle in giallo: valori modificati a mano. Tieni premuta un'intestazione e trascinala per spostare la colonna. " +
-                        "Tocca una cella per modificarla, il mese per cambiarlo o eliminarlo. Icone: importa busta paga, aggiungi un mese, " +
+                        "Tocca una cella per modificarla, il mese per cambiarlo o eliminarlo; tieni premuto il mese per il dettaglio dei calcoli. Icone: importa busta paga, aggiungi un mese, " +
                         "colonne mostrate."
                 )
             },
@@ -742,6 +747,10 @@ fun StipendiScreen(vm: SpeseViewModel) {
             text = {
                 Column {
                     SceltaMese("Mese", mese, { mese = it })
+                    OutlinedButton(onClick = { dettaglio = s; meseAperto = null }, modifier = Modifier.padding(top = 8.dp)) {
+                        Icon(Icons.Filled.Functions, contentDescription = null)
+                        Text("Dettaglio dei calcoli", modifier = Modifier.padding(start = 6.dp))
+                    }
                     if (conferma) Text("Tocca di nuovo «Elimina» per eliminare lo stipendio con tutti i suoi importi.", color = MaterialTheme.colorScheme.error)
                 }
             },
@@ -755,6 +764,16 @@ fun StipendiScreen(vm: SpeseViewModel) {
                 }
             }
         )
+    }
+    dettaglio?.let { s ->
+        stipendi.tipi.firstOrNull { it.id == s.tipoId }?.let { t ->
+            DettaglioCalcoliDialog(
+                s, ordinaColonne(stipendi.vociDi(t.id), vm.ordineColonne("stipendi_${t.id}")) { it.id.toString() },
+                stipendi.importiPerStipendio[s.id].orEmpty(), stipendi.percentualiPerStipendio[s.id].orEmpty(),
+                stipendi.sostituzioniPerStipendio[s.id].orEmpty(), stipendi.manualiPerStipendio[s.id].orEmpty(), t.valuta,
+                onChiudi = { dettaglio = null }
+            )
+        }
     }
     if (nuovoMese && tipo != null) {
         var mese by remember { mutableStateOf(YearMonth.now()) }
@@ -773,7 +792,82 @@ fun StipendiScreen(vm: SpeseViewModel) {
     }
 }
 
+/**
+ * Dettaglio dei calcoli di uno stipendio, dall'alto in basso: prima le voci registrate, poi le
+ * calcolate a partire da quelle con meno dipendenze, con somma, percentuale, arrotondamento e segno.
+ */
+@Composable
+private fun DettaglioCalcoliDialog(
+    s: Stipendio,
+    voci: List<VoceStipendio>,
+    importi: Map<Long, Long>,
+    percentuali: Map<Long, Double>,
+    sostituzioni: Map<Long, Map<Long, Long>>,
+    manuali: Set<Long>,
+    valuta: String,
+    onChiudi: () -> Unit
+) {
+    val calcoli = calcoliStipendio(voci, importi, percentuali, sostituzioni)
+    val registrate = voci.filter { !it.calcolata && importi[it.id] != null }
+    fun testo(cent: Long?) = cent?.let { formattaCent(it, valuta) } ?: "—"
+    @Composable
+    fun Riga(etichetta: String, valore: String, grassetto: Boolean = false, nota: String? = null) {
+        Row(verticalAlignment = Alignment.Top, modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(etichetta, style = MaterialTheme.typography.bodyMedium, fontWeight = if (grassetto) FontWeight.Bold else null)
+                nota?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+            }
+            Text(valore, style = MaterialTheme.typography.bodyMedium, fontWeight = if (grassetto) FontWeight.Bold else null, modifier = Modifier.padding(start = 8.dp))
+        }
+    }
+    AlertDialog(
+        onDismissRequest = onChiudi,
+        title = { Text("Calcoli · ${formattaMese(YearMonth.parse(s.mese))}") },
+        text = {
+            Column(modifier = Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text("Voci registrate", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
+                if (registrate.isEmpty()) Text("Nessun importo registrato.", style = MaterialTheme.typography.bodySmall)
+                registrate.forEach { v -> Riga(v.descrizione, testo(importi[v.id]), nota = if (v.id in manuali) "modificato a mano" else null) }
+                calcoli.forEach { c ->
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 6.dp))
+                    Text("ƒ ${c.voce.descrizione}", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
+                    c.addendi.forEachIndexed { i, a ->
+                        Riga(
+                            (if (i == 0) "" else "+ ") + a.voce.descrizione, testo(a.valore),
+                            nota = if (a.sostituito) "valore modificato solo per questa voce" else null
+                        )
+                    }
+                    c.voce.valoreFissoCent?.let { f -> Riga((if (c.addendi.isEmpty()) "" else "+ ") + "Valore fisso", testo(f)) }
+                    val p = c.passi
+                    if (c.somma == null || p == null) {
+                        Riga("= Nessun valore", "—", grassetto = true)
+                    } else {
+                        val ultimo = when {
+                            c.voce.invertiSegno -> 3
+                            c.voce.arrotondaDecimali != null -> 2
+                            c.percentuale != null -> 1
+                            else -> 0
+                        }
+                        Riga("= Somma", testo(c.somma), grassetto = ultimo == 0)
+                        c.percentuale?.let { Riga("× ${testoPercentuale(it)}%", testo(p.conPercentuale), grassetto = ultimo == 1) }
+                        c.voce.arrotondaDecimali?.let { d ->
+                            Riga(
+                                "Arrotondato a " + (if (d == 1) "1 decimale" else "$d decimali") + if (c.voce.arrotondaCinque) " (0 o 5)" else "",
+                                testo(p.arrotondato), grassetto = ultimo == 2
+                            )
+                        }
+                        if (c.voce.invertiSegno) Riga("Cambio di segno", testo(p.risultato), grassetto = true)
+                    }
+                    if (c.voce.id in manuali) Text("Valori di partenza modificati a mano.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onChiudi) { Text("Chiudi") } }
+    )
+}
+
 /** Tabella degli stipendi: mese fermo a sinistra, colonne delle voci che scorrono insieme. */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun TabellaStipendi(
     voci: List<VoceStipendio>,
@@ -786,6 +880,7 @@ private fun TabellaStipendi(
     valuta: String,
     onCella: (Stipendio, VoceStipendio) -> Unit,
     onMese: (Stipendio) -> Unit,
+    onDettaglio: (Stipendio) -> Unit,
     onSposta: (Long, Long) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -826,7 +921,7 @@ private fun TabellaStipendi(
                 righe.forEachIndexed { i, s ->
                     CellaReport(
                         formattaMeseBreve(YearMonth.parse(s.mese)), null, L_MESE_STIPENDIO, grassetto = true, alta = true, sfondo = sfondo(i),
-                        modifier = Modifier.clickable { onMese(s) }
+                        modifier = Modifier.combinedClickable(onClick = { onMese(s) }, onLongClick = { onDettaglio(s) })
                     )
                 }
             }
