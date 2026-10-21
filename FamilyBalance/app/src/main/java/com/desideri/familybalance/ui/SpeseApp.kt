@@ -61,6 +61,7 @@ import com.desideri.familybalance.SpeseViewModel
 
 enum class Sezione(val titolo: String, val icona: ImageVector) {
     CONTI("Conti", Icons.Filled.AccountBalance),
+    STIPENDI("Stipendi", Icons.Filled.Payments),
     CORRENTI("Correnti", Icons.Filled.ShoppingCart),
     RICORRENTI("Ricorrenti", Icons.Filled.EventRepeat),
     BILANCIO("Bilancio", Icons.AutoMirrored.Filled.ShowChart)
@@ -121,7 +122,6 @@ private fun SchermataPrincipale(vm: SpeseViewModel, sezione: Sezione, onSezione:
     var menuAperto by remember { mutableStateOf(false) }
     var mostraVersioni by remember { mutableStateOf(false) }
     var mostraRegistro by remember { mutableStateOf(false) }
-    var mostraStipendi by remember { mutableStateOf(false) }
     val importazioneInCorso by vm.importazioneInCorso.collectAsStateWithLifecycle()
     val importEstratto by vm.importEstratto.collectAsStateWithLifecycle()
     val testoAttesa by vm.testoAttesa.collectAsStateWithLifecycle()
@@ -144,8 +144,6 @@ private fun SchermataPrincipale(vm: SpeseViewModel, sezione: Sezione, onSezione:
                             HorizontalDivider()
                             VoceMenu("Riscontro spostamenti", Icons.AutoMirrored.Filled.CompareArrows) { menuAperto = false; onApri(Schermata.MappaSpostamenti) }
                             VoceMenu("Cambi CHF/EUR", Icons.Filled.CurrencyExchange) { menuAperto = false; onApri(Schermata.Cambi) }
-                            HorizontalDivider()
-                            VoceMenu("Stipendi", Icons.Filled.Payments) { menuAperto = false; mostraStipendi = true }
                             HorizontalDivider()
                             VoceMenu("Backup Google Drive", Icons.Filled.CloudUpload) { menuAperto = false; onApri(Schermata.Backup) }
                             HorizontalDivider()
@@ -173,6 +171,7 @@ private fun SchermataPrincipale(vm: SpeseViewModel, sezione: Sezione, onSezione:
         Box(modifier = Modifier.padding(padding)) {
             when (sezione) {
                 Sezione.CONTI -> ContiScreen(vm, onApriConto = { onApri(Schermata.Operazioni(it)) }, onAnagraficaConti = { onApri(Schermata.AnagraficaConti) })
+                Sezione.STIPENDI -> StipendiScreen(vm)
                 Sezione.CORRENTI -> CorrentiScreen(vm)
                 Sezione.RICORRENTI -> RicorrentiScreen(vm)
                 Sezione.BILANCIO -> BilancioScreen(vm)
@@ -182,7 +181,6 @@ private fun SchermataPrincipale(vm: SpeseViewModel, sezione: Sezione, onSezione:
 
     if (mostraVersioni) VersioniDialog(onDismiss = { mostraVersioni = false })
     if (mostraRegistro) RegistroDialog(onDismiss = { mostraRegistro = false })
-    if (mostraStipendi) StipendiDialog(vm, onChiudi = { mostraStipendi = false })
 
     colonneExcel?.let { ColonneExcelDialog(vm, dati, it) }
 

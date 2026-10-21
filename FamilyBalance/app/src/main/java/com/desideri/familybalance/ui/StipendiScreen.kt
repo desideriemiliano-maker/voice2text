@@ -22,6 +22,8 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Functions
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.ViewColumn
 import androidx.compose.material.icons.filled.Restore
 import androidx.compose.material.icons.filled.DragIndicator
@@ -419,7 +421,7 @@ private val L_VOCE_STIPENDIO = 112.dp
  * legge una busta paga con Gemini.
  */
 @Composable
-fun StipendiDialog(vm: SpeseViewModel, onChiudi: () -> Unit) {
+fun StipendiScreen(vm: SpeseViewModel) {
     val stipendi by vm.stipendi.collectAsStateWithLifecycle()
     val dati by vm.dati.collectAsStateWithLifecycle()
     val importStipendio by vm.importStipendio.collectAsStateWithLifecycle()
@@ -433,13 +435,10 @@ fun StipendiDialog(vm: SpeseViewModel, onChiudi: () -> Unit) {
         if (uri != null && tipo != null) vm.importaBustaPaga(uri, tipo.id)
     }
 
-    Dialog(onDismissRequest = onChiudi, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
-        Surface(modifier = Modifier.fillMaxSize(), tonalElevation = 4.dp) {
-            Column(modifier = Modifier.fillMaxSize().paddingBarreDialog().padding(12.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("Stipendi", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
-                    IconButton(onClick = onChiudi) { Icon(Icons.Filled.Close, contentDescription = "Chiudi") }
-                }
+    // Anno mostrato nella tabella (predefinito quello corrente).
+    var anno by rememberSaveable { mutableStateOf(YearMonth.now().year) }
+
+            Column(modifier = Modifier.fillMaxSize().padding(12.dp)) {
                 if (tipo == null) {
                     Text("Nessuno stipendio in anagrafica (menu ⋮ › Anagrafica stipendi).", modifier = Modifier.padding(16.dp))
                 } else {
@@ -450,6 +449,11 @@ fun StipendiDialog(vm: SpeseViewModel, onChiudi: () -> Unit) {
                         tipo.valuta + (tipo.contoValutaId?.let { " · accredito su ${dati.etichetta(it)}" } ?: ""),
                         style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 6.dp)
                     )
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 4.dp)) {
+                        IconButton(onClick = { anno-- }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, contentDescription = "Anno precedente") }
+                        Text(anno.toString(), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        IconButton(onClick = { anno++ }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = "Anno successivo") }
+                    }
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(vertical = 6.dp)) {
                         Button(onClick = { sceltaFile.launch(arrayOf("application/pdf", "image/*")) }) {
                             Icon(Icons.Filled.UploadFile, contentDescription = null, modifier = Modifier.padding(end = 6.dp))
@@ -500,7 +504,7 @@ fun StipendiDialog(vm: SpeseViewModel, onChiudi: () -> Unit) {
                     }
                     TabellaStipendi(
                         voci = vociTipo.filter { it.id !in nascoste },
-                        righe = stipendi.stipendiDi(tipo.id).sortedByDescending { it.mese },
+                        righe = stipendi.stipendiDi(tipo.id).filter { it.mese.startsWith("$anno-") }.sortedByDescending { it.mese },
                         importi = stipendi.importiPerStipendio,
                         percentuali = stipendi.percentualiPerStipendio,
                         sostituzioni = stipendi.sostituzioniPerStipendio,
@@ -522,8 +526,6 @@ fun StipendiDialog(vm: SpeseViewModel, onChiudi: () -> Unit) {
                     )
                 }
             }
-        }
-    }
 
     cella?.takeIf { it.second.calcolata }?.let { (s, v) ->
         // Voce calcolata: si modificano i valori di partenza in questo stipendio (le voci sommate non
@@ -751,7 +753,7 @@ private fun TabellaStipendi(
     modifier: Modifier = Modifier
 ) {
     if (righe.isEmpty()) {
-        Text("Nessuno stipendio registrato: importa una busta paga o aggiungi un mese.", modifier = modifier.padding(16.dp))
+        Text("Nessuno stipendio registrato nell'anno: importa una busta paga o aggiungi un mese.", modifier = modifier.padding(16.dp))
         return
     }
     val orizzontale = rememberScrollState()
@@ -762,6 +764,11 @@ private fun TabellaStipendi(
     val coloreManuale = if (MaterialTheme.colorScheme.surface.luminance() < 0.5f) Color(0x66B59B00) else Color(0xFFFFF3B0)
     fun sfondo(i: Int) = if (i % 2 == 1) zebra else Color.Transparent
     fun testo(cent: Long?) = cent?.let { formattaCent(it, valuta) }.orEmpty()
+    // Valori di ogni stipendio (registrati e calcolati, con tutte le voci anche nascoste).
+    val valoriPerStipendio = righe.associate { s ->
+        s.id to valoriStipendio(tutteLeVoci, importi[s.id].orEmpty(), percentuali[s.id].orEmpty(), sostituzioni[s.id].orEmpty())
+    }
+    val coloreTotali = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f)
     Column(modifier = modifier) {
         Row {
             CellaReport("Mese", null, L_MESE_STIPENDIO, grassetto = true, alta = true)
@@ -788,9 +795,7 @@ private fun TabellaStipendi(
             }
             Column(modifier = Modifier.verticalScroll(verticale).horizontalScroll(orizzontale)) {
                 righe.forEachIndexed { i, s ->
-                    // Valori registrati e calcolati.
-                    // Calcolo con tutte le voci (anche le colonne nascoste) e le sostituzioni dello stipendio.
-                    val valori = valoriStipendio(tutteLeVoci, importi[s.id].orEmpty(), percentuali[s.id].orEmpty(), sostituzioni[s.id].orEmpty())
+                    val valori = valoriPerStipendio[s.id].orEmpty()
                     Row {
                         voci.forEach { v ->
                             if (v.calcolata) {
@@ -810,6 +815,16 @@ private fun TabellaStipendi(
                             }
                         }
                     }
+                }
+            }
+        }
+        // Totali dell'anno mostrato per ogni colonna, fermi in fondo.
+        Row {
+            CellaReport("Totale", null, L_MESE_STIPENDIO, grassetto = true, alta = true, sfondo = coloreTotali)
+            Row(modifier = Modifier.horizontalScroll(orizzontale)) {
+                voci.forEach { v ->
+                    val valori = righe.mapNotNull { valoriPerStipendio[it.id]?.get(v.id) }
+                    CellaReport(if (valori.isEmpty()) "" else testo(valori.sum()), null, L_VOCE_STIPENDIO, grassetto = true, alta = true, sfondo = coloreTotali)
                 }
             }
         }
