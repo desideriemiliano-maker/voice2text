@@ -224,7 +224,7 @@ internal fun GraficoSerie(
     }
 }
 
-private tailrec fun Context.trovaActivity(): Activity? = when (this) {
+internal tailrec fun Context.trovaActivity(): Activity? = when (this) {
     is Activity -> this
     is ContextWrapper -> baseContext.trovaActivity()
     else -> null

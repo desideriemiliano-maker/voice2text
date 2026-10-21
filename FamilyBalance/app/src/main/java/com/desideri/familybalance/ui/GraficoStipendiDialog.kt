@@ -20,6 +20,22 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import kotlin.math.roundToInt
+import kotlinx.coroutines.Job
+import android.content.pm.ActivityInfo
+import androidx.core.view.WindowInsetsControllerCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowCompat
+import androidx.compose.ui.window.DialogWindowProvider
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.material.icons.filled.FullscreenExit
+import androidx.compose.material.icons.filled.Fullscreen
+import androidx.compose.material.icons.filled.Replay
+import androidx.compose.material.icons.filled.FastRewind
+import androidx.compose.material.icons.filled.FastForward
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
@@ -64,9 +80,7 @@ import com.desideri.familybalance.logica.formattaMeseBreve
 import kotlinx.coroutines.launch
 import java.time.YearMonth
 import kotlin.math.PI
-import kotlin.math.abs
 import kotlin.math.cos
-import kotlin.math.floor
 import kotlin.math.sin
 
 /**
@@ -93,7 +107,6 @@ fun GraficoStipendiDialog(
     var radar by rememberSaveable { mutableStateOf(false) }
     var tipo by rememberSaveable { mutableStateOf(TipoGrafico.LINEA) }
     var tendenza by rememberSaveable { mutableStateOf(false) }
-    var scalaComune by rememberSaveable { mutableStateOf(false) }
 
     val vociScelte = voci.filter { it in scelte }
     val righe = stipendi.filter { YearMonth.parse(it.mese) in da..a }.sortedBy { it.mese }
@@ -119,14 +132,9 @@ fun GraficoStipendiDialog(
                     FilterChip(selected = radar, onClick = { radar = true }, label = { Text("Radar") })
                     TipoGrafico.entries.forEach { t -> FilterChip(selected = !radar && tipo == t, onClick = { radar = false; tipo = t }, label = { Text(t.etichetta) }) }
                 }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    if (radar) {
-                        Text("Stessa scala per tutte le voci", style = MaterialTheme.typography.labelMedium, modifier = Modifier.weight(1f))
-                        Switch(checked = scalaComune, onCheckedChange = { scalaComune = it })
-                    } else {
-                        Text("Tendenza", style = MaterialTheme.typography.labelMedium, modifier = Modifier.weight(1f))
-                        Switch(checked = tendenza, onCheckedChange = { tendenza = it })
-                    }
+                if (!radar) Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Tendenza", style = MaterialTheme.typography.labelMedium, modifier = Modifier.weight(1f))
+                    Switch(checked = tendenza, onCheckedChange = { tendenza = it })
                 }
                 HorizontalDivider()
                 Spacer(Modifier.height(8.dp))
@@ -135,7 +143,7 @@ fun GraficoStipendiDialog(
                         Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
                             Text("Scegli almeno una voce e un periodo con stipendi.", style = MaterialTheme.typography.bodyMedium)
                         }
-                    radar -> RadarStipendi(vociScelte, righe, valoriPerStipendio, serie, valuta, scalaComune, Modifier.fillMaxWidth().weight(1f))
+                    radar -> RadarStipendi(vociScelte, righe, valoriPerStipendio, valuta, Modifier.fillMaxWidth().weight(1f))
                     else -> {
                         Row(
                             horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -163,126 +171,196 @@ fun GraficoStipendiDialog(
     }
 }
 
+private const val VELOCITA_MINIMA_RADAR = 0.25f
+private const val VELOCITA_MASSIMA_RADAR = 8f
+private val COLORE_RADAR = Color(0xFF3B82F6)
+
 /**
- * Radar: un asse per voce, il poligono di un mese. Con ▶ il poligono si trasforma da un mese al
- * successivo; lo slider sceglie il mese. Ogni asse va da zero al massimo (in valore assoluto) della
- * voce nel periodo, o al massimo di tutte le voci con [scalaComune]; il contorno tratteggiato è il
- * primo mese del periodo.
+ * Radar animato (come in WorkoutAnalyzer): un asse per voce, normalizzato sul minimo e il massimo
+ * della voce nel periodo (il minimo al centro, il massimo sul bordo). L'animazione parte dal primo
+ * mese e il poligono si trasforma da un mese al successivo; il mese indicato e i valori accanto
+ * agli assi passano al successivo a metà transizione. Controlli: decelera, play/pausa, accelera,
+ * ricomincia, slider per scegliere il mese e schermo pieno in orizzontale.
  */
 @Composable
 private fun RadarStipendi(
     voci: List<VoceStipendio>,
     righe: List<Stipendio>,
     valoriPerStipendio: Map<Long, Map<Long, Long>>,
-    serie: List<SerieGrafico>,
     valuta: String,
-    scalaComune: Boolean,
     modifier: Modifier
 ) {
-    // Valori assoluti (centesimi) per mese e voce; senza valore vale zero.
-    val valori = righe.map { s -> voci.map { v -> abs(valoriPerStipendio[s.id]?.get(v.id) ?: 0L).toDouble() } }
-    val massimi = voci.indices.map { i -> valori.maxOf { it[i] } }
-    val massimoComune = massimi.maxOrNull() ?: 0.0
-    val n = righe.size
-    val progresso = remember(righe, voci) { Animatable((n - 1).toFloat()) }
-    var inRiproduzione by remember(righe, voci) { mutableStateOf(false) }
-    val scope = rememberCoroutineScope()
-    LaunchedEffect(inRiproduzione) {
-        if (inRiproduzione && n > 1) {
-            if (progresso.value >= n - 1) progresso.snapTo(0f)
-            progresso.animateTo((n - 1).toFloat(), tween(((n - 1 - progresso.value) * 900).toInt().coerceAtLeast(1), easing = LinearEasing))
+    val frazioniPerRiga = remember(righe, voci, valoriPerStipendio) {
+        val minMax = voci.map { v ->
+            righe.mapNotNull { valoriPerStipendio[it.id]?.get(v.id) }.takeIf { it.isNotEmpty() }?.let { it.min() to it.max() }
         }
-        inRiproduzione = false
+        righe.map { s ->
+            voci.mapIndexed { k, v ->
+                val valore = valoriPerStipendio[s.id]?.get(v.id)
+                val mm = minMax[k]
+                if (valore == null || mm == null) 0f
+                else if (mm.first == mm.second) 1f
+                else ((valore - mm.first).toFloat() / (mm.second - mm.first)).coerceIn(0f, 1f)
+            }
+        }
     }
-    val p = progresso.value.coerceIn(0f, (n - 1).coerceAtLeast(0).toFloat())
-    val i0 = floor(p).toInt().coerceIn(0, n - 1)
-    val i1 = (i0 + 1).coerceAtMost(n - 1)
-    val f = (p - i0).toDouble()
-    val correnti = voci.indices.map { k -> valori[i0][k] * (1 - f) + valori[i1][k] * f }
-    val meseCorrente = righe[if (f >= 0.5) i1 else i0]
-    fun scala(k: Int) = (if (scalaComune) massimoComune else massimi[k]).takeIf { it > 0 } ?: 1.0
+    val transizioni = (righe.size - 1).coerceAtLeast(1)
+    val progresso = remember { Animatable(0f) }
+    var inPausa by remember { mutableStateOf(false) }
+    var animazione by remember { mutableStateOf<Job?>(null) }
+    var velocita by remember { mutableStateOf(1f) }
+    var schermoIntero by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
 
-    val coloreGriglia = MaterialTheme.colorScheme.outlineVariant
-    val coloreTesto = MaterialTheme.colorScheme.onSurfaceVariant
-    val colore = MaterialTheme.colorScheme.primary
+    // Un secondo per mese a velocità 1.
+    fun avvia(daZero: Boolean = false) {
+        if (righe.size < 2) return
+        animazione?.cancel()
+        animazione = scope.launch {
+            if (daZero) progresso.snapTo(0f)
+            val durata = (transizioni * 1000 / velocita).toInt().coerceAtLeast(1)
+            progresso.animateTo(1f, tween((durata * (1f - progresso.value)).toInt().coerceAtLeast(0), easing = LinearEasing))
+            inPausa = true
+        }
+    }
+    // Voci o periodo cambiati: si riparte dal primo mese.
+    LaunchedEffect(frazioniPerRiga) {
+        inPausa = false
+        avvia(daZero = true)
+    }
+
+    val continuo = progresso.value * transizioni
+    val base = continuo.toInt().coerceIn(0, (righe.size - 2).coerceAtLeast(0))
+    val frazione = (continuo - base).coerceIn(0f, 1f)
+    val vicino = continuo.roundToInt().coerceIn(0, righe.lastIndex)
+    val frazioniCorrenti = if (righe.size < 2) frazioniPerRiga.first()
+    else frazioniPerRiga[base].indices.map { k -> frazioniPerRiga[base][k] + (frazioniPerRiga[base + 1][k] - frazioniPerRiga[base][k]) * frazione }
+    val rigaCorrente = righe[vicino]
+    val valoriCorrenti = voci.map { v -> valoriPerStipendio[rigaCorrente.id]?.get(v.id)?.let { formattaCent(it, valuta) } }
+
+    val coloreEtichette = MaterialTheme.colorScheme.onSurfaceVariant
+    val coloreLinee = MaterialTheme.colorScheme.outlineVariant
     val misuraTesto = rememberTextMeasurer()
 
-    Column(modifier) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = { inRiproduzione = !inRiproduzione }, enabled = n > 1) {
-                Icon(if (inRiproduzione) Icons.Filled.Pause else Icons.Filled.PlayArrow, contentDescription = if (inRiproduzione) "Pausa" else "Riproduci")
-            }
-            Text(formattaMese(YearMonth.parse(meseCorrente.mese)), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-        }
-        if (n > 1) {
-            Slider(
-                value = p, valueRange = 0f..(n - 1).toFloat(),
-                onValueChange = { v -> inRiproduzione = false; scope.launch { progresso.snapTo(v) } }
-            )
-        }
-        Canvas(Modifier.fillMaxWidth().weight(1f)) {
-            val centro = Offset(size.width / 2, size.height / 2)
-            val raggio = minOf(size.width, size.height) / 2 * 0.72f
-            val assi = voci.size.coerceAtLeast(1)
-            fun angolo(k: Int) = -PI / 2 + 2 * PI * k / assi
-            fun punto(k: Int, r: Double) = Offset(
-                centro.x + (raggio * r * cos(angolo(k))).toFloat(),
-                centro.y + (raggio * r * sin(angolo(k))).toFloat()
-            )
-            // Griglia: anelli al 25/50/75/100% e un asse per voce con il nome.
-            listOf(0.25, 0.5, 0.75, 1.0).forEach { r ->
-                val anello = Path()
-                (0 until assi).forEach { k -> val q = punto(k, r); if (k == 0) anello.moveTo(q.x, q.y) else anello.lineTo(q.x, q.y) }
-                anello.close()
-                drawPath(anello, coloreGriglia, style = Stroke(1.dp.toPx()))
-            }
-            (0 until assi).forEach { k ->
-                drawLine(coloreGriglia, centro, punto(k, 1.0), strokeWidth = 1.dp.toPx())
-                val etichetta = misuraTesto.measure(voci[k].descrizione, style = TextStyle(fontSize = 11.sp, color = serie[k].colore, fontWeight = FontWeight.SemiBold))
-                val q = punto(k, 1.12)
-                val x = (q.x - etichetta.size.width / 2f).coerceIn(0f, (size.width - etichetta.size.width).coerceAtLeast(0f))
-                val y = (q.y - etichetta.size.height / 2f).coerceIn(0f, (size.height - etichetta.size.height).coerceAtLeast(0f))
-                drawText(etichetta, topLeft = Offset(x, y))
-            }
-            fun poligono(v: List<Double>): Path = Path().apply {
-                v.forEachIndexed { k, x -> val q = punto(k, (x / scala(k)).coerceIn(0.0, 1.0)); if (k == 0) moveTo(q.x, q.y) else lineTo(q.x, q.y) }
-                close()
-            }
-            if (assi >= 2) {
-                // Primo mese del periodo, come riferimento.
-                drawPath(
-                    poligono(valori.first()), coloreTesto,
-                    style = Stroke(1.5.dp.toPx(), pathEffect = androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(10f, 8f), 0f))
+    @Composable
+    fun Contenuto(modificatore: Modifier) {
+        Column(modificatore) {
+            Canvas(Modifier.fillMaxWidth().weight(1f)) {
+                val centro = Offset(size.width / 2, size.height / 2)
+                val raggio = minOf(size.width, size.height) / 2 * 0.62f
+                val assi = voci.size
+                fun angolo(k: Int) = -PI / 2 + 2 * PI * k / assi
+                fun vertice(k: Int, r: Float) = Offset(
+                    centro.x + (raggio * r * cos(angolo(k))).toFloat(),
+                    centro.y + (raggio * r * sin(angolo(k))).toFloat()
                 )
-                val attuale = poligono(correnti)
-                drawPath(attuale, colore.copy(alpha = 0.25f))
-                drawPath(attuale, colore, style = Stroke(2.dp.toPx()))
-            }
-            correnti.forEachIndexed { k, x -> drawCircle(serie[k].colore, radius = 4.dp.toPx(), center = punto(k, (x / scala(k)).coerceIn(0.0, 1.0))) }
-        }
-        // Valori del mese mostrato (quelli registrati, con il segno).
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(top = 4.dp)
-        ) {
-            voci.forEachIndexed { k, v ->
-                Column {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Box(Modifier.size(10.dp).background(serie[k].colore, CircleShape))
-                        Spacer(Modifier.width(4.dp))
-                        Text(v.descrizione, style = MaterialTheme.typography.labelSmall)
+                // Griglia: anelli al 25/50/75/100% e gli assi dal centro.
+                listOf(0.25f, 0.5f, 0.75f, 1f).forEach { r ->
+                    val anello = Path()
+                    (0 until assi).forEach { k -> val q = vertice(k, r); if (k == 0) anello.moveTo(q.x, q.y) else anello.lineTo(q.x, q.y) }
+                    anello.close()
+                    drawPath(anello, coloreLinee, style = Stroke(1.5f))
+                }
+                (0 until assi).forEach { k -> drawLine(coloreLinee, centro, vertice(k, 1f), strokeWidth = 1.5f) }
+                // Poligono dei valori, interpolato tra un mese e il successivo.
+                if (assi >= 2) {
+                    val dati = Path()
+                    (0 until assi).forEach { k ->
+                        val q = vertice(k, frazioniCorrenti.getOrElse(k) { 0f })
+                        if (k == 0) dati.moveTo(q.x, q.y) else dati.lineTo(q.x, q.y)
                     }
-                    Text(
-                        valoriPerStipendio[meseCorrente.id]?.get(v.id)?.let { formattaCent(it, valuta) } ?: "—",
-                        style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold
-                    )
+                    dati.close()
+                    drawPath(dati, COLORE_RADAR.copy(alpha = 0.35f))
+                    drawPath(dati, COLORE_RADAR, style = Stroke(3f))
+                }
+                (0 until assi).forEach { k -> drawCircle(COLORE_RADAR, radius = 5f, center = vertice(k, frazioniCorrenti.getOrElse(k) { 0f })) }
+                // Nome della voce appena fuori dall'anello esterno, con sotto il valore del mese indicato.
+                (0 until assi).forEach { k ->
+                    val nome = misuraTesto.measure(voci[k].descrizione, style = TextStyle(fontSize = 11.sp, color = coloreEtichette))
+                    val valore = valoriCorrenti[k]?.let {
+                        misuraTesto.measure(it, style = TextStyle(fontSize = 11.sp, color = COLORE_RADAR, fontWeight = FontWeight.Bold))
+                    }
+                    val q = vertice(k, 1.2f)
+                    val altezza = nome.size.height + (valore?.size?.height ?: 0)
+                    val y = (q.y - altezza / 2f).coerceIn(0f, (size.height - altezza).coerceAtLeast(0f))
+                    fun x(w: Int) = (q.x - w / 2f).coerceIn(0f, (size.width - w).coerceAtLeast(0f))
+                    drawText(nome, topLeft = Offset(x(nome.size.width), y))
+                    valore?.let { drawText(it, topLeft = Offset(x(it.size.width), y + nome.size.height)) }
                 }
             }
+            Text(
+                formattaMese(YearMonth.parse(rigaCorrente.mese)),
+                style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold,
+                textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
+            )
+            if (righe.size >= 2) {
+                Slider(
+                    value = progresso.value,
+                    onValueChange = { v ->
+                        animazione?.cancel()
+                        inPausa = true
+                        scope.launch { progresso.snapTo(v) }
+                    }
+                )
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                    IconButton(onClick = { velocita = (velocita / 2f).coerceAtLeast(VELOCITA_MINIMA_RADAR); if (!inPausa) avvia() }) {
+                        Icon(Icons.Filled.FastRewind, contentDescription = "Decelera")
+                    }
+                    IconButton(onClick = {
+                        if (inPausa) {
+                            if (progresso.value >= 1f) avvia(daZero = true) else avvia()
+                            inPausa = false
+                        } else {
+                            animazione?.cancel()
+                            inPausa = true
+                        }
+                    }) {
+                        Icon(if (inPausa) Icons.Filled.PlayArrow else Icons.Filled.Pause, contentDescription = if (inPausa) "Riproduci" else "Pausa")
+                    }
+                    IconButton(onClick = { velocita = (velocita * 2f).coerceAtMost(VELOCITA_MASSIMA_RADAR); if (!inPausa) avvia() }) {
+                        Icon(Icons.Filled.FastForward, contentDescription = "Accelera")
+                    }
+                    IconButton(onClick = { avvia(daZero = true); inPausa = false }) {
+                        Icon(Icons.Filled.Replay, contentDescription = "Ricomincia")
+                    }
+                    Text("Velocità x" + velocita.toString().removeSuffix(".0").replace('.', ','), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                    IconButton(onClick = { schermoIntero = !schermoIntero }) {
+                        Icon(
+                            if (schermoIntero) Icons.Filled.FullscreenExit else Icons.Filled.Fullscreen,
+                            contentDescription = if (schermoIntero) "Esci dallo schermo pieno" else "Schermo pieno"
+                        )
+                    }
+                }
+            }
+            Text(
+                "Ogni asse va dal valore più basso (al centro) al più alto (sul bordo) della voce nel periodo.",
+                style = MaterialTheme.typography.bodySmall, color = coloreEtichette
+            )
         }
-        Text(
-            (if (scalaComune) "Assi sulla stessa scala (il valore più alto del periodo)." else "Ogni asse va da zero al valore più alto della voce nel periodo.") +
-                " Valori assoluti; tratteggiato il primo mese.",
-            style = MaterialTheme.typography.bodySmall, color = coloreTesto, modifier = Modifier.padding(top = 4.dp)
-        )
+    }
+
+    Contenuto(modifier)
+    if (schermoIntero) {
+        Dialog(
+            onDismissRequest = { schermoIntero = false },
+            properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
+        ) {
+            val vista = LocalView.current
+            val activity = LocalContext.current.trovaActivity()
+            DisposableEffect(Unit) {
+                // Orizzontale e barre di sistema nascoste finché il radar è a schermo pieno.
+                val orientamento = activity?.requestedOrientation
+                activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                val finestra = (vista.parent as? DialogWindowProvider)?.window
+                val controllo = finestra?.let { WindowCompat.getInsetsController(it, vista) }
+                controllo?.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                controllo?.hide(WindowInsetsCompat.Type.systemBars())
+                onDispose {
+                    controllo?.show(WindowInsetsCompat.Type.systemBars())
+                    if (activity != null && orientamento != null) activity.requestedOrientation = orientamento
+                }
+            }
+            Surface(modifier = Modifier.fillMaxSize()) { Contenuto(Modifier.fillMaxSize().padding(8.dp)) }
+        }
     }
 }
