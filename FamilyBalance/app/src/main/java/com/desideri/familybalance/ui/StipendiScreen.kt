@@ -87,6 +87,7 @@ import com.desideri.familybalance.data.VoceStipendio
 import com.desideri.familybalance.data.valoriStipendio
 import com.desideri.familybalance.data.calcoliStipendio
 import com.desideri.familybalance.data.dipendenzeVoce
+import com.desideri.familybalance.data.livelliVoci
 import com.desideri.familybalance.logica.centInTesto
 import com.desideri.familybalance.logica.formattaCent
 import com.desideri.familybalance.logica.formattaMese
@@ -565,7 +566,7 @@ fun StipendiScreen(vm: SpeseViewModel) {
             text = {
                 Text(
                     "Celle in giallo: valori modificati a mano. Tieni premuta un'intestazione e trascinala per spostare la colonna. " +
-                        "Tocca una cella per modificarla, il mese per cambiarlo o eliminarlo; tieni premuto il mese per il dettaglio dei calcoli (una cella calcolata mostra i suoi, con «Modifica» per cambiarli). Icone: importa busta paga, aggiungi un mese, " +
+                        "Tocca una cella per modificarla, il mese per cambiarlo o eliminarlo, un totale per il suo dettaglio; tieni premuto il mese per il dettaglio dei calcoli (una cella calcolata mostra i suoi, con «Modifica» per cambiarli). Icone: importa busta paga, aggiungi un mese, " +
                         "colonne mostrate."
                 )
             },
@@ -886,6 +887,69 @@ private fun DettaglioCalcoliDialog(
     )
 }
 
+/**
+ * Dettaglio della riga dei totali: con [voce] i valori mese per mese e la loro somma; senza, il
+ * totale di ogni voce, prima le registrate e poi le calcolate da quelle con meno dipendenze.
+ */
+@Composable
+private fun DettaglioTotaliDialog(
+    voce: VoceStipendio?,
+    voci: List<VoceStipendio>,
+    righe: List<Stipendio>,
+    valoriPerStipendio: Map<Long, Map<Long, Long>>,
+    valuta: String,
+    onChiudi: () -> Unit
+) {
+    fun testo(cent: Long?) = cent?.let { formattaCent(it, valuta) } ?: "—"
+    fun totale(v: VoceStipendio) = righe.mapNotNull { valoriPerStipendio[it.id]?.get(v.id) }.takeIf { it.isNotEmpty() }?.sum()
+    @Composable
+    fun Riga(etichetta: String, valore: String, grassetto: Boolean = false, nota: String? = null) {
+        Row(verticalAlignment = Alignment.Top, modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(etichetta, style = MaterialTheme.typography.bodyMedium, fontWeight = if (grassetto) FontWeight.Bold else null)
+                nota?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+            }
+            Text(valore, style = MaterialTheme.typography.bodyMedium, fontWeight = if (grassetto) FontWeight.Bold else null, modifier = Modifier.padding(start = 8.dp))
+        }
+    }
+    val mesi = righe.sortedBy { it.mese }
+    AlertDialog(
+        onDismissRequest = onChiudi,
+        title = { Text((voce?.let { "${it.descrizione} · " } ?: "Totali · ") + mesi.firstOrNull()?.mese?.take(4).orEmpty()) },
+        text = {
+            Column(modifier = Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                if (voce != null) {
+                    if (voce.calcolata) Text("ƒ " + testoFormula(voce, voci), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    val conValore = mesi.filter { valoriPerStipendio[it.id]?.get(voce.id) != null }
+                    if (conValore.isEmpty()) Text("Nessun valore nell'anno.", style = MaterialTheme.typography.bodySmall)
+                    conValore.forEachIndexed { i, s ->
+                        Riga((if (i == 0) "" else "+ ") + formattaMese(YearMonth.parse(s.mese)), testo(valoriPerStipendio[s.id]?.get(voce.id)))
+                    }
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+                    Riga("= Totale", testo(totale(voce)), grassetto = true)
+                } else {
+                    val livelli = livelliVoci(voci)
+                    val ordinate = voci.sortedBy { livelli[it.id] ?: 0 }
+                    Text("Voci registrate", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
+                    ordinate.filter { !it.calcolata }.forEach { v -> Riga(v.descrizione, testo(totale(v))) }
+                    val calcolate = ordinate.filter { it.calcolata }
+                    if (calcolate.isNotEmpty()) {
+                        HorizontalDivider(modifier = Modifier.padding(vertical = 6.dp))
+                        Text("Voci calcolate", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
+                        Text(
+                            "Totale dei valori calcolati mese per mese (percentuali e arrotondamenti si applicano a ogni stipendio).",
+                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        calcolate.forEach { v -> Riga("ƒ " + v.descrizione, testo(totale(v)), grassetto = true, nota = testoFormula(v, voci)) }
+                    }
+                    Text("Tocca il totale di una colonna per il dettaglio mese per mese.", style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 6.dp))
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onChiudi) { Text("Chiudi") } }
+    )
+}
+
 /** Tabella degli stipendi: mese fermo a sinistra, colonne delle voci che scorrono insieme. */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -921,6 +985,12 @@ private fun TabellaStipendi(
         s.id to valoriStipendio(tutteLeVoci, importi[s.id].orEmpty(), percentuali[s.id].orEmpty(), sostituzioni[s.id].orEmpty())
     }
     val coloreTotali = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f)
+    // Dettaglio dei totali: di tutte le voci (voceTotale null) o mese per mese di una voce.
+    var dettaglioTotale by remember { mutableStateOf(false) }
+    var voceTotale by remember { mutableStateOf<VoceStipendio?>(null) }
+    if (dettaglioTotale) {
+        DettaglioTotaliDialog(voceTotale, tutteLeVoci, righe, valoriPerStipendio, valuta, onChiudi = { dettaglioTotale = false })
+    }
     Column(modifier = modifier) {
         Row {
             CellaReport("Mese", null, L_MESE_STIPENDIO, grassetto = true, alta = true)
@@ -972,11 +1042,17 @@ private fun TabellaStipendi(
         }
         // Totali dell'anno mostrato per ogni colonna, fermi in fondo.
         Row {
-            CellaReport("Totale", null, L_MESE_STIPENDIO, grassetto = true, alta = true, sfondo = coloreTotali)
+            CellaReport(
+                "Totale", null, L_MESE_STIPENDIO, grassetto = true, alta = true, sfondo = coloreTotali,
+                modifier = Modifier.clickable { voceTotale = null; dettaglioTotale = true }
+            )
             Row(modifier = Modifier.horizontalScroll(orizzontale)) {
                 voci.forEach { v ->
                     val valori = righe.mapNotNull { valoriPerStipendio[it.id]?.get(v.id) }
-                    CellaReport(if (valori.isEmpty()) "" else testo(valori.sum()), null, L_VOCE_STIPENDIO, grassetto = true, alta = true, sfondo = coloreTotali)
+                    CellaReport(
+                        if (valori.isEmpty()) "" else testo(valori.sum()), null, L_VOCE_STIPENDIO, grassetto = true, alta = true, sfondo = coloreTotali,
+                        modifier = Modifier.clickable { voceTotale = v; dettaglioTotale = true }
+                    )
                 }
             }
         }
