@@ -567,7 +567,20 @@ fun StipendiDialog(vm: SpeseViewModel, onChiudi: () -> Unit) {
                     }
                 }) { Text("Salva") }
             },
-            dismissButton = { TextButton(onClick = { cella = null }) { Text("Annulla") } }
+            dismissButton = {
+                Row {
+                    // Voci sommate cambiate a mano o percentuale cambiata: si torna ai valori importati e all'anagrafica.
+                    val daRipristinare = addendi.filter { stipendi.importatiPerStipendio[s.id]?.containsKey(it.id) == true }.map { it.id }
+                    val percentualeManuale = v.percentuale != null && v.id in stipendi.manualiPerStipendio[s.id].orEmpty()
+                    if (daRipristinare.isNotEmpty() || percentualeManuale) {
+                        TextButton(onClick = {
+                            vm.ripristinaImportati(s.id, daRipristinare, if (percentualeManuale) listOf(v) else emptyList())
+                            cella = null
+                        }) { Text("Ripristina importati") }
+                    }
+                    TextButton(onClick = { cella = null }) { Text("Annulla") }
+                }
+            }
         )
     }
     cella?.takeIf { !it.second.calcolata }?.let { (s, v) ->
@@ -597,7 +610,17 @@ fun StipendiDialog(vm: SpeseViewModel, onChiudi: () -> Unit) {
                     }
                 }) { Text("Salva") }
             },
-            dismissButton = { TextButton(onClick = { cella = null }) { Text("Annulla") } }
+            dismissButton = {
+                Row {
+                    // Valore cambiato a mano: si può tornare a quello importato.
+                    stipendi.importatiPerStipendio[s.id]?.get(v.id)?.let { importato ->
+                        TextButton(onClick = { vm.ripristinaImportati(s.id, listOf(v.id)); cella = null }) {
+                            Text("Ripristina ${formattaCent(importato, tipo?.valuta ?: "EUR")}")
+                        }
+                    }
+                    TextButton(onClick = { cella = null }) { Text("Annulla") }
+                }
+            }
         )
     }
     meseAperto?.let { s ->

@@ -119,6 +119,11 @@ data class DatiStipendi(
     fun vociDi(tipoId: Long) = voci.filter { it.tipoId == tipoId }
     fun stipendiDi(tipoId: Long) = stipendi.filter { it.tipoId == tipoId }
     val importiPerStipendio by lazy { importi.groupBy { it.stipendioId }.mapValues { (_, l) -> l.associate { it.voceId to it.importoCent } } }
+    /** Valori importati delle voci modificate a mano (id stipendio -> id voce -> centesimi). */
+    val importatiPerStipendio by lazy {
+        importi.filter { it.manuale && it.importoImportatoCent != null }.groupBy { it.stipendioId }
+            .mapValues { (_, l) -> l.associate { it.voceId to it.importoImportatoCent!! } }
+    }
     /** Voci modificate a mano in ogni stipendio (id stipendio -> id voci). */
     val manualiPerStipendio by lazy { importi.filter { it.manuale }.groupBy { it.stipendioId }.mapValues { (_, l) -> l.map { it.voceId }.toSet() } }
     /** Percentuali delle voci calcolate memorizzate in ogni stipendio (id stipendio -> id voce -> %). */
@@ -229,7 +234,8 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
         conPercentuale.forEach { v ->
             val nuovo = com.desideri.familybalance.data.ImportoStipendio(
                 stipendioId = stipendioId, voceId = v.id, importoCent = valori[v.id] ?: 0L, percentuale = percentuali[v.id],
-                manuale = importi.firstOrNull { it.voceId == v.id }?.manuale ?: false
+                manuale = importi.firstOrNull { it.voceId == v.id }?.manuale ?: false,
+                importoImportatoCent = importi.firstOrNull { it.voceId == v.id }?.importoImportatoCent
             )
             val attuale = importi.firstOrNull { it.voceId == v.id }
             if (attuale?.importoCent != nuovo.importoCent || attuale.percentuale != nuovo.percentuale) stipendiDao.salvaImporto(nuovo)
@@ -247,11 +253,42 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /** Salva a mano l'importo di una voce, tenendo il valore importato (o quello di prima) per il ripristino. */
+    private suspend fun salvaManuale(stipendioId: Long, voceId: Long, importoCent: Long) {
+        val attuale = stipendiDao.importi(stipendioId).firstOrNull { it.voceId == voceId }
+        val importato = attuale?.importoImportatoCent ?: attuale?.takeIf { !it.manuale && it.percentuale == null }?.importoCent
+        stipendiDao.salvaImporto(
+            com.desideri.familybalance.data.ImportoStipendio(
+                stipendioId = stipendioId, voceId = voceId, importoCent = importoCent, manuale = true, importoImportatoCent = importato
+            )
+        )
+    }
+
     /** Importo di una voce in uno stipendio; null lo toglie. */
     fun impostaImportoStipendio(stipendioId: Long, voceId: Long, importoCent: Long?) = viewModelScope.launch {
         db.withTransaction {
             if (importoCent == null) stipendiDao.eliminaImporto(stipendioId, voceId)
-            else stipendiDao.salvaImporto(com.desideri.familybalance.data.ImportoStipendio(stipendioId = stipendioId, voceId = voceId, importoCent = importoCent, manuale = true))
+            else salvaManuale(stipendioId, voceId, importoCent)
+            aggiornaCalcolate(stipendioId)
+        }
+    }
+
+    /**
+     * Riporta le voci [voci] dello stipendio al valore importato e le percentuali delle voci calcolate
+     * [percentualiDa] a quella dell'anagrafica; non sono più modificate a mano.
+     */
+    fun ripristinaImportati(stipendioId: Long, voci: Collection<Long>, percentualiDa: Collection<com.desideri.familybalance.data.VoceStipendio> = emptyList()) = viewModelScope.launch {
+        db.withTransaction {
+            val importi = stipendiDao.importi(stipendioId)
+            voci.forEach { id ->
+                val x = importi.firstOrNull { it.voceId == id } ?: return@forEach
+                val importato = x.importoImportatoCent ?: return@forEach
+                stipendiDao.salvaImporto(x.copy(importoCent = importato, manuale = false))
+            }
+            percentualiDa.forEach { v ->
+                val x = importi.firstOrNull { it.voceId == v.id } ?: return@forEach
+                stipendiDao.salvaImporto(x.copy(percentuale = v.percentuale, manuale = false))
+            }
             aggiornaCalcolate(stipendioId)
         }
     }
@@ -264,7 +301,7 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
         db.withTransaction {
             importi.forEach { (voceId, cent) ->
                 if (cent == null) stipendiDao.eliminaImporto(stipendioId, voceId)
-                else stipendiDao.salvaImporto(com.desideri.familybalance.data.ImportoStipendio(stipendioId = stipendioId, voceId = voceId, importoCent = cent, manuale = true))
+                else salvaManuale(stipendioId, voceId, cent)
             }
             percentuale?.let { (voceId, p) ->
                 stipendiDao.salvaImporto(com.desideri.familybalance.data.ImportoStipendio(stipendioId = stipendioId, voceId = voceId, importoCent = 0, percentuale = p, manuale = true))
@@ -365,7 +402,10 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
             val stipendioId = stipendiDao.stipendio(tipoId, mese.toString())?.id
                 ?: stipendiDao.inserisciStipendio(com.desideri.familybalance.data.Stipendio(tipoId = tipoId, mese = mese.toString()))
             righe.groupBy { voceId(it) }.forEach { (voce, rr) ->
-                stipendiDao.salvaImporto(com.desideri.familybalance.data.ImportoStipendio(stipendioId = stipendioId, voceId = voce, importoCent = rr.sumOf { it.importoCent }))
+                val totale = rr.sumOf { it.importoCent }
+                stipendiDao.salvaImporto(
+                    com.desideri.familybalance.data.ImportoStipendio(stipendioId = stipendioId, voceId = voce, importoCent = totale, importoImportatoCent = totale)
+                )
             }
             aggiornaCalcolate(stipendioId, tipoId)
         }
