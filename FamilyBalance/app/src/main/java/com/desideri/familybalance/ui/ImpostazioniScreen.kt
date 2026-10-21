@@ -61,7 +61,7 @@ fun ImpostazioniScreen(vm: SpeseViewModel, onIndietro: () -> Unit) {
                 label = { Text("Target di risparmio mensile (EUR)") },
                 supportingText = { Text("Risparmio atteso ogni mese (entrate − spese correnti): usato nel Bilancio per il delta e le previsioni.") },
                 singleLine = true,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), visualTransformation = SeparatoreMigliaia,
                 modifier = Modifier.fillMaxWidth()
             )
             OutlinedTextField(

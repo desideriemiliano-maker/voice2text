@@ -280,7 +280,7 @@ private fun VoceDialog(
                         label = { Text("Importo previsto EUR") },
                         supportingText = { Text("Vuoto = media delle ultime 6 pagate") },
                         singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), visualTransformation = SeparatoreMigliaia,
                         modifier = Modifier.fillMaxWidth()
                     )
                 }

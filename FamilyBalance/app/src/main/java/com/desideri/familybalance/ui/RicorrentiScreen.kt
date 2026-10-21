@@ -419,7 +419,7 @@ internal fun DettaglioRicorrenteDialog(vm: SpeseViewModel, dati: DatiApp, riga: 
                         onValueChange = { importoNuova = it; errore = null },
                         label = { Text("Importo previsto (EUR)") },
                         singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), visualTransformation = SeparatoreMigliaia,
                         modifier = Modifier.fillMaxWidth()
                     )
                     CampoData("Data prevista", dataNuova, { dataNuova = it; errore = null }, Modifier.fillMaxWidth(), consentiVuoto = true)
@@ -450,7 +450,7 @@ internal fun DettaglioRicorrenteDialog(vm: SpeseViewModel, dati: DatiApp, riga: 
                         onValueChange = { importo = it; errore = null },
                         label = { Text("Importo previsto (EUR)") },
                         singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), visualTransformation = SeparatoreMigliaia,
                         modifier = Modifier.fillMaxWidth()
                     )
                     CampoData("Data prevista", data, { data = it }, Modifier.fillMaxWidth(), consentiVuoto = true)
@@ -544,7 +544,7 @@ internal fun DettaglioRicorrenteDialog(vm: SpeseViewModel, dati: DatiApp, riga: 
                     onValueChange = { importoCerca = it },
                     label = { Text("Importo da cercare") },
                     singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), visualTransformation = SeparatoreMigliaia,
                     modifier = Modifier.fillMaxWidth()
                 )
                 val centCerca = testoInCent(importoCerca)?.let { abs(it) }

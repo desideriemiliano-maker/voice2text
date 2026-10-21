@@ -163,7 +163,7 @@ private fun ContoDialog(
                             label = { Text("Saldo iniziale") },
                             enabled = attive[v] == true,
                             singleLine = true,
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), visualTransformation = SeparatoreMigliaia,
                             modifier = Modifier.weight(1f)
                         )
                     }

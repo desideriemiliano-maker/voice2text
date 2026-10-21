@@ -374,7 +374,7 @@ private fun PannelloFiltri(filtri: Filtri, dati: DatiApp, onFiltri: (Filtri) -> 
                     onValueChange = { onFiltri(filtri.copy(importoMin = it)) },
                     label = { Text("Importo da") },
                     singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), visualTransformation = SeparatoreMigliaia,
                     modifier = Modifier.weight(1f)
                 )
                 OutlinedTextField(
@@ -382,7 +382,7 @@ private fun PannelloFiltri(filtri: Filtri, dati: DatiApp, onFiltri: (Filtri) -> 
                     onValueChange = { onFiltri(filtri.copy(importoMax = it)) },
                     label = { Text("Importo a") },
                     singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), visualTransformation = SeparatoreMigliaia,
                     modifier = Modifier.weight(1f)
                 )
             }

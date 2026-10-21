@@ -184,7 +184,7 @@ fun OperazioneDialog(
                     onValueChange = { importo = it },
                     label = { Text("Importo ${valutaPropria ?: ""}") },
                     singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), visualTransformation = SeparatoreMigliaia,
                     modifier = Modifier.fillMaxWidth()
                 )
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -230,7 +230,7 @@ fun OperazioneDialog(
                             onValueChange = { importoDest = it },
                             label = { Text("Importo in $valutaDest") },
                             singleLine = true,
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), visualTransformation = SeparatoreMigliaia,
                             modifier = Modifier.fillMaxWidth()
                         )
                     }

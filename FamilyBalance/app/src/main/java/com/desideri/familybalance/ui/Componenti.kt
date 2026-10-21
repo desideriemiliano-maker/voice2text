@@ -381,3 +381,37 @@ private fun trovaActivity(context: android.content.Context): android.app.Activit
     }
     return null
 }
+
+/**
+ * Mostra i separatori delle migliaia nei campi degli importi ("1234,56" appare "1.234,56") senza
+ * cambiare il testo scritto: la parte intera è quella prima della prima virgola (o punto).
+ */
+object SeparatoreMigliaia : androidx.compose.ui.text.input.VisualTransformation {
+    override fun filter(text: androidx.compose.ui.text.AnnotatedString): androidx.compose.ui.text.input.TransformedText {
+        val s = text.text
+        val inizio = if (s.startsWith("-") || s.startsWith("+")) 1 else 0
+        val fine = (inizio until s.length).firstOrNull { s[it] == ',' || s[it] == '.' } ?: s.length
+        if (fine - inizio <= 3 || (inizio until fine).any { !s[it].isDigit() }) {
+            return androidx.compose.ui.text.input.TransformedText(text, androidx.compose.ui.text.input.OffsetMapping.Identity)
+        }
+        val versoMostrato = IntArray(s.length + 1)
+        val versoOriginale = ArrayList<Int>()
+        val out = StringBuilder()
+        for (i in s.indices) {
+            if (i in (inizio + 1) until fine && (fine - i) % 3 == 0) {
+                out.append('.')
+                versoOriginale += i
+            }
+            versoMostrato[i] = out.length
+            out.append(s[i])
+            versoOriginale += i
+        }
+        versoMostrato[s.length] = out.length
+        versoOriginale += s.length
+        val mappa = object : androidx.compose.ui.text.input.OffsetMapping {
+            override fun originalToTransformed(offset: Int) = versoMostrato[offset.coerceIn(0, s.length)]
+            override fun transformedToOriginal(offset: Int) = versoOriginale[offset.coerceIn(0, versoOriginale.lastIndex)]
+        }
+        return androidx.compose.ui.text.input.TransformedText(androidx.compose.ui.text.AnnotatedString(out.toString()), mappa)
+    }
+}

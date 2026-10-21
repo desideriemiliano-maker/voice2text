@@ -559,7 +559,7 @@ fun StipendiDialog(vm: SpeseViewModel, onChiudi: () -> Unit) {
                                         }
                                     }
                                 },
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth()
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), visualTransformation = SeparatoreMigliaia, modifier = Modifier.fillMaxWidth()
                             )
                         } else {
                             OutlinedTextField(
@@ -574,7 +574,7 @@ fun StipendiDialog(vm: SpeseViewModel, onChiudi: () -> Unit) {
                                         }
                                     }
                                 },
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth()
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), visualTransformation = SeparatoreMigliaia, modifier = Modifier.fillMaxWidth()
                             )
                         }
                     }
@@ -639,7 +639,7 @@ fun StipendiDialog(vm: SpeseViewModel, onChiudi: () -> Unit) {
                     OutlinedTextField(
                         value = testo, onValueChange = { testo = it; errore = null },
                         label = { Text("Importo (${tipo?.valuta ?: ""}, negativo per le trattenute)") },
-                        singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), visualTransformation = SeparatoreMigliaia,
                         modifier = Modifier.fillMaxWidth()
                     )
                     errore?.let { Text(it, color = MaterialTheme.colorScheme.error) }
@@ -845,7 +845,7 @@ private fun ConfermaImportStipendioDialog(vm: SpeseViewModel, tipo: TipoStipendi
                         OutlinedTextField(
                             value = r.importo, onValueChange = { righe[i] = r.copy(importo = it); errore = null },
                             label = { Text("Importo") }, singleLine = true,
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), visualTransformation = SeparatoreMigliaia,
                             modifier = Modifier.fillMaxWidth()
                         )
                     }
