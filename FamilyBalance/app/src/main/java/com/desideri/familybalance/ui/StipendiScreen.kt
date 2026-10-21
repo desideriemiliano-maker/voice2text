@@ -21,6 +21,13 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Functions
+import androidx.compose.material.icons.filled.DragIndicator
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.runtime.key
+import androidx.compose.ui.zIndex
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.UploadFile
@@ -138,6 +145,24 @@ private fun TipoStipendioDialog(vm: SpeseViewModel, tipo: TipoStipendio, vociIni
     var prossimoId by remember { mutableStateOf(-1L) }
     fun nuovoId(): Long = prossimoId.also { prossimoId-- }
     var formula by remember { mutableStateOf<Int?>(null) }
+    // Riordino delle voci trascinando la maniglia: scambio con la vicina oltre metà altezza.
+    var trascinata by remember { mutableStateOf<Long?>(null) }
+    var spostamento by remember { mutableStateOf(0f) }
+    val altezze = remember { HashMap<Long, Int>() }
+    val spazioPx = with(androidx.compose.ui.platform.LocalDensity.current) { 8.dp.toPx() }
+    fun trascina(id: Long, dy: Float) {
+        spostamento += dy
+        val i = voci.indexOfFirst { it.id == id }
+        val sotto = voci.getOrNull(i + 1)
+        val sopra = voci.getOrNull(i - 1)
+        if (sotto != null && spostamento > (altezze[sotto.id] ?: 0) / 2f) {
+            voci.add(i + 1, voci.removeAt(i))
+            spostamento -= (altezze[sotto.id] ?: 0) + spazioPx
+        } else if (sopra != null && spostamento < -(altezze[sopra.id] ?: 0) / 2f) {
+            voci.add(i - 1, voci.removeAt(i))
+            spostamento += (altezze[sopra.id] ?: 0) + spazioPx
+        }
+    }
     var confermaElimina by remember { mutableStateOf(false) }
     val contiValuta = dati.contiValutaOrdinati.filter { it.valuta == valuta }
 
@@ -171,38 +196,57 @@ private fun TipoStipendioDialog(vm: SpeseViewModel, tipo: TipoStipendio, vociIni
                 HorizontalDivider()
                 Text("Voci", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
                 voci.forEachIndexed { i, v ->
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        OutlinedTextField(
-                            value = v.descrizione, onValueChange = { voci[i] = v.copy(descrizione = it) },
-                            singleLine = true, modifier = Modifier.weight(1f)
-                        )
-                        IconButton(onClick = { voci.add(i - 1, voci.removeAt(i)) }, enabled = i > 0) { Icon(Icons.Filled.KeyboardArrowUp, contentDescription = "Su") }
-                        IconButton(onClick = { voci.add(i + 1, voci.removeAt(i)) }, enabled = i < voci.lastIndex) { Icon(Icons.Filled.KeyboardArrowDown, contentDescription = "Giù") }
-                        IconButton(onClick = { formula = i }) {
-                            Icon(
-                                Icons.Filled.Functions, contentDescription = "Formula",
-                                tint = if (v.calcolata) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+                    key(v.id) {
+                        Column(
+                            modifier = Modifier
+                                .then(if (trascinata == v.id) Modifier.zIndex(1f).graphicsLayer { translationY = spostamento } else Modifier)
+                                .onSizeChanged { altezze[v.id] = it.height }
+                        ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    // Maniglia: trascinandola si sposta la voce.
+                                    Icon(
+                                        Icons.Filled.DragIndicator, contentDescription = "Trascina per riordinare",
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.padding(end = 4.dp).pointerInput(v.id) {
+                                            detectDragGestures(
+                                                onDragStart = { trascinata = v.id; spostamento = 0f },
+                                                onDrag = { change, delta -> change.consume(); trascina(v.id, delta.y) },
+                                                onDragEnd = { trascinata = null; spostamento = 0f },
+                                                onDragCancel = { trascinata = null; spostamento = 0f }
+                                            )
+                                        }
+                                    )
+                                    OutlinedTextField(
+                                        value = v.descrizione, onValueChange = { voci[i] = v.copy(descrizione = it) },
+                                        singleLine = true, modifier = Modifier.weight(1f)
+                                    )
+                                    IconButton(onClick = { formula = i }) {
+                                        Icon(
+                                            Icons.Filled.Functions, contentDescription = "Formula",
+                                            tint = if (v.calcolata) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                    IconButton(onClick = { voci.removeAt(i) }) { Icon(Icons.Filled.Delete, contentDescription = "Togli la voce") }
+                                }
+                                // Nomi con cui la voce compare nelle buste paga (ricordati dagli import).
+                                if (v.listaNomiImport.isNotEmpty()) {
+                                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 8.dp)) {
+                                        Text(
+                                            "In busta paga: " + v.listaNomiImport.joinToString(", "),
+                                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                        TextButton(onClick = { voci[i] = v.copy(nomiImport = null) }) { Text("Dimentica") }
+                                    }
+                                }
+                                if (v.calcolata) {
+                                    Text(
+                                        "= " + testoFormula(v, voci),
+                                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.padding(start = 8.dp)
+                                    )
+                                }
                         }
-                        IconButton(onClick = { voci.removeAt(i) }) { Icon(Icons.Filled.Delete, contentDescription = "Togli la voce") }
-                    }
-                    // Nomi con cui la voce compare nelle buste paga (ricordati dagli import).
-                    if (v.listaNomiImport.isNotEmpty()) {
-                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 8.dp)) {
-                            Text(
-                                "In busta paga: " + v.listaNomiImport.joinToString(", "),
-                                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.weight(1f)
-                            )
-                            TextButton(onClick = { voci[i] = v.copy(nomiImport = null) }) { Text("Dimentica") }
-                        }
-                    }
-                    if (v.calcolata) {
-                        Text(
-                            "= " + testoFormula(v, voci),
-                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.padding(start = 8.dp)
-                        )
                     }
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
