@@ -28,6 +28,7 @@ import androidx.compose.material.icons.filled.ViewColumn
 import androidx.compose.material.icons.filled.Restore
 import androidx.compose.material.icons.filled.DragIndicator
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.runtime.key
 import androidx.compose.ui.zIndex
 import androidx.compose.ui.graphics.graphicsLayer
@@ -969,7 +970,7 @@ private fun IntestazioneTrascinabile(
             .zIndex(if (trascinata) 1f else 0f)
             .graphicsLayer { translationX = spostamento }
             .pointerInput(Unit) {
-                androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress(
+                detectDragGesturesAfterLongPress(
                     onDragStart = { trascinata = true },
                     onDrag = { change, delta -> change.consume(); spostamento += delta.x },
                     onDragEnd = {
