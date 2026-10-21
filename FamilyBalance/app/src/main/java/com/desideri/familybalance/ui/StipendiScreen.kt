@@ -377,7 +377,7 @@ private fun FormulaVoceDialog(voce: VoceStipendio, altre: List<VoceStipendio>, o
                             style = MaterialTheme.typography.bodySmall
                         )
                     }
-                    Text("Le voci calcolate non si importano dalla busta paga e non entrano nel totale.", style = MaterialTheme.typography.bodySmall)
+                    Text("Le voci calcolate non si importano dalla busta paga.", style = MaterialTheme.typography.bodySmall)
                 }
                 errore?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             }
@@ -565,7 +565,7 @@ fun StipendiDialog(vm: SpeseViewModel, onChiudi: () -> Unit) {
     }
 }
 
-/** Tabella degli stipendi: mese fermo a sinistra, colonne delle voci e del totale che scorrono insieme. */
+/** Tabella degli stipendi: mese fermo a sinistra, colonne delle voci che scorrono insieme. */
 @Composable
 private fun TabellaStipendi(
     voci: List<VoceStipendio>,
@@ -584,7 +584,6 @@ private fun TabellaStipendi(
     val orizzontale = rememberScrollState()
     val verticale = rememberScrollState()
     val zebra = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
-    val coloreTotali = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f)
     val coloreCalcolate = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.35f)
     fun sfondo(i: Int) = if (i % 2 == 1) zebra else Color.Transparent
     fun testo(cent: Long?) = cent?.let { formattaCent(it, valuta) }.orEmpty()
@@ -593,7 +592,6 @@ private fun TabellaStipendi(
             CellaReport("Mese", null, L_MESE_STIPENDIO, grassetto = true, alta = true)
             Row(modifier = Modifier.horizontalScroll(orizzontale)) {
                 voci.forEach { CellaReport(if (it.calcolata) "ƒ ${it.descrizione}" else it.descrizione, null, L_VOCE_STIPENDIO, grassetto = true, alta = true, sfondo = if (it.calcolata) coloreCalcolate else Color.Transparent) }
-                CellaReport("Totale", null, L_VOCE_STIPENDIO, grassetto = true, alta = true, sfondo = coloreTotali)
             }
         }
         Row(modifier = Modifier.weight(1f)) {
@@ -607,7 +605,7 @@ private fun TabellaStipendi(
             }
             Column(modifier = Modifier.verticalScroll(verticale).horizontalScroll(orizzontale)) {
                 righe.forEachIndexed { i, s ->
-                    // Valori registrati e calcolati; il totale somma solo le voci non calcolate.
+                    // Valori registrati e calcolati.
                     val valori = valoriStipendio(voci, importi[s.id].orEmpty(), percentuali[s.id].orEmpty())
                     Row {
                         voci.forEach { v ->
@@ -622,7 +620,6 @@ private fun TabellaStipendi(
                                 CellaReport(testo(valori[v.id]), null, L_VOCE_STIPENDIO, alta = true, sfondo = sfondo(i), modifier = Modifier.clickable { onCella(s, v) })
                             }
                         }
-                        CellaReport(testo(voci.filterNot { it.calcolata }.mapNotNull { valori[it.id] }.sum()), null, L_VOCE_STIPENDIO, grassetto = true, alta = true, sfondo = coloreTotali)
                     }
                 }
             }
