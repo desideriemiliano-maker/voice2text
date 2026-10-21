@@ -48,7 +48,10 @@ data class VoceStipendio(
     /** Nomi con cui la voce compare nelle buste paga (separati da "|"), per riconoscerla agli import. */
     val nomiImport: String? = null,
     /** Voce calcolata: cifre decimali a cui arrotondare il risultato (null = nessun arrotondamento). */
-    val arrotondaDecimali: Int? = null
+    val arrotondaDecimali: Int? = null,
+    /** Arrotondamento all'ultima cifra 0 o 5 (es. con 1 decimale: 7,62 → 7,60 e 7,63 → 7,65). */
+    @androidx.room.ColumnInfo(defaultValue = "0")
+    val arrotondaCinque: Boolean = false
 ) {
     val idAddendi: List<Long> get() = addendi.orEmpty().split(',').mapNotNull { it.trim().toLongOrNull() }
     val listaNomiImport: List<String> get() = nomiImport.orEmpty().split('|').map { it.trim() }.filter { it.isNotEmpty() }
@@ -67,6 +70,12 @@ data class VoceStipendio(
  * voce) e quelli delle voci calcolate, anche a partire da altre voci calcolate (i riferimenti
  * circolari valgono zero). Senza nessun addendo valorizzato la voce calcolata resta vuota.
  */
+/** [cent] arrotondato a [decimali] cifre (0 o 1), all'ultima cifra 0 o 5 se [aCinque]; metà verso l'alto. */
+fun arrotonda(cent: Long, decimali: Int, aCinque: Boolean): Long {
+    val passo = (if (decimali == 0) 100L else 10L) / (if (aCinque) 2 else 1)
+    return java.math.BigDecimal(cent).divide(java.math.BigDecimal(passo)).setScale(0, java.math.RoundingMode.HALF_UP).toLong() * passo
+}
+
 fun valoriStipendio(voci: List<VoceStipendio>, importi: Map<Long, Long>, percentuali: Map<Long, Double> = emptyMap()): Map<Long, Long> {
     val perId = voci.associateBy { it.id }
     val risultato = HashMap<Long, Long?>()
@@ -80,8 +89,9 @@ fun valoriStipendio(voci: List<VoceStipendio>, importi: Map<Long, Long>, percent
         // La percentuale dello stipendio, se memorizzata, prevale su quella dell'anagrafica.
         val percentuale = if (v.percentuale != null) percentuali[id] ?: v.percentuale else null
         val calcolato = somma?.let { s -> percentuale?.let { Math.round(s * it / 100.0) } ?: s }
-            // Arrotondamento a [arrotondaDecimali] cifre (es. con 1: 7,64 → 7,6 e 7,68 → 7,7).
-            ?.let { c -> v.arrotondaDecimali?.takeIf { it in 0..1 }?.let { d -> java.math.BigDecimal(c).movePointLeft(2).setScale(d, java.math.RoundingMode.HALF_UP).movePointRight(2).toLong() } ?: c }
+            // Arrotondamento a [arrotondaDecimali] cifre (con 1: 7,64 → 7,6 e 7,68 → 7,7), o all'ultima
+            // cifra 0 o 5 con [arrotondaCinque] (con 1: 7,62 → 7,60 e 7,63 → 7,65).
+            ?.let { c -> v.arrotondaDecimali?.takeIf { it in 0..1 }?.let { d -> arrotonda(c, d, v.arrotondaCinque) } ?: c }
         risultato[id] = calcolato
         return calcolato
     }

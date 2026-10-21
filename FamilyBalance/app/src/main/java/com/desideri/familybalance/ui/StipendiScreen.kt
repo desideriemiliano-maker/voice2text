@@ -303,7 +303,9 @@ private fun testoFormula(v: VoceStipendio, voci: List<VoceStipendio>): String {
     if (nomi.isEmpty()) return "nessuna voce scelta"
     val somma = nomi.joinToString(" + ")
     val formula = v.percentuale?.let { p -> (if (nomi.size > 1) "($somma)" else somma) + " × ${p.toString().removeSuffix(".0").replace('.', ',')}%" } ?: somma
-    return formula + (v.arrotondaDecimali?.let { d -> ", arrotondato a " + if (d == 1) "1 decimale" else "$d decimali" } ?: "")
+    return formula + (v.arrotondaDecimali?.let { d ->
+        ", arrotondato a " + (if (d == 1) "1 decimale" else "$d decimali") + if (v.arrotondaCinque) " (a 0 o 5)" else ""
+    } ?: "")
 }
 
 /** Formula di una voce: calcolata o no; se calcolata, le voci da sommare e la percentuale facoltativa. */
@@ -314,6 +316,7 @@ private fun FormulaVoceDialog(voce: VoceStipendio, altre: List<VoceStipendio>, o
     var percentuale by remember { mutableStateOf(voce.percentuale?.toString()?.removeSuffix(".0")?.replace('.', ',') ?: "") }
     var arrotonda by remember { mutableStateOf(voce.arrotondaDecimali != null) }
     var decimali by remember { mutableStateOf(voce.arrotondaDecimali ?: 1) }
+    var aCinque by remember { mutableStateOf(voce.arrotondaCinque) }
     var errore by remember { mutableStateOf<String?>(null) }
     AlertDialog(
         onDismissRequest = onAnnulla,
@@ -351,8 +354,17 @@ private fun FormulaVoceDialog(voce: VoceStipendio, altre: List<VoceStipendio>, o
                             Text("Cifre decimali", style = MaterialTheme.typography.labelMedium)
                             listOf(0, 1).forEach { d -> FilterChip(selected = decimali == d, onClick = { decimali = d }, label = { Text(d.toString()) }) }
                         }
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().clickable { aCinque = !aCinque }) {
+                            Checkbox(checked = aCinque, onCheckedChange = { aCinque = it })
+                            Text("Ultima cifra a 0 o 5")
+                        }
                         Text(
-                            if (decimali == 1) "Es. 7,64 → 7,6 e 7,68 → 7,7" else "Es. 7,49 → 7 e 7,50 → 8",
+                            when {
+                                decimali == 1 && aCinque -> "Es. 7,62 → 7,60 e 7,63 → 7,65"
+                                decimali == 1 -> "Es. 7,64 → 7,6 e 7,68 → 7,7"
+                                aCinque -> "Es. 7,24 → 7,00 e 7,25 → 7,50"
+                                else -> "Es. 7,49 → 7 e 7,50 → 8"
+                            },
                             style = MaterialTheme.typography.bodySmall
                         )
                     }
@@ -365,12 +377,13 @@ private fun FormulaVoceDialog(voce: VoceStipendio, altre: List<VoceStipendio>, o
             TextButton(onClick = {
                 val p = percentuale.trim().replace(',', '.').takeIf { it.isNotEmpty() }?.let { it.toDoubleOrNull() ?: return@TextButton run { errore = "Percentuale non valida" } }
                 when {
-                    !calcolata -> onSalva(voce.copy(calcolata = false, addendi = null, percentuale = null, arrotondaDecimali = null))
+                    !calcolata -> onSalva(voce.copy(calcolata = false, addendi = null, percentuale = null, arrotondaDecimali = null, arrotondaCinque = false))
                     scelte.isEmpty() -> errore = "Scegli almeno una voce da sommare"
                     else -> onSalva(
                         voce.copy(
                             calcolata = true, addendi = altre.map { it.id }.filter { it in scelte }.joinToString(","), percentuale = p,
-                            arrotondaDecimali = if (arrotonda) decimali else null
+                            arrotondaDecimali = if (arrotonda) decimali else null,
+                            arrotondaCinque = arrotonda && aCinque
                         )
                     )
                 }
