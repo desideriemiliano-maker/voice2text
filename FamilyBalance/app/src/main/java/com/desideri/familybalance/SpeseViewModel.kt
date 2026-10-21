@@ -170,8 +170,9 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
         .stateIn(viewModelScope, SharingStarted.Eagerly, DatiStipendi())
 
     /**
-     * Salva una tipologia di stipendio con le sue [voci] nell'ordine dato (id 0 = nuova); le voci
-     * tolte vengono eliminate con i loro importi.
+     * Salva una tipologia di stipendio con le sue [voci] nell'ordine dato (id 0 o negativo = nuova; gli
+     * id negativi possono comparire negli addendi delle voci calcolate); le voci tolte vengono
+     * eliminate con i loro importi.
      */
     fun salvaTipoStipendio(tipo: com.desideri.familybalance.data.TipoStipendio, voci: List<com.desideri.familybalance.data.VoceStipendio>, onFatto: () -> Unit) = viewModelScope.launch {
         val nome = tipo.nome.trim()
@@ -180,10 +181,21 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
         if (pulite.map { it.descrizione.lowercase() }.distinct().size != pulite.size) return@launch messaggio("Ci sono voci con la stessa descrizione")
         db.withTransaction {
             val id = if (tipo.id == 0L) stipendiDao.inserisciTipo(tipo.copy(nome = nome)) else tipo.id.also { stipendiDao.aggiornaTipo(tipo.copy(nome = nome)) }
-            val tenute = pulite.filter { it.id != 0L }.map { it.id }.toSet()
+            val tenute = pulite.filter { it.id > 0L }.map { it.id }.toSet()
             stipendiDao.voci(id).filter { it.id !in tenute }.forEach { stipendiDao.eliminaVoce(it) }
-            pulite.forEachIndexed { i, v ->
-                if (v.id == 0L) stipendiDao.inserisciVoce(v.copy(tipoId = id, ordine = i)) else stipendiDao.aggiornaVoce(v.copy(tipoId = id, ordine = i))
+            // Prima si salvano tutte (le nuove ricevono il loro id), poi si sistemano gli addendi.
+            val nuoviId = HashMap<Long, Long>()
+            val salvate = pulite.mapIndexed { i, v ->
+                if (v.id <= 0L) {
+                    val nuovo = stipendiDao.inserisciVoce(v.copy(id = 0, tipoId = id, ordine = i))
+                    if (v.id < 0L) nuoviId[v.id] = nuovo
+                    v.copy(id = nuovo, tipoId = id, ordine = i)
+                } else v.copy(tipoId = id, ordine = i).also { stipendiDao.aggiornaVoce(it) }
+            }
+            val esistenti = salvate.map { it.id }.toSet()
+            salvate.filter { it.calcolata }.forEach { v ->
+                val addendi = v.idAddendi.map { nuoviId[it] ?: it }.filter { it in esistenti && it != v.id }
+                stipendiDao.aggiornaVoce(v.copy(addendi = addendi.joinToString(",").ifEmpty { null }))
             }
         }
         onFatto()
@@ -221,7 +233,7 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
         _importazioneInCorso.value = true
         try {
             val letta = com.desideri.familybalance.estratto.BustaPagaGemini(BuildConfig.GEMINI_API_KEY, RegistroPromptStore(getApplication()))
-                .leggi(getApplication(), uri, tipo.nome, tipo.valuta, dati.vociDi(tipoId).map { it.descrizione })
+                .leggi(getApplication(), uri, tipo.nome, tipo.valuta, dati.vociDi(tipoId).filterNot { it.calcolata }.map { it.descrizione })
             if (letta.voci.isEmpty()) messaggio("Nessuna voce trovata nella busta paga")
             else _importStipendio.value = ImportStipendio(tipoId, letta)
         } catch (e: Exception) {
@@ -248,7 +260,7 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
             suspend fun voceId(r: RigaImportStipendio): Long {
                 r.voceId?.let { return it }
                 val descrizione = r.nuovaVoce!!.trim()
-                voci.firstOrNull { it.descrizione.equals(descrizione, true) }?.let { return it.id }
+                voci.firstOrNull { it.descrizione.equals(descrizione, true) && !it.calcolata }?.let { return it.id }
                 val nuova = com.desideri.familybalance.data.VoceStipendio(tipoId = tipoId, descrizione = descrizione, ordine = voci.size)
                 return stipendiDao.inserisciVoce(nuova).also { voci += nuova.copy(id = it) }
             }

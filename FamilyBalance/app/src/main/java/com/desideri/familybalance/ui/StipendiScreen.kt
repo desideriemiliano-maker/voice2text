@@ -20,6 +20,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Functions
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.UploadFile
@@ -65,6 +66,7 @@ import com.desideri.familybalance.data.Stipendio
 import com.desideri.familybalance.data.TipoStipendio
 import com.desideri.familybalance.data.Valute
 import com.desideri.familybalance.data.VoceStipendio
+import com.desideri.familybalance.data.valoriStipendio
 import com.desideri.familybalance.logica.centInTesto
 import com.desideri.familybalance.logica.formattaCent
 import com.desideri.familybalance.logica.formattaMese
@@ -132,6 +134,10 @@ private fun TipoStipendioDialog(vm: SpeseViewModel, tipo: TipoStipendio, vociIni
     var obsoleto by remember { mutableStateOf(tipo.obsoleto) }
     val voci = remember { mutableStateListOf<VoceStipendio>().apply { addAll(vociIniziali) } }
     var nuovaVoce by remember { mutableStateOf("") }
+    // Le voci nuove hanno id negativi provvisori, così possono essere addendi di una voce calcolata.
+    var prossimoId by remember { mutableStateOf(-1L) }
+    fun nuovoId(): Long = prossimoId.also { prossimoId-- }
+    var formula by remember { mutableStateOf<Int?>(null) }
     var confermaElimina by remember { mutableStateOf(false) }
     val contiValuta = dati.contiValutaOrdinati.filter { it.valuta == valuta }
 
@@ -172,13 +178,26 @@ private fun TipoStipendioDialog(vm: SpeseViewModel, tipo: TipoStipendio, vociIni
                         )
                         IconButton(onClick = { voci.add(i - 1, voci.removeAt(i)) }, enabled = i > 0) { Icon(Icons.Filled.KeyboardArrowUp, contentDescription = "Su") }
                         IconButton(onClick = { voci.add(i + 1, voci.removeAt(i)) }, enabled = i < voci.lastIndex) { Icon(Icons.Filled.KeyboardArrowDown, contentDescription = "Giù") }
+                        IconButton(onClick = { formula = i }) {
+                            Icon(
+                                Icons.Filled.Functions, contentDescription = "Formula",
+                                tint = if (v.calcolata) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                         IconButton(onClick = { voci.removeAt(i) }) { Icon(Icons.Filled.Delete, contentDescription = "Togli la voce") }
+                    }
+                    if (v.calcolata) {
+                        Text(
+                            "= " + testoFormula(v, voci),
+                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.padding(start = 8.dp)
+                        )
                     }
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     OutlinedTextField(value = nuovaVoce, onValueChange = { nuovaVoce = it }, label = { Text("Nuova voce") }, singleLine = true, modifier = Modifier.weight(1f))
                     IconButton(onClick = {
-                        if (nuovaVoce.isNotBlank()) voci += VoceStipendio(tipoId = tipo.id, descrizione = nuovaVoce.trim())
+                        if (nuovaVoce.isNotBlank()) voci += VoceStipendio(id = nuovoId(), tipoId = tipo.id, descrizione = nuovaVoce.trim())
                         nuovaVoce = ""
                     }) { Icon(Icons.Filled.Add, contentDescription = "Aggiungi la voce") }
                 }
@@ -189,7 +208,7 @@ private fun TipoStipendioDialog(vm: SpeseViewModel, tipo: TipoStipendio, vociIni
         },
         confirmButton = {
             TextButton(onClick = {
-                val tutte = voci.toList() + listOfNotNull(nuovaVoce.trim().takeIf { it.isNotEmpty() }?.let { VoceStipendio(tipoId = tipo.id, descrizione = it) })
+                val tutte = voci.toList() + listOfNotNull(nuovaVoce.trim().takeIf { it.isNotEmpty() }?.let { VoceStipendio(id = nuovoId(), tipoId = tipo.id, descrizione = it) })
                 vm.salvaTipoStipendio(tipo.copy(nome = nome, valuta = valuta, contoValutaId = conto, obsoleto = obsoleto), tutte, onChiudi)
             }) { Text("Salva") }
         },
@@ -200,6 +219,10 @@ private fun TipoStipendioDialog(vm: SpeseViewModel, tipo: TipoStipendio, vociIni
             }
         }
     )
+    formula?.let { i ->
+        val voce = voci.getOrNull(i)
+        if (voce == null) formula = null else FormulaVoceDialog(voce, voci.filter { it.id != voce.id }, onSalva = { voci[i] = it; formula = null }, onAnnulla = { formula = null })
+    }
     if (confermaElimina) {
         AlertDialog(
             onDismissRequest = { confermaElimina = false },
@@ -215,6 +238,67 @@ private fun TipoStipendioDialog(vm: SpeseViewModel, tipo: TipoStipendio, vociIni
             dismissButton = { TextButton(onClick = { confermaElimina = false }) { Text("Annulla") } }
         )
     }
+}
+
+/** Formula di una voce calcolata in chiaro: "A + B" o "(A + B) × 23%". */
+private fun testoFormula(v: VoceStipendio, voci: List<VoceStipendio>): String {
+    val nomi = v.idAddendi.mapNotNull { id -> voci.firstOrNull { it.id == id }?.descrizione }
+    if (nomi.isEmpty()) return "nessuna voce scelta"
+    val somma = nomi.joinToString(" + ")
+    return v.percentuale?.let { p -> (if (nomi.size > 1) "($somma)" else somma) + " × ${p.toString().removeSuffix(".0").replace('.', ',')}%" } ?: somma
+}
+
+/** Formula di una voce: calcolata o no; se calcolata, le voci da sommare e la percentuale facoltativa. */
+@Composable
+private fun FormulaVoceDialog(voce: VoceStipendio, altre: List<VoceStipendio>, onSalva: (VoceStipendio) -> Unit, onAnnulla: () -> Unit) {
+    var calcolata by remember { mutableStateOf(voce.calcolata) }
+    val scelte = remember { mutableStateListOf<Long>().apply { addAll(voce.idAddendi) } }
+    var percentuale by remember { mutableStateOf(voce.percentuale?.toString()?.removeSuffix(".0")?.replace('.', ',') ?: "") }
+    var errore by remember { mutableStateOf<String?>(null) }
+    AlertDialog(
+        onDismissRequest = onAnnulla,
+        title = { Text("Formula · ${voce.descrizione}") },
+        text = {
+            Column(modifier = Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Voce calcolata", modifier = Modifier.weight(1f))
+                    Switch(checked = calcolata, onCheckedChange = { calcolata = it })
+                }
+                if (calcolata) {
+                    Text("Somma delle voci:", style = MaterialTheme.typography.labelLarge)
+                    if (altre.isEmpty()) Text("Aggiungi prima altre voci.", style = MaterialTheme.typography.bodySmall)
+                    altre.forEach { a ->
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().clickable {
+                            if (a.id in scelte) scelte.remove(a.id) else scelte.add(a.id)
+                        }) {
+                            Checkbox(checked = a.id in scelte, onCheckedChange = { if (it) scelte.add(a.id) else scelte.remove(a.id) })
+                            Text(a.descrizione + if (a.calcolata) " (calcolata)" else "")
+                        }
+                    }
+                    OutlinedTextField(
+                        value = percentuale, onValueChange = { percentuale = it; errore = null },
+                        label = { Text("Percentuale della somma (facoltativa)") },
+                        supportingText = { Text("Vuota = la somma intera; es. 23 = il 23% della somma.") },
+                        singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Text("Le voci calcolate non si importano dalla busta paga e non entrano nel totale.", style = MaterialTheme.typography.bodySmall)
+                }
+                errore?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                val p = percentuale.trim().replace(',', '.').takeIf { it.isNotEmpty() }?.let { it.toDoubleOrNull() ?: return@TextButton run { errore = "Percentuale non valida" } }
+                when {
+                    !calcolata -> onSalva(voce.copy(calcolata = false, addendi = null, percentuale = null))
+                    scelte.isEmpty() -> errore = "Scegli almeno una voce da sommare"
+                    else -> onSalva(voce.copy(calcolata = true, addendi = altre.map { it.id }.filter { it in scelte }.joinToString(","), percentuale = p))
+                }
+            }) { Text("OK") }
+        },
+        dismissButton = { TextButton(onClick = onAnnulla) { Text("Annulla") } }
+    )
 }
 
 // --- Stipendi registrati ---
@@ -370,13 +454,14 @@ private fun TabellaStipendi(
     val verticale = rememberScrollState()
     val zebra = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
     val coloreTotali = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f)
+    val coloreCalcolate = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.35f)
     fun sfondo(i: Int) = if (i % 2 == 1) zebra else Color.Transparent
     fun testo(cent: Long?) = cent?.let { formattaCent(it, valuta) }.orEmpty()
     Column(modifier = modifier) {
         Row {
             CellaReport("Mese", null, L_MESE_STIPENDIO, grassetto = true, alta = true)
             Row(modifier = Modifier.horizontalScroll(orizzontale)) {
-                voci.forEach { CellaReport(it.descrizione, null, L_VOCE_STIPENDIO, grassetto = true, alta = true) }
+                voci.forEach { CellaReport(if (it.calcolata) "ƒ ${it.descrizione}" else it.descrizione, null, L_VOCE_STIPENDIO, grassetto = true, alta = true, sfondo = if (it.calcolata) coloreCalcolate else Color.Transparent) }
                 CellaReport("Totale", null, L_VOCE_STIPENDIO, grassetto = true, alta = true, sfondo = coloreTotali)
             }
         }
@@ -391,12 +476,17 @@ private fun TabellaStipendi(
             }
             Column(modifier = Modifier.verticalScroll(verticale).horizontalScroll(orizzontale)) {
                 righe.forEachIndexed { i, s ->
-                    val delMese = importi[s.id].orEmpty()
+                    // Valori registrati e calcolati; il totale somma solo le voci non calcolate.
+                    val valori = valoriStipendio(voci, importi[s.id].orEmpty())
                     Row {
                         voci.forEach { v ->
-                            CellaReport(testo(delMese[v.id]), null, L_VOCE_STIPENDIO, alta = true, sfondo = sfondo(i), modifier = Modifier.clickable { onCella(s, v) })
+                            if (v.calcolata) {
+                                CellaReport(testo(valori[v.id]), null, L_VOCE_STIPENDIO, alta = true, sfondo = coloreCalcolate)
+                            } else {
+                                CellaReport(testo(valori[v.id]), null, L_VOCE_STIPENDIO, alta = true, sfondo = sfondo(i), modifier = Modifier.clickable { onCella(s, v) })
+                            }
                         }
-                        CellaReport(testo(voci.mapNotNull { delMese[it.id] }.sum()), null, L_VOCE_STIPENDIO, grassetto = true, alta = true, sfondo = coloreTotali)
+                        CellaReport(testo(voci.filterNot { it.calcolata }.mapNotNull { valori[it.id] }.sum()), null, L_VOCE_STIPENDIO, grassetto = true, alta = true, sfondo = coloreTotali)
                     }
                 }
             }
@@ -417,7 +507,7 @@ private fun ConfermaImportStipendioDialog(vm: SpeseViewModel, tipo: TipoStipendi
     val righe = remember(imp) {
         mutableStateListOf<RigaConferma>().apply {
             imp.letta.voci.forEach { l ->
-                add(RigaConferma(true, l.descrizione, voci.firstOrNull { it.descrizione.equals(l.descrizione, true) }?.id, centInTesto(l.importoCent)))
+                add(RigaConferma(true, l.descrizione, voci.firstOrNull { !it.calcolata && it.descrizione.equals(l.descrizione, true) }?.id, centInTesto(l.importoCent)))
             }
         }
     }
@@ -440,7 +530,7 @@ private fun ConfermaImportStipendioDialog(vm: SpeseViewModel, tipo: TipoStipendi
                         Text(r.descrizioneLetta, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
                     }
                     if (r.inclusa) {
-                        val opzioni = voci.map { Opzione(it.id, it.descrizione) } + Opzione(null, "Nuova voce: ${r.descrizioneLetta}")
+                        val opzioni = voci.filterNot { it.calcolata }.map { Opzione(it.id, it.descrizione) } + Opzione(null, "Nuova voce: ${r.descrizioneLetta}")
                         CampoScelta(
                             etichetta = "Voce",
                             selezionato = opzioni.firstOrNull { it.voceId == r.voceId },

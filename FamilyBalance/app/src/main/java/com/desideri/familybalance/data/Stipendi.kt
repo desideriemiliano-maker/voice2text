@@ -26,7 +26,11 @@ data class TipoStipendio(
     val obsoleto: Boolean = false
 )
 
-/** Una voce di una tipologia di stipendio (es. "Retribuzione", "Netto"), nell'ordine [ordine]. */
+/**
+ * Una voce di una tipologia di stipendio (es. "Retribuzione", "Netto"), nell'ordine [ordine]. Una
+ * voce [calcolata] non ha importi propri: vale la somma delle voci [addendi] (id separati da
+ * virgola), moltiplicata per [percentuale] / 100 se indicata.
+ */
 @Entity(
     tableName = "stipendi_voci",
     foreignKeys = [ForeignKey(entity = TipoStipendio::class, parentColumns = ["id"], childColumns = ["tipoId"], onDelete = ForeignKey.CASCADE)],
@@ -36,8 +40,36 @@ data class VoceStipendio(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val tipoId: Long,
     val descrizione: String,
-    val ordine: Int = 0
-)
+    val ordine: Int = 0,
+    @androidx.room.ColumnInfo(defaultValue = "0")
+    val calcolata: Boolean = false,
+    val addendi: String? = null,
+    val percentuale: Double? = null
+) {
+    val idAddendi: List<Long> get() = addendi.orEmpty().split(',').mapNotNull { it.trim().toLongOrNull() }
+}
+
+/**
+ * Importi (centesimi) di tutte le [voci] di uno stipendio: quelli registrati ([importi], per id
+ * voce) e quelli delle voci calcolate, anche a partire da altre voci calcolate (i riferimenti
+ * circolari valgono zero). Senza nessun addendo valorizzato la voce calcolata resta vuota.
+ */
+fun valoriStipendio(voci: List<VoceStipendio>, importi: Map<Long, Long>): Map<Long, Long> {
+    val perId = voci.associateBy { it.id }
+    val risultato = HashMap<Long, Long?>()
+    fun valore(id: Long, inCorso: Set<Long>): Long? {
+        if (id in risultato) return risultato[id]
+        val v = perId[id] ?: return null
+        if (!v.calcolata) return importi[id]
+        if (id in inCorso) return null
+        val parti = v.idAddendi.mapNotNull { valore(it, inCorso + id) }
+        val somma = if (parti.isEmpty()) null else parti.sum()
+        val calcolato = somma?.let { s -> v.percentuale?.let { Math.round(s * it / 100.0) } ?: s }
+        risultato[id] = calcolato
+        return calcolato
+    }
+    return voci.mapNotNull { v -> valore(v.id, emptySet())?.let { v.id to it } }.toMap()
+}
 
 /** Uno stipendio registrato (es. importato da una busta paga) di una tipologia, per il [mese] "yyyy-MM". */
 @Entity(
