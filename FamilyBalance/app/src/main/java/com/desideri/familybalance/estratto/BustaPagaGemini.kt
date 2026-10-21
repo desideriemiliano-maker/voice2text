@@ -30,8 +30,8 @@ data class BustaPagaLetta(val mese: YearMonth?, val voci: List<VoceBustaLetta>)
 class BustaPagaGemini(private val apiKey: String, private val registro: RegistroPromptStore? = null) {
 
     /**
-     * [vociNote]: le voci dell'anagrafica dello stipendio (nome e nomi con cui compaiono in busta):
-     * se ci sono si estraggono solo quelle, altrimenti tutte le voci con un importo.
+     * [vociNote]: le voci dell'anagrafica dello stipendio (nome e nomi con cui compaiono in busta),
+     * indicate a Gemini perché usi il loro nome; si estraggono comunque tutte le voci con un importo.
      */
     suspend fun leggi(context: Context, uri: Uri, nomeStipendio: String, valuta: String, vociNote: List<Pair<String, List<String>>>): BustaPagaLetta {
         if (apiKey.isBlank()) throw IllegalStateException("Chiave Gemini non configurata in questa build")
@@ -47,25 +47,22 @@ class BustaPagaGemini(private val apiKey: String, private val registro: Registro
             mime?.startsWith("image/") == true -> Part.fromBytes(bytes, mime)
             else -> throw IllegalArgumentException("Formato non supportato: usa un PDF o un'immagine della busta paga")
         }
-        val prompt = if (vociNote.isEmpty()) buildString {
-            // Nessuna voce in anagrafica: tutte le voci con un importo.
+        // Si estraggono sempre tutte le voci (possono essercene di nuove); i nomi noti servono solo a riconoscerle.
+        val prompt = buildString {
             append("Questa è una busta paga ($nomeStipendio, importi in $valuta). ")
             append("Indica il mese e l'anno di competenza dello stipendio (campo mese, formato YYYY-MM) ")
             append("e TUTTE le voci con un importo che lo compongono (competenze, trattenute, contributi, imposte, netto…), ")
             append("ignorando le voci senza importo, le basi di calcolo, le aliquote, le ore e i progressivi annui. ")
             append("Per ogni voce: descrizione (breve, come appare) e importo (numero in $valuta: positivo per competenze e netto, ")
             append("negativo per trattenute, contributi e imposte).")
-        } else buildString {
-            // Voci in anagrafica: si estraggono solo quelle, con il loro nome.
-            append("Questa è una busta paga ($nomeStipendio, importi in $valuta). ")
-            append("Indica il mese e l'anno di competenza dello stipendio (campo mese, formato YYYY-MM) ")
-            append("ed estrai SOLO le seguenti voci, ignorando tutte le altre: ")
-            append(vociNote.joinToString("; ") { (nome, alias) ->
-                "\"$nome\"" + if (alias.isNotEmpty()) " (in busta può comparire come " + alias.joinToString(" o ") { "\"$it\"" } + ")" else ""
-            })
-            append(". Per ogni voce trovata: descrizione (ESATTAMENTE il nome indicato sopra, non quello della busta) e importo ")
-            append("(numero in $valuta: positivo per competenze e netto, negativo per trattenute, contributi e imposte). ")
-            append("Le voci non presenti nella busta o senza importo non vanno incluse.")
+            if (vociNote.isNotEmpty()) {
+                append(" Voci già note per questo stipendio: ")
+                append(vociNote.joinToString("; ") { (nome, alias) ->
+                    "\"$nome\"" + if (alias.isNotEmpty()) " (in busta: " + alias.joinToString(" o ") { "\"$it\"" } + ")" else ""
+                })
+                append(". Se una voce della busta corrisponde a una di queste, usa ESATTAMENTE il nome indicato come descrizione; ")
+                append("altrimenti usa la descrizione come appare nella busta.")
+            }
         }
         val schema = Schema.builder()
             .type(Type.Known.OBJECT)

@@ -2,6 +2,7 @@ package com.desideri.familybalance.ui
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -782,7 +783,8 @@ private fun TabellaStipendi(
 }
 
 /** Riga modificabile della conferma dell'import: inclusa, voce di destinazione (o nuova) e importo. */
-private data class RigaConferma(val inclusa: Boolean, val descrizioneLetta: String, val voceId: Long?, val importo: String, val nomeNuova: String)
+/** [nuova]: voce mai vista negli import precedenti (né associata a una voce né esclusa). */
+private data class RigaConferma(val inclusa: Boolean, val descrizioneLetta: String, val voceId: Long?, val importo: String, val nomeNuova: String, val nuova: Boolean = false)
 
 /**
  * Conferma dell'import di una busta paga: mese (modificabile) e, per ogni voce letta, se includerla,
@@ -798,7 +800,14 @@ private fun ConfermaImportStipendioDialog(vm: SpeseViewModel, tipo: TipoStipendi
         mutableStateListOf<RigaConferma>().apply {
             imp.letta.voci.forEach { l ->
                 // Voce riconosciuta per descrizione o per un nome con cui è stata importata in passato.
-                add(RigaConferma(l.descrizione.trim().lowercase() !in escluse, l.descrizione, voci.firstOrNull { it.riconosce(l.descrizione) }?.id, centInTesto(l.importoCent), l.descrizione))
+                val riconosciuta = voci.firstOrNull { it.riconosce(l.descrizione) }
+                val esclusa = l.descrizione.trim().lowercase() in escluse
+                add(
+                    RigaConferma(
+                        !esclusa, l.descrizione, riconosciuta?.id, centInTesto(l.importoCent), l.descrizione,
+                        nuova = riconosciuta == null && !esclusa
+                    )
+                )
             }
         }
     }
@@ -815,14 +824,20 @@ private fun ConfermaImportStipendioDialog(vm: SpeseViewModel, tipo: TipoStipendi
                 SceltaMese("Mese dello stipendio", mese, { mese = it })
                 Text(
                     "Scegli le voci da includere, la voce dell'anagrafica a cui associarle (o una nuova, con il nome che vuoi) e l'importo (${tipo.valuta}). " +
-                        "Il nome letto dalla busta resta associato alla voce: ai prossimi import sarà riconosciuta.",
+                        "Il nome letto dalla busta resta associato alla voce: ai prossimi import sarà riconosciuta. " +
+                        "Le voci mai viste negli import precedenti sono evidenziate come NUOVA.",
                     style = MaterialTheme.typography.bodySmall
                 )
                 righe.forEachIndexed { i, r ->
                     HorizontalDivider()
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = if (r.nuova) Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.tertiaryContainer) else Modifier.fillMaxWidth()
+                    ) {
                         Checkbox(checked = r.inclusa, onCheckedChange = { righe[i] = r.copy(inclusa = it) })
                         Text(r.descrizioneLetta, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                        // Voce mai vista negli import precedenti.
+                        if (r.nuova) Text("NUOVA", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.tertiary, modifier = Modifier.padding(end = 8.dp))
                     }
                     if (r.inclusa) {
                         val opzioni = voci.filterNot { it.calcolata }.map { Opzione(it.id, it.descrizione) } + Opzione(null, "Nuova voce")
