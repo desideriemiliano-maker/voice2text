@@ -54,7 +54,9 @@ data class VoceStipendio(
     val arrotondaCinque: Boolean = false,
     /** Voce calcolata: il risultato cambia segno (es. una trattenuta calcolata da competenze positive). */
     @androidx.room.ColumnInfo(defaultValue = "0")
-    val invertiSegno: Boolean = false
+    val invertiSegno: Boolean = false,
+    /** Voce calcolata: valore fisso (centesimi, con segno) aggiunto alla somma delle voci; null = nessuno. */
+    val valoreFissoCent: Long? = null
 ) {
     val idAddendi: List<Long> get() = addendi.orEmpty().split(',').mapNotNull { it.trim().toLongOrNull() }
     val listaNomiImport: List<String> get() = nomiImport.orEmpty().split('|').map { it.trim() }.filter { it.isNotEmpty() }
@@ -94,7 +96,8 @@ fun valoriStipendio(
         if (!v.calcolata) return importi[id]
         if (id in inCorso) return null
         val parti = v.idAddendi.mapNotNull { a -> sostituzioni[id]?.get(a) ?: valore(a, inCorso + id) }
-        val somma = if (parti.isEmpty()) null else parti.sum()
+        // Somma delle voci più l'eventuale valore fisso (vuota se non c'è nessuno dei due).
+        val somma = if (parti.isEmpty() && v.valoreFissoCent == null) null else parti.sum() + (v.valoreFissoCent ?: 0L)
         // La percentuale dello stipendio, se memorizzata, prevale su quella dell'anagrafica.
         val percentuale = if (v.percentuale != null) percentuali[id] ?: v.percentuale else null
         val calcolato = somma?.let { s -> percentuale?.let { Math.round(s * it / 100.0) } ?: s }

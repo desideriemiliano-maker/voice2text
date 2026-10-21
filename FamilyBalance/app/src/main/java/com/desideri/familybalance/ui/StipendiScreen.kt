@@ -308,7 +308,8 @@ private fun testoPercentuale(p: Double): String = p.toString().removeSuffix(".0"
 
 /** Formula di una voce calcolata in chiaro: "A + B" o "(A + B) × 23%". */
 private fun testoFormula(v: VoceStipendio, voci: List<VoceStipendio>): String {
-    val nomi = v.idAddendi.mapNotNull { id -> voci.firstOrNull { it.id == id }?.descrizione }
+    val nomi = v.idAddendi.mapNotNull { id -> voci.firstOrNull { it.id == id }?.descrizione } +
+        listOfNotNull(v.valoreFissoCent?.let { formattaCent(it) })
     if (nomi.isEmpty()) return "nessuna voce scelta"
     val somma = nomi.joinToString(" + ")
     val base = v.percentuale?.let { p -> (if (nomi.size > 1) "($somma)" else somma) + " × ${p.toString().removeSuffix(".0").replace('.', ',')}%" } ?: somma
@@ -324,6 +325,7 @@ private fun FormulaVoceDialog(voce: VoceStipendio, altre: List<VoceStipendio>, o
     var calcolata by remember { mutableStateOf(voce.calcolata) }
     val scelte = remember { mutableStateListOf<Long>().apply { addAll(voce.idAddendi) } }
     var percentuale by remember { mutableStateOf(voce.percentuale?.toString()?.removeSuffix(".0")?.replace('.', ',') ?: "") }
+    var fisso by remember { mutableStateOf(voce.valoreFissoCent?.let { centInTesto(it) } ?: "") }
     var arrotonda by remember { mutableStateOf(voce.arrotondaDecimali != null) }
     var decimali by remember { mutableStateOf(voce.arrotondaDecimali ?: 1) }
     var aCinque by remember { mutableStateOf(voce.arrotondaCinque) }
@@ -339,7 +341,7 @@ private fun FormulaVoceDialog(voce: VoceStipendio, altre: List<VoceStipendio>, o
                     Switch(checked = calcolata, onCheckedChange = { calcolata = it })
                 }
                 if (calcolata) {
-                    Text("Somma delle voci:", style = MaterialTheme.typography.labelLarge)
+                    Text("Somma di voci e valore fisso:", style = MaterialTheme.typography.labelLarge)
                     if (altre.isEmpty()) Text("Aggiungi prima altre voci.", style = MaterialTheme.typography.bodySmall)
                     altre.forEach { a ->
                         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().clickable {
@@ -349,6 +351,13 @@ private fun FormulaVoceDialog(voce: VoceStipendio, altre: List<VoceStipendio>, o
                             Text(a.descrizione + if (a.calcolata) " (calcolata)" else "")
                         }
                     }
+                    OutlinedTextField(
+                        value = fisso, onValueChange = { fisso = it; errore = null },
+                        label = { Text("Valore fisso da sommare (facoltativo)") },
+                        supportingText = { Text("Aggiunto alla somma delle voci, prima della percentuale; negativo per sottrarlo.") },
+                        singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), visualTransformation = SeparatoreMigliaia,
+                        modifier = Modifier.fillMaxWidth()
+                    )
                     OutlinedTextField(
                         value = percentuale, onValueChange = { percentuale = it; errore = null },
                         label = { Text("Percentuale della somma (facoltativa)") },
@@ -394,15 +403,17 @@ private fun FormulaVoceDialog(voce: VoceStipendio, altre: List<VoceStipendio>, o
         confirmButton = {
             TextButton(onClick = {
                 val p = percentuale.trim().replace(',', '.').takeIf { it.isNotEmpty() }?.let { it.toDoubleOrNull() ?: return@TextButton run { errore = "Percentuale non valida" } }
+                val f = fisso.trim().takeIf { it.isNotEmpty() }?.let { testoInCent(it) ?: return@TextButton run { errore = "Valore fisso non valido" } }
                 when {
-                    !calcolata -> onSalva(voce.copy(calcolata = false, addendi = null, percentuale = null, arrotondaDecimali = null, arrotondaCinque = false, invertiSegno = false))
-                    scelte.isEmpty() -> errore = "Scegli almeno una voce da sommare"
+                    !calcolata -> onSalva(voce.copy(calcolata = false, addendi = null, percentuale = null, arrotondaDecimali = null, arrotondaCinque = false, invertiSegno = false, valoreFissoCent = null))
+                    scelte.isEmpty() && f == null -> errore = "Scegli almeno una voce da sommare o un valore fisso"
                     else -> onSalva(
                         voce.copy(
                             calcolata = true, addendi = altre.map { it.id }.filter { it in scelte }.joinToString(","), percentuale = p,
                             arrotondaDecimali = if (arrotonda) decimali else null,
                             arrotondaCinque = arrotonda && aCinque,
-                            invertiSegno = invertiSegno
+                            invertiSegno = invertiSegno,
+                            valoreFissoCent = f
                         )
                     )
                 }
