@@ -22,6 +22,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Functions
+import androidx.compose.material.icons.filled.ViewColumn
 import androidx.compose.material.icons.filled.Restore
 import androidx.compose.material.icons.filled.DragIndicator
 import androidx.compose.foundation.gestures.detectDragGestures
@@ -460,7 +461,10 @@ fun StipendiDialog(vm: SpeseViewModel, onChiudi: () -> Unit) {
                     // Colonne mostrate: le nascoste si ricordano solo se scelto (anche le voci nuove sono mostrate).
                     var nascoste by remember(tipo.id) { mutableStateOf(vm.colonneNascosteStipendio(tipo.id) ?: emptySet()) }
                     var ricordaColonne by remember(tipo.id) { mutableStateOf(vm.colonneNascosteStipendio(tipo.id) != null) }
-                    val vociTipo = stipendi.vociDi(tipo.id)
+                    // Ordine delle colonne scelto per questo stipendio (le voci nuove in coda), ricordato e nel backup.
+                    var ordine by remember(tipo.id) { mutableStateOf(vm.ordineColonne("stipendi_${tipo.id}")) }
+                    var sceltaOrdine by remember(tipo.id) { mutableStateOf(false) }
+                    val vociTipo = ordinaColonne(stipendi.vociDi(tipo.id), ordine) { it.id.toString() }
                     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(bottom = 6.dp)) {
                         MenuMultiplo(
                             "Colonne", vociTipo, vociTipo.filter { it.id !in nascoste }, { it.descrizione },
@@ -481,6 +485,18 @@ fun StipendiDialog(vm: SpeseViewModel, onChiudi: () -> Unit) {
                             })
                             Text("Ricorda", style = MaterialTheme.typography.bodySmall)
                         }
+                        IconButton(onClick = { sceltaOrdine = true }) { Icon(Icons.Filled.ViewColumn, contentDescription = "Ordine delle colonne") }
+                    }
+                    if (sceltaOrdine) {
+                        OrdineColonneDialog(
+                            vociTipo.map { it.descrizione },
+                            onConferma = { indici ->
+                                ordine = indici.map { vociTipo[it].id.toString() }
+                                vm.salvaOrdineColonne("stipendi_${tipo.id}", ordine)
+                                sceltaOrdine = false
+                            },
+                            onAnnulla = { sceltaOrdine = false }
+                        )
                     }
                     TabellaStipendi(
                         voci = vociTipo.filter { it.id !in nascoste },
