@@ -368,7 +368,7 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
         _importazioneInCorso.value = true
         try {
             val letta = com.desideri.familybalance.estratto.BustaPagaGemini(BuildConfig.GEMINI_API_KEY, RegistroPromptStore(getApplication()))
-                .leggi(getApplication(), uri, tipo.nome, tipo.valuta, dati.vociDi(tipoId).filterNot { it.calcolata }.flatMap { listOf(it.descrizione) + it.listaNomiImport }.distinct())
+                .leggi(getApplication(), uri, tipo.nome, tipo.valuta, dati.vociDi(tipoId).filterNot { it.calcolata }.map { it.descrizione to it.listaNomiImport.filterNot { a -> a.equals(it.descrizione, true) } })
             if (letta.voci.isEmpty()) messaggio("Nessuna voce trovata nella busta paga")
             else _importStipendio.value = ImportStipendio(tipoId, letta)
         } catch (e: Exception) {
