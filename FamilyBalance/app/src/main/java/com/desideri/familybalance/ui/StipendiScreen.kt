@@ -21,6 +21,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.automirrored.filled.ShowChart
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Functions
@@ -461,6 +462,7 @@ fun StipendiScreen(vm: SpeseViewModel) {
     var anno by rememberSaveable { mutableStateOf(YearMonth.now().year) }
     var mostraFiltroColonne by rememberSaveable { mutableStateOf(false) }
     var mostraInfo by remember { mutableStateOf(false) }
+    var mostraGrafico by remember { mutableStateOf(false) }
 
             Column(modifier = Modifier.fillMaxSize().padding(12.dp)) {
                 if (tipo == null) {
@@ -490,6 +492,7 @@ fun StipendiScreen(vm: SpeseViewModel) {
                             Icon(Icons.Filled.UploadFile, contentDescription = "Importa busta paga", tint = MaterialTheme.colorScheme.primary)
                         }
                         IconButton(onClick = { nuovoMese = true }) { Icon(Icons.Filled.Add, contentDescription = "Aggiungi un mese") }
+                        IconButton(onClick = { mostraGrafico = true }) { Icon(Icons.AutoMirrored.Filled.ShowChart, contentDescription = "Grafico") }
                         IconButton(onClick = { mostraFiltroColonne = !mostraFiltroColonne }) {
                             Icon(
                                 Icons.Filled.FilterList, contentDescription = "Colonne mostrate",
@@ -555,6 +558,23 @@ fun StipendiScreen(vm: SpeseViewModel) {
                         },
                         modifier = Modifier.weight(1f)
                     )
+                    if (mostraGrafico) {
+                        val righeTipo = stipendi.stipendiDi(tipo.id)
+                        GraficoStipendiDialog(
+                            titolo = "Stipendi · ${tipo.nome}",
+                            voci = vociTipo,
+                            stipendi = righeTipo,
+                            valoriPerStipendio = righeTipo.associate { s ->
+                                s.id to valoriStipendio(
+                                    vociTipo, stipendi.importiPerStipendio[s.id].orEmpty(),
+                                    stipendi.percentualiPerStipendio[s.id].orEmpty(), stipendi.sostituzioniPerStipendio[s.id].orEmpty()
+                                )
+                            },
+                            valuta = tipo.valuta,
+                            annoIniziale = anno,
+                            onChiudi = { mostraGrafico = false }
+                        )
+                    }
                 }
             }
 
@@ -566,7 +586,7 @@ fun StipendiScreen(vm: SpeseViewModel) {
             text = {
                 Text(
                     "Celle in giallo: valori modificati a mano. Tieni premuta un'intestazione e trascinala per spostare la colonna. " +
-                        "Tocca una cella per modificarla, il mese per cambiarlo o eliminarlo, un totale per il suo dettaglio; tieni premuto il mese per il dettaglio dei calcoli (una cella calcolata mostra i suoi, con «Modifica» per cambiarli). Icone: importa busta paga, aggiungi un mese, " +
+                        "Tocca una cella per modificarla, il mese per cambiarlo o eliminarlo, un totale per il suo dettaglio; tieni premuto il mese per il dettaglio dei calcoli (una cella calcolata mostra i suoi, con «Modifica» per cambiarli). Icone: importa busta paga, aggiungi un mese, grafico (andamento o radar animato), " +
                         "colonne mostrate."
                 )
             },
