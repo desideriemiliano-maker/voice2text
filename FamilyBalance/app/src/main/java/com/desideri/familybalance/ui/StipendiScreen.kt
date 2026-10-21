@@ -21,6 +21,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Functions
+import androidx.compose.material.icons.filled.Restore
 import androidx.compose.material.icons.filled.DragIndicator
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.runtime.key
@@ -549,12 +550,30 @@ fun StipendiDialog(vm: SpeseViewModel, onChiudi: () -> Unit) {
                                 value = testiCalcolate[a.id].orEmpty(), onValueChange = { testiCalcolate[a.id] = it; errore = null },
                                 label = { Text("${a.descrizione} (calcolata, solo per questa voce)") }, singleLine = true,
                                 supportingText = { valoriPropri[a.id]?.let { p -> Text("Valore proprio: ${formattaCent(p, tipo?.valuta ?: "EUR")}") } },
+                                // Valore diverso da quello proprio: si torna all'originale.
+                                trailingIcon = {
+                                    val proprio = valoriPropri[a.id]
+                                    if (testoInCent(testiCalcolate[a.id].orEmpty()) != proprio) {
+                                        IconButton(onClick = { testiCalcolate[a.id] = proprio?.let { centInTesto(it) } ?: "" }) {
+                                            Icon(Icons.Filled.Restore, contentDescription = "Torna al valore proprio")
+                                        }
+                                    }
+                                },
                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth()
                             )
                         } else {
                             OutlinedTextField(
                                 value = testi[a.id].orEmpty(), onValueChange = { testi[a.id] = it; errore = null },
                                 label = { Text(a.descrizione) }, singleLine = true,
+                                // Modificato a mano: si torna al valore importato.
+                                trailingIcon = {
+                                    val importato = stipendi.importatiPerStipendio[s.id]?.get(a.id)
+                                    if (importato != null && testoInCent(testi[a.id].orEmpty()) != importato) {
+                                        IconButton(onClick = { testi[a.id] = centInTesto(importato) }) {
+                                            Icon(Icons.Filled.Restore, contentDescription = "Torna al valore importato")
+                                        }
+                                    }
+                                },
                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth()
                             )
                         }
