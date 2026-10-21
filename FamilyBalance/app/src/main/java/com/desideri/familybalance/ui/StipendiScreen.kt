@@ -494,27 +494,74 @@ fun StipendiDialog(vm: SpeseViewModel, onChiudi: () -> Unit) {
     }
 
     cella?.takeIf { it.second.calcolata }?.let { (s, v) ->
-        // Voce calcolata con percentuale: si cambia la percentuale di questo solo stipendio.
-        val attuale = stipendi.percentualiPerStipendio[s.id]?.get(v.id) ?: v.percentuale ?: 100.0
-        var testo by remember(s, v) { mutableStateOf(testoPercentuale(attuale)) }
+        // Voce calcolata: si modificano i valori di partenza in questo stipendio (le voci sommate non
+        // calcolate e la percentuale), con l'anteprima del risultato.
+        val vociTipo = stipendi.vociDi(s.tipoId)
+        val importiMese = stipendi.importiPerStipendio[s.id].orEmpty()
+        val percentualiMese = stipendi.percentualiPerStipendio[s.id].orEmpty()
+        val addendi = v.idAddendi.mapNotNull { id -> vociTipo.firstOrNull { it.id == id } }
+        val testi = remember(s, v) {
+            androidx.compose.runtime.mutableStateMapOf<Long, String>().apply {
+                addendi.filterNot { it.calcolata }.forEach { a -> put(a.id, importiMese[a.id]?.let { centInTesto(it) } ?: "") }
+            }
+        }
+        var testoPerc by remember(s, v) { mutableStateOf(testoPercentuale(percentualiMese[v.id] ?: v.percentuale ?: 100.0)) }
         var errore by remember(s, v) { mutableStateOf<String?>(null) }
+        // Anteprima con i valori scritti (quelli non validi restano esclusi).
+        val anteprimaImporti = importiMese.toMutableMap().apply {
+            testi.forEach { (id, t) -> val c = testoInCent(t); if (t.isBlank()) remove(id) else if (c != null) put(id, c) }
+        }
+        val anteprimaPerc = percentualiMese.toMutableMap().apply {
+            if (v.percentuale != null) testoPerc.trim().replace(',', '.').toDoubleOrNull()?.let { put(v.id, it) }
+        }
+        val anteprima = valoriStipendio(vociTipo, anteprimaImporti, anteprimaPerc)
         AlertDialog(
             onDismissRequest = { cella = null },
             title = { Text("${v.descrizione} · ${formattaMese(YearMonth.parse(s.mese))}") },
             text = {
-                Column {
-                    Text("Percentuale applicata alla somma delle voci in questo stipendio; l'anagrafica e gli altri stipendi non cambiano.", style = MaterialTheme.typography.bodySmall)
-                    OutlinedTextField(
-                        value = testo, onValueChange = { testo = it; errore = null }, label = { Text("Percentuale") },
-                        singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth()
-                    )
+                Column(modifier = Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("= " + testoFormula(v, vociTipo), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+                    Text("Valori di questo stipendio; l'anagrafica e gli altri stipendi non cambiano.", style = MaterialTheme.typography.bodySmall)
+                    addendi.forEach { a ->
+                        if (a.calcolata) {
+                            Row {
+                                Text("${a.descrizione} (calcolata)", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                                Text(anteprima[a.id]?.let { formattaCent(it, tipo?.valuta ?: "EUR") } ?: "—", style = MaterialTheme.typography.bodyMedium)
+                            }
+                        } else {
+                            OutlinedTextField(
+                                value = testi[a.id].orEmpty(), onValueChange = { testi[a.id] = it; errore = null },
+                                label = { Text(a.descrizione) }, singleLine = true,
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                    }
+                    if (v.percentuale != null) {
+                        OutlinedTextField(
+                            value = testoPerc, onValueChange = { testoPerc = it; errore = null }, label = { Text("Percentuale") },
+                            singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                    HorizontalDivider()
+                    Row {
+                        Text("Risultato", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                        Text(anteprima[v.id]?.let { formattaCent(it, tipo?.valuta ?: "EUR") } ?: "—", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                    }
                     errore?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                 }
             },
             confirmButton = {
                 TextButton(onClick = {
-                    val p = testo.trim().replace(',', '.').toDoubleOrNull()
-                    if (p == null) errore = "Percentuale non valida" else { vm.impostaPercentualeStipendio(s.id, v.id, p); cella = null }
+                    val importi = testi.mapValues { (_, t) -> if (t.isBlank()) null else testoInCent(t) ?: Long.MIN_VALUE }
+                    val perc = if (v.percentuale != null) testoPerc.trim().replace(',', '.').toDoubleOrNull() else null
+                    when {
+                        importi.values.any { it == Long.MIN_VALUE } -> errore = "Ci sono importi non validi"
+                        v.percentuale != null && perc == null -> errore = "Percentuale non valida"
+                        else -> {
+                            vm.salvaInputCalcolata(s.id, importi.filter { (id, c) -> c != importiMese[id] }, perc?.let { v.id to it })
+                            cella = null
+                        }
+                    }
                 }) { Text("Salva") }
             },
             dismissButton = { TextButton(onClick = { cella = null }) { Text("Annulla") } }
@@ -639,7 +686,7 @@ private fun TabellaStipendi(
                                 val perc = if (v.percentuale != null) percentuali[s.id]?.get(v.id) ?: v.percentuale else null
                                 CellaReport(
                                     testo(valori[v.id]) + (perc?.let { "\n" + testoPercentuale(it) + "%" } ?: ""), null, L_VOCE_STIPENDIO, alta = true, sfondo = coloreCalcolate,
-                                    modifier = if (perc != null) Modifier.clickable { onCella(s, v) } else Modifier
+                                    modifier = Modifier.clickable { onCella(s, v) }
                                 )
                             } else {
                                 CellaReport(testo(valori[v.id]), null, L_VOCE_STIPENDIO, alta = true, sfondo = sfondo(i), modifier = Modifier.clickable { onCella(s, v) })

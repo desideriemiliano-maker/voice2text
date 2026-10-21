@@ -253,6 +253,23 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /**
+     * Valori di partenza di una voce calcolata in uno stipendio: [importi] delle voci sommate (null =
+     * tolto) e l'eventuale [percentuale] (voce -> %); poi si ricalcolano le voci calcolate.
+     */
+    fun salvaInputCalcolata(stipendioId: Long, importi: Map<Long, Long?>, percentuale: Pair<Long, Double>?) = viewModelScope.launch {
+        db.withTransaction {
+            importi.forEach { (voceId, cent) ->
+                if (cent == null) stipendiDao.eliminaImporto(stipendioId, voceId)
+                else stipendiDao.salvaImporto(com.desideri.familybalance.data.ImportoStipendio(stipendioId = stipendioId, voceId = voceId, importoCent = cent))
+            }
+            percentuale?.let { (voceId, p) ->
+                stipendiDao.salvaImporto(com.desideri.familybalance.data.ImportoStipendio(stipendioId = stipendioId, voceId = voceId, importoCent = 0, percentuale = p))
+            }
+            aggiornaCalcolate(stipendioId)
+        }
+    }
+
     /** Percentuale di una voce calcolata in un solo stipendio (il valore viene ricalcolato). */
     fun impostaPercentualeStipendio(stipendioId: Long, voceId: Long, percentuale: Double) = viewModelScope.launch {
         db.withTransaction {
