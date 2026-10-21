@@ -22,6 +22,8 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Functions
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.ViewColumn
@@ -438,6 +440,8 @@ fun StipendiScreen(vm: SpeseViewModel) {
 
     // Anno mostrato nella tabella (predefinito quello corrente).
     var anno by rememberSaveable { mutableStateOf(YearMonth.now().year) }
+    var mostraFiltroColonne by rememberSaveable { mutableStateOf(false) }
+    var mostraInfo by remember { mutableStateOf(false) }
 
             Column(modifier = Modifier.fillMaxSize().padding(12.dp)) {
                 if (tipo == null) {
@@ -450,19 +454,6 @@ fun StipendiScreen(vm: SpeseViewModel) {
                         tipo.valuta + (tipo.contoValutaId?.let { " · accredito su ${dati.etichetta(it)}" } ?: ""),
                         style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 6.dp)
                     )
-                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 4.dp)) {
-                        IconButton(onClick = { anno-- }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, contentDescription = "Anno precedente") }
-                        Text(anno.toString(), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                        IconButton(onClick = { anno++ }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = "Anno successivo") }
-                    }
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(vertical = 6.dp)) {
-                        Button(onClick = { sceltaFile.launch(arrayOf("application/pdf", "image/*")) }) {
-                            Icon(Icons.Filled.UploadFile, contentDescription = null, modifier = Modifier.padding(end = 6.dp))
-                            Text("Importa busta paga")
-                        }
-                        OutlinedButton(onClick = { nuovoMese = true }) { Text("+ Mese") }
-                    }
-                    Text("Celle in giallo: valori modificati a mano. Tieni premuta un'intestazione e trascinala per spostare la colonna.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     // Colonne mostrate: le nascoste si ricordano solo se scelto (anche le voci nuove sono mostrate).
                     var nascoste by remember(tipo.id) { mutableStateOf(vm.colonneNascosteStipendio(tipo.id) ?: emptySet()) }
                     var ricordaColonne by remember(tipo.id) { mutableStateOf(vm.colonneNascosteStipendio(tipo.id) != null) }
@@ -470,6 +461,25 @@ fun StipendiScreen(vm: SpeseViewModel) {
                     var ordine by remember(tipo.id) { mutableStateOf(vm.ordineColonne("stipendi_${tipo.id}")) }
                     var sceltaOrdine by remember(tipo.id) { mutableStateOf(false) }
                     val vociTipo = ordinaColonne(stipendi.vociDi(tipo.id), ordine) { it.id.toString() }
+                    // Anno e azioni sulla stessa riga; la scelta delle colonne compare con l'icona del filtro.
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 4.dp)) {
+                        IconButton(onClick = { anno-- }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, contentDescription = "Anno precedente") }
+                        Text(anno.toString(), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        IconButton(onClick = { anno++ }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = "Anno successivo") }
+                        androidx.compose.foundation.layout.Spacer(Modifier.weight(1f))
+                        IconButton(onClick = { sceltaFile.launch(arrayOf("application/pdf", "image/*")) }) {
+                            Icon(Icons.Filled.UploadFile, contentDescription = "Importa busta paga", tint = MaterialTheme.colorScheme.primary)
+                        }
+                        IconButton(onClick = { nuovoMese = true }) { Icon(Icons.Filled.Add, contentDescription = "Aggiungi un mese") }
+                        IconButton(onClick = { mostraFiltroColonne = !mostraFiltroColonne }) {
+                            Icon(
+                                Icons.Filled.FilterList, contentDescription = "Colonne mostrate",
+                                tint = if (mostraFiltroColonne || nascoste.isNotEmpty()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        IconButton(onClick = { mostraInfo = true }) { Icon(Icons.Filled.Info, contentDescription = "Informazioni") }
+                    }
+                    if (mostraFiltroColonne)
                     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(bottom = 6.dp)) {
                         MenuMultiplo(
                             "Colonne", vociTipo, vociTipo.filter { it.id !in nascoste }, { it.descrizione },
@@ -528,6 +538,21 @@ fun StipendiScreen(vm: SpeseViewModel) {
                 }
             }
 
+    if (mostraInfo) {
+        AlertDialog(
+            onDismissRequest = { mostraInfo = false },
+            icon = { Icon(Icons.Filled.Info, contentDescription = null) },
+            title = { Text("Stipendi") },
+            text = {
+                Text(
+                    "Celle in giallo: valori modificati a mano. Tieni premuta un'intestazione e trascinala per spostare la colonna. " +
+                        "Tocca una cella per modificarla, il mese per cambiarlo o eliminarlo. Icone: importa busta paga, aggiungi un mese, " +
+                        "colonne mostrate."
+                )
+            },
+            confirmButton = { TextButton(onClick = { mostraInfo = false }) { Text("OK") } }
+        )
+    }
     cella?.takeIf { it.second.calcolata }?.let { (s, v) ->
         // Voce calcolata: si modificano i valori di partenza in questo stipendio (le voci sommate non
         // calcolate e la percentuale), con l'anteprima del risultato.
