@@ -137,6 +137,18 @@ fun livelliVoci(voci: List<VoceStipendio>): Map<Long, Int> {
     return voci.associate { it.id to livello(it.id, emptySet()) }
 }
 
+/** La voce [id] e tutte quelle da cui dipende, direttamente o tramite altre voci calcolate. */
+fun dipendenzeVoce(voci: List<VoceStipendio>, id: Long): Set<Long> {
+    val perId = voci.associateBy { it.id }
+    val trovate = LinkedHashSet<Long>()
+    fun visita(v: Long) {
+        if (!trovate.add(v)) return
+        perId[v]?.takeIf { it.calcolata }?.idAddendi?.forEach { visita(it) }
+    }
+    visita(id)
+    return trovate
+}
+
 /** Un addendo nel calcolo: la voce, il valore usato e se è sostituito solo per la voce calcolata. */
 data class AddendoCalcolo(val voce: VoceStipendio, val valore: Long?, val sostituito: Boolean)
 

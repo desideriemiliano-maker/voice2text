@@ -86,6 +86,7 @@ import com.desideri.familybalance.data.Valute
 import com.desideri.familybalance.data.VoceStipendio
 import com.desideri.familybalance.data.valoriStipendio
 import com.desideri.familybalance.data.calcoliStipendio
+import com.desideri.familybalance.data.dipendenzeVoce
 import com.desideri.familybalance.logica.centInTesto
 import com.desideri.familybalance.logica.formattaCent
 import com.desideri.familybalance.logica.formattaMese
@@ -448,6 +449,8 @@ fun StipendiScreen(vm: SpeseViewModel) {
     var cella by remember { mutableStateOf<Pair<Stipendio, VoceStipendio>?>(null) }
     var meseAperto by remember { mutableStateOf<Stipendio?>(null) }
     var dettaglio by remember { mutableStateOf<Stipendio?>(null) }
+    // Cella calcolata toccata: prima il dettaglio dei suoi calcoli, da lì la modifica.
+    var dettaglioCella by remember { mutableStateOf<Pair<Stipendio, VoceStipendio>?>(null) }
     var nuovoMese by remember { mutableStateOf(false) }
     val sceltaFile = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null && tipo != null) vm.importaBustaPaga(uri, tipo.id)
@@ -537,7 +540,7 @@ fun StipendiScreen(vm: SpeseViewModel) {
                         tutteLeVoci = vociTipo,
                         manuali = stipendi.manualiPerStipendio,
                         valuta = tipo.valuta,
-                        onCella = { s, v -> cella = s to v },
+                        onCella = { s, v -> if (v.calcolata) dettaglioCella = s to v else cella = s to v },
                         onMese = { meseAperto = it },
                         onDettaglio = { dettaglio = it },
                         // Intestazione trascinata: la voce va al posto di quella su cui è rilasciata (ordine completo, anche con colonne nascoste).
@@ -562,7 +565,7 @@ fun StipendiScreen(vm: SpeseViewModel) {
             text = {
                 Text(
                     "Celle in giallo: valori modificati a mano. Tieni premuta un'intestazione e trascinala per spostare la colonna. " +
-                        "Tocca una cella per modificarla, il mese per cambiarlo o eliminarlo; tieni premuto il mese per il dettaglio dei calcoli. Icone: importa busta paga, aggiungi un mese, " +
+                        "Tocca una cella per modificarla, il mese per cambiarlo o eliminarlo; tieni premuto il mese per il dettaglio dei calcoli (una cella calcolata mostra i suoi, con «Modifica» per cambiarli). Icone: importa busta paga, aggiungi un mese, " +
                         "colonne mostrate."
                 )
             },
@@ -775,6 +778,18 @@ fun StipendiScreen(vm: SpeseViewModel) {
             )
         }
     }
+    dettaglioCella?.let { (s, v) ->
+        stipendi.tipi.firstOrNull { it.id == s.tipoId }?.let { t ->
+            DettaglioCalcoliDialog(
+                s, ordinaColonne(stipendi.vociDi(t.id), vm.ordineColonne("stipendi_${t.id}")) { it.id.toString() },
+                stipendi.importiPerStipendio[s.id].orEmpty(), stipendi.percentualiPerStipendio[s.id].orEmpty(),
+                stipendi.sostituzioniPerStipendio[s.id].orEmpty(), stipendi.manualiPerStipendio[s.id].orEmpty(), t.valuta,
+                onChiudi = { dettaglioCella = null },
+                voce = v,
+                onModifica = { cella = s to v; dettaglioCella = null }
+            )
+        }
+    }
     if (nuovoMese && tipo != null) {
         var mese by remember { mutableStateOf(YearMonth.now()) }
         AlertDialog(
@@ -805,10 +820,14 @@ private fun DettaglioCalcoliDialog(
     sostituzioni: Map<Long, Map<Long, Long>>,
     manuali: Set<Long>,
     valuta: String,
-    onChiudi: () -> Unit
+    onChiudi: () -> Unit,
+    /** Solo questa voce calcolata e quelle da cui dipende (null = tutto lo stipendio). */
+    voce: VoceStipendio? = null,
+    onModifica: (() -> Unit)? = null
 ) {
-    val calcoli = calcoliStipendio(voci, importi, percentuali, sostituzioni)
-    val registrate = voci.filter { !it.calcolata && importi[it.id] != null }
+    val incluse = voce?.let { dipendenzeVoce(voci, it.id) }
+    val calcoli = calcoliStipendio(voci, importi, percentuali, sostituzioni).filter { incluse == null || it.voce.id in incluse }
+    val registrate = voci.filter { !it.calcolata && importi[it.id] != null && (incluse == null || it.id in incluse) }
     fun testo(cent: Long?) = cent?.let { formattaCent(it, valuta) } ?: "—"
     @Composable
     fun Riga(etichetta: String, valore: String, grassetto: Boolean = false, nota: String? = null) {
@@ -822,7 +841,7 @@ private fun DettaglioCalcoliDialog(
     }
     AlertDialog(
         onDismissRequest = onChiudi,
-        title = { Text("Calcoli · ${formattaMese(YearMonth.parse(s.mese))}") },
+        title = { Text((voce?.let { "${it.descrizione} · " } ?: "Calcoli · ") + formattaMese(YearMonth.parse(s.mese))) },
         text = {
             Column(modifier = Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text("Voci registrate", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
@@ -862,7 +881,8 @@ private fun DettaglioCalcoliDialog(
                 }
             }
         },
-        confirmButton = { TextButton(onClick = onChiudi) { Text("Chiudi") } }
+        confirmButton = { TextButton(onClick = onChiudi) { Text("Chiudi") } },
+        dismissButton = { onModifica?.let { m -> TextButton(onClick = m) { Text("Modifica") } } }
     )
 }
 
