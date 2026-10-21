@@ -515,11 +515,14 @@ private data class RigaConferma(val inclusa: Boolean, val descrizioneLetta: Stri
 @Composable
 private fun ConfermaImportStipendioDialog(vm: SpeseViewModel, tipo: TipoStipendio, voci: List<VoceStipendio>, imp: ImportStipendio) {
     var mese by remember(imp) { mutableStateOf(imp.letta.mese ?: YearMonth.now().minusMonths(1)) }
+    // Voci escluse all'ultimo import (se si era scelto di ricordare la selezione).
+    val escluse = remember(imp) { vm.vociEscluseStipendio(tipo.id) }
+    var ricorda by remember(imp) { mutableStateOf(vm.ricordaSelezioneStipendio()) }
     val righe = remember(imp) {
         mutableStateListOf<RigaConferma>().apply {
             imp.letta.voci.forEach { l ->
                 // Voce riconosciuta per descrizione o per un nome con cui è stata importata in passato.
-                add(RigaConferma(true, l.descrizione, voci.firstOrNull { it.riconosce(l.descrizione) }?.id, centInTesto(l.importoCent), l.descrizione))
+                add(RigaConferma(l.descrizione.trim().lowercase() !in escluse, l.descrizione, voci.firstOrNull { it.riconosce(l.descrizione) }?.id, centInTesto(l.importoCent), l.descrizione))
             }
         }
     }
@@ -573,6 +576,11 @@ private fun ConfermaImportStipendioDialog(vm: SpeseViewModel, tipo: TipoStipendi
                 }
                 val stessaVoce = righe.filter { it.inclusa }.groupBy { it.voceId ?: it.nomeNuova.trim().lowercase() }.any { it.value.size > 1 }
                 if (stessaVoce) Text("Più righe sulla stessa voce: i loro importi verranno sommati.", style = MaterialTheme.typography.bodySmall)
+                HorizontalDivider()
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().clickable { ricorda = !ricorda }) {
+                    Checkbox(checked = ricorda, onCheckedChange = { ricorda = it })
+                    Text("Ricorda la selezione per il prossimo import (le voci escluse saranno proposte già deselezionate)", style = MaterialTheme.typography.bodySmall)
+                }
                 errore?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             }
         },
@@ -586,7 +594,10 @@ private fun ConfermaImportStipendioDialog(vm: SpeseViewModel, tipo: TipoStipendi
                     scelte.isEmpty() -> errore = "Nessuna voce inclusa"
                     scelte.any { it.voceId == null && it.nomeNuova.isBlank() } -> errore = "Dai un nome alle nuove voci"
                     convertite.any { it == null } -> errore = "Ci sono importi non validi"
-                    else -> vm.confermaImportStipendio(tipo.id, mese, convertite.filterNotNull())
+                    else -> {
+                        vm.ricordaSelezioneStipendio(tipo.id, ricorda, scelte.map { it.descrizioneLetta }, righe.filterNot { it.inclusa }.map { it.descrizioneLetta })
+                        vm.confermaImportStipendio(tipo.id, mese, convertite.filterNotNull())
+                    }
                 }
             }) { Text("Importa") }
         },

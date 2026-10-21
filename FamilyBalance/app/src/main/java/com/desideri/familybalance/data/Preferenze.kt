@@ -104,6 +104,18 @@ class Preferenze(context: Context) {
         prefs.edit().apply { if (giorno == null) remove(PREFISSO_DUPLICATI + contoValutaId) else putString(PREFISSO_DUPLICATI + contoValutaId, giorno.toString()) }.apply()
     }
 
+    /** Voci della busta paga (nomi letti, minuscoli) escluse all'ultimo import dello stipendio [tipoId]. */
+    fun vociEscluseStipendio(tipoId: Long): Set<String> =
+        prefs.getString("stipendi_esclusi_$tipoId", null).orEmpty().split('|').filter { it.isNotEmpty() }.toSet()
+
+    fun salvaVociEscluseStipendio(tipoId: Long, nomi: Set<String>) =
+        prefs.edit().putString("stipendi_esclusi_$tipoId", nomi.joinToString("|")).apply()
+
+    /** Ultimo stato della casella «Ricorda la selezione» dell'import delle buste paga (predefinito sì). */
+    fun ricordaSelezioneStipendio(): Boolean = prefs.getString("stipendi_ricorda_selezione", "true") == "true"
+
+    fun salvaRicordaSelezioneStipendio(ricorda: Boolean) = prefs.edit().putString("stipendi_ricorda_selezione", ricorda.toString()).apply()
+
     /** Preferenze da includere nel backup oltre alle Impostazioni: ordine delle colonne e conferme dei duplicati. */
     fun altrePerBackup(): Map<String, String> =
         prefs.all.filterKeys { k -> PREFISSI_BACKUP.any { k.startsWith(it) } }.mapNotNull { (k, v) -> (v as? String)?.let { k to it } }.toMap()
@@ -141,7 +153,7 @@ class Preferenze(context: Context) {
 
     private companion object {
         const val PREFISSO_ORDINE = "ordine_colonne_"
-        val PREFISSI_BACKUP = listOf(PREFISSO_ORDINE, "duplicati_fino_")
+        val PREFISSI_BACKUP = listOf(PREFISSO_ORDINE, "duplicati_fino_", "stipendi_")
         const val CHIAVE_TARGET = "target_risparmio_cent"
         const val CHIAVE_CAMBIO = "cambio_chf_eur"
         const val CHIAVE_EMAIL_BACKUP = "email_backup"

@@ -247,6 +247,20 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun vociEscluseStipendio(tipoId: Long): Set<String> = preferenze.vociEscluseStipendio(tipoId)
+    fun ricordaSelezioneStipendio(): Boolean = preferenze.ricordaSelezioneStipendio()
+
+    /**
+     * Con [ricorda] le voci [escluse] (nomi letti dalla busta) saranno proposte deselezionate al
+     * prossimo import dello stipendio [tipoId], le [incluse] di nuovo selezionate.
+     */
+    fun ricordaSelezioneStipendio(tipoId: Long, ricorda: Boolean, incluse: Collection<String>, escluse: Collection<String>) {
+        preferenze.salvaRicordaSelezioneStipendio(ricorda)
+        if (!ricorda) return
+        val attuali = preferenze.vociEscluseStipendio(tipoId)
+        preferenze.salvaVociEscluseStipendio(tipoId, attuali - incluse.map { it.trim().lowercase() }.toSet() + escluse.map { it.trim().lowercase() })
+    }
+
     fun annullaImportStipendio() {
         _importStipendio.value = null
     }
