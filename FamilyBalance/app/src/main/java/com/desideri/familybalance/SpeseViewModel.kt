@@ -119,6 +119,8 @@ data class DatiStipendi(
     fun vociDi(tipoId: Long) = voci.filter { it.tipoId == tipoId }
     fun stipendiDi(tipoId: Long) = stipendi.filter { it.tipoId == tipoId }
     val importiPerStipendio by lazy { importi.groupBy { it.stipendioId }.mapValues { (_, l) -> l.associate { it.voceId to it.importoCent } } }
+    /** Voci modificate a mano in ogni stipendio (id stipendio -> id voci). */
+    val manualiPerStipendio by lazy { importi.filter { it.manuale }.groupBy { it.stipendioId }.mapValues { (_, l) -> l.map { it.voceId }.toSet() } }
     /** Percentuali delle voci calcolate memorizzate in ogni stipendio (id stipendio -> id voce -> %). */
     val percentualiPerStipendio by lazy {
         importi.filter { it.percentuale != null }.groupBy { it.stipendioId }.mapValues { (_, l) -> l.associate { it.voceId to it.percentuale!! } }
@@ -226,7 +228,8 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
         val valori = com.desideri.familybalance.data.valoriStipendio(voci, importi.associate { it.voceId to it.importoCent }, percentuali)
         conPercentuale.forEach { v ->
             val nuovo = com.desideri.familybalance.data.ImportoStipendio(
-                stipendioId = stipendioId, voceId = v.id, importoCent = valori[v.id] ?: 0L, percentuale = percentuali[v.id]
+                stipendioId = stipendioId, voceId = v.id, importoCent = valori[v.id] ?: 0L, percentuale = percentuali[v.id],
+                manuale = importi.firstOrNull { it.voceId == v.id }?.manuale ?: false
             )
             val attuale = importi.firstOrNull { it.voceId == v.id }
             if (attuale?.importoCent != nuovo.importoCent || attuale.percentuale != nuovo.percentuale) stipendiDao.salvaImporto(nuovo)
@@ -248,7 +251,7 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
     fun impostaImportoStipendio(stipendioId: Long, voceId: Long, importoCent: Long?) = viewModelScope.launch {
         db.withTransaction {
             if (importoCent == null) stipendiDao.eliminaImporto(stipendioId, voceId)
-            else stipendiDao.salvaImporto(com.desideri.familybalance.data.ImportoStipendio(stipendioId = stipendioId, voceId = voceId, importoCent = importoCent))
+            else stipendiDao.salvaImporto(com.desideri.familybalance.data.ImportoStipendio(stipendioId = stipendioId, voceId = voceId, importoCent = importoCent, manuale = true))
             aggiornaCalcolate(stipendioId)
         }
     }
@@ -261,10 +264,10 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
         db.withTransaction {
             importi.forEach { (voceId, cent) ->
                 if (cent == null) stipendiDao.eliminaImporto(stipendioId, voceId)
-                else stipendiDao.salvaImporto(com.desideri.familybalance.data.ImportoStipendio(stipendioId = stipendioId, voceId = voceId, importoCent = cent))
+                else stipendiDao.salvaImporto(com.desideri.familybalance.data.ImportoStipendio(stipendioId = stipendioId, voceId = voceId, importoCent = cent, manuale = true))
             }
             percentuale?.let { (voceId, p) ->
-                stipendiDao.salvaImporto(com.desideri.familybalance.data.ImportoStipendio(stipendioId = stipendioId, voceId = voceId, importoCent = 0, percentuale = p))
+                stipendiDao.salvaImporto(com.desideri.familybalance.data.ImportoStipendio(stipendioId = stipendioId, voceId = voceId, importoCent = 0, percentuale = p, manuale = true))
             }
             aggiornaCalcolate(stipendioId)
         }
@@ -273,7 +276,7 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
     /** Percentuale di una voce calcolata in un solo stipendio (il valore viene ricalcolato). */
     fun impostaPercentualeStipendio(stipendioId: Long, voceId: Long, percentuale: Double) = viewModelScope.launch {
         db.withTransaction {
-            stipendiDao.salvaImporto(com.desideri.familybalance.data.ImportoStipendio(stipendioId = stipendioId, voceId = voceId, importoCent = 0, percentuale = percentuale))
+            stipendiDao.salvaImporto(com.desideri.familybalance.data.ImportoStipendio(stipendioId = stipendioId, voceId = voceId, importoCent = 0, percentuale = percentuale, manuale = true))
             aggiornaCalcolate(stipendioId)
         }
     }

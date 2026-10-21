@@ -60,6 +60,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -453,6 +454,7 @@ fun StipendiDialog(vm: SpeseViewModel, onChiudi: () -> Unit) {
                         }
                         OutlinedButton(onClick = { nuovoMese = true }) { Text("+ Mese") }
                     }
+                    Text("Celle in giallo: valori modificati a mano.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     // Colonne mostrate: le nascoste si ricordano solo se scelto (anche le voci nuove sono mostrate).
                     var nascoste by remember(tipo.id) { mutableStateOf(vm.colonneNascosteStipendio(tipo.id) ?: emptySet()) }
                     var ricordaColonne by remember(tipo.id) { mutableStateOf(vm.colonneNascosteStipendio(tipo.id) != null) }
@@ -483,6 +485,7 @@ fun StipendiDialog(vm: SpeseViewModel, onChiudi: () -> Unit) {
                         righe = stipendi.stipendiDi(tipo.id).sortedByDescending { it.mese },
                         importi = stipendi.importiPerStipendio,
                         percentuali = stipendi.percentualiPerStipendio,
+                        manuali = stipendi.manualiPerStipendio,
                         valuta = tipo.valuta,
                         onCella = { s, v -> cella = s to v },
                         onMese = { meseAperto = it },
@@ -644,6 +647,7 @@ private fun TabellaStipendi(
     righe: List<Stipendio>,
     importi: Map<Long, Map<Long, Long>>,
     percentuali: Map<Long, Map<Long, Double>>,
+    manuali: Map<Long, Set<Long>>,
     valuta: String,
     onCella: (Stipendio, VoceStipendio) -> Unit,
     onMese: (Stipendio) -> Unit,
@@ -657,6 +661,8 @@ private fun TabellaStipendi(
     val verticale = rememberScrollState()
     val zebra = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
     val coloreCalcolate = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.35f)
+    // Celle modificate a mano: giallo (più tenue con il tema scuro).
+    val coloreManuale = if (MaterialTheme.colorScheme.surface.luminance() < 0.5f) Color(0x66B59B00) else Color(0xFFFFF3B0)
     fun sfondo(i: Int) = if (i % 2 == 1) zebra else Color.Transparent
     fun testo(cent: Long?) = cent?.let { formattaCent(it, valuta) }.orEmpty()
     Column(modifier = modifier) {
@@ -685,11 +691,16 @@ private fun TabellaStipendi(
                                 // Con percentuale: si tocca per cambiarla solo in questo stipendio.
                                 val perc = if (v.percentuale != null) percentuali[s.id]?.get(v.id) ?: v.percentuale else null
                                 CellaReport(
-                                    testo(valori[v.id]) + (perc?.let { "\n" + testoPercentuale(it) + "%" } ?: ""), null, L_VOCE_STIPENDIO, alta = true, sfondo = coloreCalcolate,
+                                    testo(valori[v.id]) + (perc?.let { "\n" + testoPercentuale(it) + "%" } ?: ""), null, L_VOCE_STIPENDIO, alta = true,
+                                    sfondo = if (v.id in manuali[s.id].orEmpty()) coloreManuale else coloreCalcolate,
                                     modifier = Modifier.clickable { onCella(s, v) }
                                 )
                             } else {
-                                CellaReport(testo(valori[v.id]), null, L_VOCE_STIPENDIO, alta = true, sfondo = sfondo(i), modifier = Modifier.clickable { onCella(s, v) })
+                                CellaReport(
+                                    testo(valori[v.id]), null, L_VOCE_STIPENDIO, alta = true,
+                                    sfondo = if (v.id in manuali[s.id].orEmpty()) coloreManuale else sfondo(i),
+                                    modifier = Modifier.clickable { onCella(s, v) }
+                                )
                             }
                         }
                     }

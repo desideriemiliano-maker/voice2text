@@ -132,7 +132,10 @@ data class ImportoStipendio(
     val stipendioId: Long,
     val voceId: Long,
     val importoCent: Long,
-    val percentuale: Double? = null
+    val percentuale: Double? = null,
+    /** Valore (o percentuale) cambiato a mano nella tabella, invece che importato o calcolato. */
+    @androidx.room.ColumnInfo(defaultValue = "0")
+    val manuale: Boolean = false
 )
 
 @Dao
