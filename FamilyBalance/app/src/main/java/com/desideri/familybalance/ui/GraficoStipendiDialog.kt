@@ -72,6 +72,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.desideri.familybalance.data.Stipendio
 import com.desideri.familybalance.data.VoceStipendio
+import com.desideri.familybalance.data.numeroNelMese
 import com.desideri.familybalance.logica.PuntoGrafico
 import com.desideri.familybalance.logica.TipoGrafico
 import com.desideri.familybalance.logica.formattaCent
@@ -109,7 +110,7 @@ fun GraficoStipendiDialog(
     var tendenza by rememberSaveable { mutableStateOf(false) }
 
     val vociScelte = voci.filter { it in scelte }
-    val righe = stipendi.filter { YearMonth.parse(it.mese) in da..a }.sortedBy { it.mese }
+    val righe = stipendi.filter { YearMonth.parse(it.mese) in da..a }.sortedWith(compareBy<Stipendio> { it.mese }.thenBy { it.id })
     val serie = vociScelte.mapIndexed { i, v -> SerieGrafico(v.descrizione, coloreSerie(i, null)) }
 
     Dialog(onDismissRequest = onChiudi, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
@@ -159,7 +160,7 @@ fun GraficoStipendiDialog(
                         }
                         val punti = righe.map { s ->
                             PuntoGrafico(
-                                formattaMeseBreve(YearMonth.parse(s.mese)),
+                                formattaMeseBreve(YearMonth.parse(s.mese)) + (numeroNelMese(s, stipendi)?.let { " ($it)" } ?: ""),
                                 vociScelte.map { v -> valoriPerStipendio[s.id]?.get(v.id)?.let { it / 100.0 } }
                             )
                         }
@@ -289,7 +290,7 @@ private fun RadarStipendi(
                 }
             }
             Text(
-                formattaMese(YearMonth.parse(rigaCorrente.mese)),
+                formattaMese(YearMonth.parse(rigaCorrente.mese)) + (numeroNelMese(rigaCorrente, righe)?.let { " ($it)" } ?: ""),
                 style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold,
                 textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
             )

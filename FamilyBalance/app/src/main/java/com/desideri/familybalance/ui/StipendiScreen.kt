@@ -54,6 +54,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.ScrollableTabRow
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -89,6 +90,7 @@ import com.desideri.familybalance.data.valoriStipendio
 import com.desideri.familybalance.data.calcoliStipendio
 import com.desideri.familybalance.data.dipendenzeVoce
 import com.desideri.familybalance.data.livelliVoci
+import com.desideri.familybalance.data.numeroNelMese
 import com.desideri.familybalance.logica.centInTesto
 import com.desideri.familybalance.logica.formattaCent
 import com.desideri.familybalance.logica.formattaMese
@@ -537,7 +539,8 @@ fun StipendiScreen(vm: SpeseViewModel) {
                     }
                     TabellaStipendi(
                         voci = vociTipo.filter { it.id !in nascoste },
-                        righe = stipendi.stipendiDi(tipo.id).filter { it.mese.startsWith("$anno-") }.sortedByDescending { it.mese },
+                        righe = stipendi.stipendiDi(tipo.id).filter { it.mese.startsWith("$anno-") }
+                            .sortedWith(compareByDescending<Stipendio> { it.mese }.thenBy { it.id }),
                         importi = stipendi.importiPerStipendio,
                         percentuali = stipendi.percentualiPerStipendio,
                         sostituzioni = stipendi.sostituzioniPerStipendio,
@@ -767,7 +770,7 @@ fun StipendiScreen(vm: SpeseViewModel) {
         var conferma by remember(s) { mutableStateOf(false) }
         AlertDialog(
             onDismissRequest = { meseAperto = null },
-            title = { Text("Stipendio di ${formattaMese(YearMonth.parse(s.mese))}") },
+            title = { Text("Stipendio di ${formattaMese(YearMonth.parse(s.mese))}" + (numeroNelMese(s, stipendi.stipendiDi(s.tipoId))?.let { " ($it)" } ?: "")) },
             text = {
                 Column {
                     SceltaMese("Mese", mese, { mese = it })
@@ -795,7 +798,8 @@ fun StipendiScreen(vm: SpeseViewModel) {
                 s, ordinaColonne(stipendi.vociDi(t.id), vm.ordineColonne("stipendi_${t.id}")) { it.id.toString() },
                 stipendi.importiPerStipendio[s.id].orEmpty(), stipendi.percentualiPerStipendio[s.id].orEmpty(),
                 stipendi.sostituzioniPerStipendio[s.id].orEmpty(), stipendi.manualiPerStipendio[s.id].orEmpty(), t.valuta,
-                onChiudi = { dettaglio = null }
+                onChiudi = { dettaglio = null },
+                numero = numeroNelMese(s, stipendi.stipendiDi(t.id))
             )
         }
     }
@@ -807,7 +811,8 @@ fun StipendiScreen(vm: SpeseViewModel) {
                 stipendi.sostituzioniPerStipendio[s.id].orEmpty(), stipendi.manualiPerStipendio[s.id].orEmpty(), t.valuta,
                 onChiudi = { dettaglioCella = null },
                 voce = v,
-                onModifica = { cella = s to v; dettaglioCella = null }
+                onModifica = { cella = s to v; dettaglioCella = null },
+                numero = numeroNelMese(s, stipendi.stipendiDi(t.id))
             )
         }
     }
@@ -844,7 +849,9 @@ private fun DettaglioCalcoliDialog(
     onChiudi: () -> Unit,
     /** Solo questa voce calcolata e quelle da cui dipende (null = tutto lo stipendio). */
     voce: VoceStipendio? = null,
-    onModifica: (() -> Unit)? = null
+    onModifica: (() -> Unit)? = null,
+    /** Numero dello stipendio tra quelli dello stesso mese (null se è l'unico). */
+    numero: Int? = null
 ) {
     val incluse = voce?.let { dipendenzeVoce(voci, it.id) }
     // Le voci vuote (senza importo o senza valore calcolato) non si mostrano.
@@ -865,7 +872,7 @@ private fun DettaglioCalcoliDialog(
     }
     AlertDialog(
         onDismissRequest = onChiudi,
-        title = { Text((voce?.let { "${it.descrizione} · " } ?: "Calcoli · ") + formattaMese(YearMonth.parse(s.mese))) },
+        title = { Text((voce?.let { "${it.descrizione} · " } ?: "Calcoli · ") + formattaMese(YearMonth.parse(s.mese)) + (numero?.let { " ($it)" } ?: "")) },
         text = {
             Column(modifier = Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text("Voci registrate", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
@@ -935,7 +942,8 @@ private fun DettaglioTotaliDialog(
             Text(valore, style = MaterialTheme.typography.bodyMedium, fontWeight = if (grassetto) FontWeight.Bold else null, modifier = Modifier.padding(start = 8.dp))
         }
     }
-    val mesi = righe.sortedBy { it.mese }
+    val mesi = righe.sortedWith(compareBy<Stipendio> { it.mese }.thenBy { it.id })
+    fun nomeMese(s: Stipendio) = formattaMese(YearMonth.parse(s.mese)) + (numeroNelMese(s, righe)?.let { " ($it)" } ?: "")
     AlertDialog(
         onDismissRequest = onChiudi,
         title = { Text((voce?.let { "${it.descrizione} · " } ?: "Totali · ") + mesi.firstOrNull()?.mese?.take(4).orEmpty()) },
@@ -946,13 +954,14 @@ private fun DettaglioTotaliDialog(
                     val conValore = mesi.filter { valoriPerStipendio[it.id]?.get(voce.id) != null }
                     if (conValore.isEmpty()) Text("Nessun valore nell'anno.", style = MaterialTheme.typography.bodySmall)
                     conValore.forEachIndexed { i, s ->
-                        Riga((if (i == 0) "" else "+ ") + formattaMese(YearMonth.parse(s.mese)), testo(valoriPerStipendio[s.id]?.get(voce.id)))
+                        Riga((if (i == 0) "" else "+ ") + nomeMese(s), testo(valoriPerStipendio[s.id]?.get(voce.id)))
                     }
                     HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
                     Riga("= Totale", testo(totale(voce)), grassetto = true)
                 } else {
                     val livelli = livelliVoci(voci)
-                    val ordinate = voci.sortedBy { livelli[it.id] ?: 0 }
+                    // Le voci senza nessun valore nell'anno non si mostrano.
+                    val ordinate = voci.filter { totale(it) != null }.sortedBy { livelli[it.id] ?: 0 }
                     Text("Voci registrate", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary)
                     ordinate.filter { !it.calcolata }.forEach { v -> Riga(v.descrizione, testo(totale(v))) }
                     val calcolate = ordinate.filter { it.calcolata }
@@ -1033,7 +1042,8 @@ private fun TabellaStipendi(
             Column(modifier = Modifier.verticalScroll(verticale)) {
                 righe.forEachIndexed { i, s ->
                     CellaReport(
-                        formattaMeseBreve(YearMonth.parse(s.mese)), null, L_MESE_STIPENDIO, grassetto = true, alta = true, sfondo = sfondo(i),
+                        formattaMeseBreve(YearMonth.parse(s.mese)) + (numeroNelMese(s, righe)?.let { " ($it)" } ?: ""),
+                        null, L_MESE_STIPENDIO, grassetto = true, alta = true, sfondo = sfondo(i),
                         modifier = Modifier.combinedClickable(onClick = { onMese(s) }, onLongClick = { onDettaglio(s) })
                     )
                 }
@@ -1112,6 +1122,10 @@ private fun ConfermaImportStipendioDialog(vm: SpeseViewModel, tipo: TipoStipendi
         }
     }
     var errore by remember(imp) { mutableStateOf<String?>(null) }
+    // Stipendi già registrati nel mese: se ne aggiorna uno (predefinito l'ultimo) o se ne aggiunge un altro.
+    val tuttiStipendi by vm.stipendi.collectAsStateWithLifecycle()
+    val delMese = tuttiStipendi.stipendiDi(tipo.id).filter { it.mese == mese.toString() }.sortedBy { it.id }
+    var destinazione by remember(imp, mese) { mutableStateOf(delMese.lastOrNull()?.id) }
     /** Scelta della voce: una dell'anagrafica o null = nuova voce con la descrizione letta. */
     data class Opzione(val voceId: Long?, val testo: String)
 
@@ -1122,6 +1136,23 @@ private fun ConfermaImportStipendioDialog(vm: SpeseViewModel, tipo: TipoStipendi
             Column(modifier = Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 if (imp.letta.mese == null) Text("Mese non riconosciuto: sceglilo.", color = MaterialTheme.colorScheme.error)
                 SceltaMese("Mese dello stipendio", mese, { mese = it })
+                if (delMese.isNotEmpty()) {
+                    Text("C'è già uno stipendio in questo mese:", style = MaterialTheme.typography.labelLarge)
+                    delMese.forEachIndexed { i, s ->
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().clickable { destinazione = s.id }) {
+                            RadioButton(selected = destinazione == s.id, onClick = { destinazione = s.id })
+                            Text(
+                                "Aggiorna lo stipendio" + (if (delMese.size > 1) " n. ${i + 1}" else "") +
+                                    " (${tuttiStipendi.importiPerStipendio[s.id].orEmpty().size} voci)",
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                        }
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().clickable { destinazione = null }) {
+                        RadioButton(selected = destinazione == null, onClick = { destinazione = null })
+                        Text("Aggiungi come altro stipendio dello stesso mese", style = MaterialTheme.typography.bodyMedium)
+                    }
+                }
                 Text(
                     "Scegli le voci da includere, la voce dell'anagrafica a cui associarle (o una nuova, con il nome che vuoi) e l'importo (${tipo.valuta}). " +
                         "Il nome letto dalla busta resta associato alla voce: ai prossimi import sarà riconosciuta. " +
@@ -1187,7 +1218,7 @@ private fun ConfermaImportStipendioDialog(vm: SpeseViewModel, tipo: TipoStipendi
                     convertite.any { it == null } -> errore = "Ci sono importi non validi"
                     else -> {
                         vm.ricordaSelezioneStipendio(tipo.id, ricorda, scelte.map { it.descrizioneLetta }, righe.filterNot { it.inclusa }.map { it.descrizioneLetta })
-                        vm.confermaImportStipendio(tipo.id, mese, convertite.filterNotNull())
+                        vm.confermaImportStipendio(tipo.id, mese, convertite.filterNotNull(), destinazione)
                     }
                 }
             }) { Text("Importa") }

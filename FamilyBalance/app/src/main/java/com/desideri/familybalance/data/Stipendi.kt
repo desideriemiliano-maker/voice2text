@@ -149,6 +149,12 @@ fun dipendenzeVoce(voci: List<VoceStipendio>, id: Long): Set<Long> {
     return trovate
 }
 
+/** Numero (da 1) di [s] tra gli stipendi dello stesso mese in [stipendi]; null se è l'unico. */
+fun numeroNelMese(s: Stipendio, stipendi: List<Stipendio>): Int? {
+    val delMese = stipendi.filter { it.tipoId == s.tipoId && it.mese == s.mese }.sortedBy { it.id }
+    return if (delMese.size > 1) delMese.indexOfFirst { it.id == s.id } + 1 else null
+}
+
 /** Un addendo nel calcolo: la voce, il valore usato e se è sostituito solo per la voce calcolata. */
 data class AddendoCalcolo(val voce: VoceStipendio, val valore: Long?, val sostituito: Boolean)
 
@@ -186,11 +192,14 @@ fun calcoliStipendio(
     }.sortedBy { it.livello }
 }
 
-/** Uno stipendio registrato (es. importato da una busta paga) di una tipologia, per il [mese] "yyyy-MM". */
+/**
+ * Uno stipendio registrato (es. importato da una busta paga) di una tipologia, per il [mese]
+ * "yyyy-MM"; nello stesso mese ce ne possono essere più d'uno (es. tredicesima a parte).
+ */
 @Entity(
     tableName = "stipendi",
     foreignKeys = [ForeignKey(entity = TipoStipendio::class, parentColumns = ["id"], childColumns = ["tipoId"], onDelete = ForeignKey.CASCADE)],
-    indices = [Index(value = ["tipoId", "mese"], unique = true)]
+    indices = [Index(value = ["tipoId", "mese"])]
 )
 data class Stipendio(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
@@ -274,8 +283,8 @@ interface StipendiDao {
     @Delete
     suspend fun eliminaVoce(voce: VoceStipendio)
 
-    @Query("SELECT * FROM stipendi WHERE tipoId = :tipoId AND mese = :mese")
-    suspend fun stipendio(tipoId: Long, mese: String): Stipendio?
+    @Query("SELECT * FROM stipendi WHERE tipoId = :tipoId AND mese = :mese ORDER BY id")
+    suspend fun stipendiDelMese(tipoId: Long, mese: String): List<Stipendio>
 
     @Insert
     suspend fun inserisciStipendio(stipendio: Stipendio): Long

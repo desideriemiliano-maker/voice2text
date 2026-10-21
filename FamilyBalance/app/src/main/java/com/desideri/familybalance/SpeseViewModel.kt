@@ -358,14 +358,12 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun aggiungiStipendio(tipoId: Long, mese: YearMonth) = viewModelScope.launch {
-        if (stipendiDao.stipendio(tipoId, mese.toString()) != null) return@launch messaggio("C'è già lo stipendio di ${formattaMese(mese)}")
         val id = stipendiDao.inserisciStipendio(com.desideri.familybalance.data.Stipendio(tipoId = tipoId, mese = mese.toString()))
         aggiornaCalcolate(id, tipoId)
     }
 
     fun cambiaMeseStipendio(stipendio: com.desideri.familybalance.data.Stipendio, mese: YearMonth) = viewModelScope.launch {
         if (stipendio.mese == mese.toString()) return@launch
-        if (stipendiDao.stipendio(stipendio.tipoId, mese.toString()) != null) return@launch messaggio("C'è già lo stipendio di ${formattaMese(mese)}")
         stipendiDao.aggiornaStipendio(stipendio.copy(mese = mese.toString()))
     }
 
@@ -415,10 +413,11 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
 
     /**
      * Registra lo stipendio di [mese] con le [righe] scelte: le voci nuove si aggiungono all'anagrafica
-     * dello stipendio; se lo stipendio del mese c'è già i suoi importi vengono aggiornati (più righe
-     * sulla stessa voce si sommano).
+     * dello stipendio; con [stipendioId] si aggiornano gli importi di quello stipendio del mese,
+     * altrimenti se ne crea uno nuovo (anche se nel mese ce n'è già un altro). Più righe sulla
+     * stessa voce si sommano.
      */
-    fun confermaImportStipendio(tipoId: Long, mese: YearMonth, righe: List<RigaImportStipendio>) = viewModelScope.launch {
+    fun confermaImportStipendio(tipoId: Long, mese: YearMonth, righe: List<RigaImportStipendio>, stipendioId: Long?) = viewModelScope.launch {
         _importStipendio.value = null
         db.withTransaction {
             val voci = stipendiDao.voci(tipoId).toMutableList()
@@ -438,7 +437,7 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
                     .conNomeImport(r.nomeLetto)
                 return stipendiDao.inserisciVoce(nuova).also { voci += nuova.copy(id = it) }
             }
-            val stipendioId = stipendiDao.stipendio(tipoId, mese.toString())?.id
+            val stipendioId = stipendioId?.takeIf { id -> stipendiDao.stipendiDelMese(tipoId, mese.toString()).any { it.id == id } }
                 ?: stipendiDao.inserisciStipendio(com.desideri.familybalance.data.Stipendio(tipoId = tipoId, mese = mese.toString()))
             righe.groupBy { voceId(it) }.forEach { (voce, rr) ->
                 val totale = rr.sumOf { it.importoCent }
