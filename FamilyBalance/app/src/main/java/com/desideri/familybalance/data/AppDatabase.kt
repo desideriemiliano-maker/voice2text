@@ -8,9 +8,10 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import java.io.File
 
-@Database(entities = [Conto::class, ContoValuta::class, Voce::class, Operazione::class, Associazione::class, Cambio::class, PrevisioneRicorrente::class], version = 16, exportSchema = false)
+@Database(entities = [Conto::class, ContoValuta::class, Voce::class, Operazione::class, Associazione::class, Cambio::class, PrevisioneRicorrente::class, TipoStipendio::class, VoceStipendio::class, Stipendio::class, ImportoStipendio::class], version = 17, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun dao(): SpeseDao
+    abstract fun stipendiDao(): StipendiDao
 
     companion object {
         const val NOME_FILE = "familybalance.db"
@@ -23,7 +24,7 @@ abstract class AppDatabase : RoomDatabase() {
                 // TRUNCATE invece di WAL: tutto il contenuto sta nel solo file .db, così il backup
                 // su Drive è una semplice copia del file senza dover gestire -wal/-shm.
                 .setJournalMode(JournalMode.TRUNCATE)
-                .addMigrations(MIGRAZIONE_1_2, MIGRAZIONE_2_3, MIGRAZIONE_3_4, MIGRAZIONE_4_5, MIGRAZIONE_5_6, MIGRAZIONE_6_7, MIGRAZIONE_7_8, MIGRAZIONE_8_9, MIGRAZIONE_9_10, MIGRAZIONE_10_11, MIGRAZIONE_11_12, MIGRAZIONE_12_13, MIGRAZIONE_13_14, MIGRAZIONE_14_15, MIGRAZIONE_15_16)
+                .addMigrations(MIGRAZIONE_1_2, MIGRAZIONE_2_3, MIGRAZIONE_3_4, MIGRAZIONE_4_5, MIGRAZIONE_5_6, MIGRAZIONE_6_7, MIGRAZIONE_7_8, MIGRAZIONE_8_9, MIGRAZIONE_9_10, MIGRAZIONE_10_11, MIGRAZIONE_11_12, MIGRAZIONE_12_13, MIGRAZIONE_13_14, MIGRAZIONE_14_15, MIGRAZIONE_15_16, MIGRAZIONE_16_17)
                 .build()
                 .also { istanza = it }
         }
@@ -197,6 +198,35 @@ abstract class AppDatabase : RoomDatabase() {
         private val MIGRAZIONE_15_16 = object : Migration(15, 16) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE `conti_valuta` ADD COLUMN `descrizione` TEXT")
+            }
+        }
+
+        /** Versione 17: anagrafica stipendi (tipologie e voci) e stipendi registrati con i loro importi. */
+        private val MIGRAZIONE_16_17 = object : Migration(16, 17) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `stipendi_tipi` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `nome` TEXT NOT NULL, " +
+                        "`valuta` TEXT NOT NULL, `contoValutaId` INTEGER, `obsoleto` INTEGER NOT NULL)"
+                )
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `stipendi_voci` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `tipoId` INTEGER NOT NULL, " +
+                        "`descrizione` TEXT NOT NULL, `ordine` INTEGER NOT NULL, " +
+                        "FOREIGN KEY(`tipoId`) REFERENCES `stipendi_tipi`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )"
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_stipendi_voci_tipoId` ON `stipendi_voci` (`tipoId`)")
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `stipendi` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `tipoId` INTEGER NOT NULL, " +
+                        "`mese` TEXT NOT NULL, FOREIGN KEY(`tipoId`) REFERENCES `stipendi_tipi`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )"
+                )
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_stipendi_tipoId_mese` ON `stipendi` (`tipoId`, `mese`)")
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `stipendi_importi` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `stipendioId` INTEGER NOT NULL, " +
+                        "`voceId` INTEGER NOT NULL, `importoCent` INTEGER NOT NULL, " +
+                        "FOREIGN KEY(`stipendioId`) REFERENCES `stipendi`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE , " +
+                        "FOREIGN KEY(`voceId`) REFERENCES `stipendi_voci`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )"
+                )
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_stipendi_importi_stipendioId_voceId` ON `stipendi_importi` (`stipendioId`, `voceId`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_stipendi_importi_voceId` ON `stipendi_importi` (`voceId`)")
             }
         }
 

@@ -109,6 +109,24 @@ data class DatiApp(
     }
 }
 
+/** Anagrafica stipendi e stipendi registrati, con le loro voci e importi. */
+data class DatiStipendi(
+    val tipi: List<com.desideri.familybalance.data.TipoStipendio> = emptyList(),
+    val voci: List<com.desideri.familybalance.data.VoceStipendio> = emptyList(),
+    val stipendi: List<com.desideri.familybalance.data.Stipendio> = emptyList(),
+    val importi: List<com.desideri.familybalance.data.ImportoStipendio> = emptyList()
+) {
+    fun vociDi(tipoId: Long) = voci.filter { it.tipoId == tipoId }
+    fun stipendiDi(tipoId: Long) = stipendi.filter { it.tipoId == tipoId }
+    val importiPerStipendio by lazy { importi.groupBy { it.stipendioId }.mapValues { (_, l) -> l.associate { it.voceId to it.importoCent } } }
+}
+
+/** Busta paga letta da Gemini in attesa di conferma per la tipologia [tipoId]. */
+data class ImportStipendio(val tipoId: Long, val letta: com.desideri.familybalance.estratto.BustaPagaLetta)
+
+/** Una riga confermata dell'import: voce esistente ([voceId]) o nuova ([nuovaVoce]) e importo. */
+data class RigaImportStipendio(val voceId: Long?, val nuovaVoce: String?, val importoCent: Long)
+
 /** Estratto conto letto per il riscontro con le operazioni del conto/valuta [contoValutaId]. */
 /** Foglio Excel letto per il riscontro, in attesa della scelta delle colonne (proposta già calcolata). */
 data class StatoColonneExcel(
@@ -139,9 +157,109 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
 
     private val db = AppDatabase.get(application)
     private val dao = db.dao()
+    private val stipendiDao = db.stipendiDao()
     private val preferenze = Preferenze(application)
 
     private val _impostazioni = MutableStateFlow(preferenze.carica())
+
+    // --- Stipendi ---
+
+    val stipendi: StateFlow<DatiStipendi> = combine(
+        stipendiDao.tipiFlow(), stipendiDao.vociFlow(), stipendiDao.stipendiFlow(), stipendiDao.importiFlow()
+    ) { tipi, voci, stipendi, importi -> DatiStipendi(tipi, voci, stipendi, importi) }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, DatiStipendi())
+
+    /**
+     * Salva una tipologia di stipendio con le sue [voci] nell'ordine dato (id 0 = nuova); le voci
+     * tolte vengono eliminate con i loro importi.
+     */
+    fun salvaTipoStipendio(tipo: com.desideri.familybalance.data.TipoStipendio, voci: List<com.desideri.familybalance.data.VoceStipendio>, onFatto: () -> Unit) = viewModelScope.launch {
+        val nome = tipo.nome.trim()
+        if (nome.isEmpty()) return@launch messaggio("Il nome dello stipendio è obbligatorio")
+        val pulite = voci.map { it.copy(descrizione = it.descrizione.trim()) }.filter { it.descrizione.isNotEmpty() }
+        if (pulite.map { it.descrizione.lowercase() }.distinct().size != pulite.size) return@launch messaggio("Ci sono voci con la stessa descrizione")
+        db.withTransaction {
+            val id = if (tipo.id == 0L) stipendiDao.inserisciTipo(tipo.copy(nome = nome)) else tipo.id.also { stipendiDao.aggiornaTipo(tipo.copy(nome = nome)) }
+            val tenute = pulite.filter { it.id != 0L }.map { it.id }.toSet()
+            stipendiDao.voci(id).filter { it.id !in tenute }.forEach { stipendiDao.eliminaVoce(it) }
+            pulite.forEachIndexed { i, v ->
+                if (v.id == 0L) stipendiDao.inserisciVoce(v.copy(tipoId = id, ordine = i)) else stipendiDao.aggiornaVoce(v.copy(tipoId = id, ordine = i))
+            }
+        }
+        onFatto()
+    }
+
+    fun eliminaTipoStipendio(tipo: com.desideri.familybalance.data.TipoStipendio) = viewModelScope.launch { stipendiDao.eliminaTipo(tipo) }
+
+    /** Importo di una voce in uno stipendio; null lo toglie. */
+    fun impostaImportoStipendio(stipendioId: Long, voceId: Long, importoCent: Long?) = viewModelScope.launch {
+        if (importoCent == null) stipendiDao.eliminaImporto(stipendioId, voceId)
+        else stipendiDao.salvaImporto(com.desideri.familybalance.data.ImportoStipendio(stipendioId = stipendioId, voceId = voceId, importoCent = importoCent))
+    }
+
+    fun aggiungiStipendio(tipoId: Long, mese: YearMonth) = viewModelScope.launch {
+        if (stipendiDao.stipendio(tipoId, mese.toString()) != null) return@launch messaggio("C'è già lo stipendio di ${formattaMese(mese)}")
+        stipendiDao.inserisciStipendio(com.desideri.familybalance.data.Stipendio(tipoId = tipoId, mese = mese.toString()))
+    }
+
+    fun cambiaMeseStipendio(stipendio: com.desideri.familybalance.data.Stipendio, mese: YearMonth) = viewModelScope.launch {
+        if (stipendio.mese == mese.toString()) return@launch
+        if (stipendiDao.stipendio(stipendio.tipoId, mese.toString()) != null) return@launch messaggio("C'è già lo stipendio di ${formattaMese(mese)}")
+        stipendiDao.aggiornaStipendio(stipendio.copy(mese = mese.toString()))
+    }
+
+    fun eliminaStipendio(stipendio: com.desideri.familybalance.data.Stipendio) = viewModelScope.launch { stipendiDao.eliminaStipendio(stipendio) }
+
+    private val _importStipendio = MutableStateFlow<ImportStipendio?>(null)
+    val importStipendio: StateFlow<ImportStipendio?> = _importStipendio.asStateFlow()
+
+    /** Legge la busta paga [uri] con Gemini e apre la conferma dell'import per la tipologia [tipoId]. */
+    fun importaBustaPaga(uri: Uri, tipoId: Long) = viewModelScope.launch {
+        val dati = stipendi.value
+        val tipo = dati.tipi.firstOrNull { it.id == tipoId } ?: return@launch
+        _testoAttesa.value = "Lettura della busta paga con Gemini…"
+        _importazioneInCorso.value = true
+        try {
+            val letta = com.desideri.familybalance.estratto.BustaPagaGemini(BuildConfig.GEMINI_API_KEY, RegistroPromptStore(getApplication()))
+                .leggi(getApplication(), uri, tipo.nome, tipo.valuta, dati.vociDi(tipoId).map { it.descrizione })
+            if (letta.voci.isEmpty()) messaggio("Nessuna voce trovata nella busta paga")
+            else _importStipendio.value = ImportStipendio(tipoId, letta)
+        } catch (e: Exception) {
+            messaggio("Lettura della busta paga non riuscita: ${e.message ?: e.javaClass.simpleName}")
+        } finally {
+            _importazioneInCorso.value = false
+            _testoAttesa.value = "Lettura del file…"
+        }
+    }
+
+    fun annullaImportStipendio() {
+        _importStipendio.value = null
+    }
+
+    /**
+     * Registra lo stipendio di [mese] con le [righe] scelte: le voci nuove si aggiungono all'anagrafica
+     * dello stipendio; se lo stipendio del mese c'è già i suoi importi vengono aggiornati (più righe
+     * sulla stessa voce si sommano).
+     */
+    fun confermaImportStipendio(tipoId: Long, mese: YearMonth, righe: List<RigaImportStipendio>) = viewModelScope.launch {
+        _importStipendio.value = null
+        db.withTransaction {
+            val voci = stipendiDao.voci(tipoId).toMutableList()
+            suspend fun voceId(r: RigaImportStipendio): Long {
+                r.voceId?.let { return it }
+                val descrizione = r.nuovaVoce!!.trim()
+                voci.firstOrNull { it.descrizione.equals(descrizione, true) }?.let { return it.id }
+                val nuova = com.desideri.familybalance.data.VoceStipendio(tipoId = tipoId, descrizione = descrizione, ordine = voci.size)
+                return stipendiDao.inserisciVoce(nuova).also { voci += nuova.copy(id = it) }
+            }
+            val stipendioId = stipendiDao.stipendio(tipoId, mese.toString())?.id
+                ?: stipendiDao.inserisciStipendio(com.desideri.familybalance.data.Stipendio(tipoId = tipoId, mese = mese.toString()))
+            righe.groupBy { voceId(it) }.forEach { (voce, rr) ->
+                stipendiDao.salvaImporto(com.desideri.familybalance.data.ImportoStipendio(stipendioId = stipendioId, voceId = voce, importoCent = rr.sumOf { it.importoCent }))
+            }
+        }
+        messaggio("Stipendio di ${formattaMese(mese)} registrato (${righe.size} voci)")
+    }
 
     /** Saldi della sezione Conti visibili: nascosti a ogni avvio dell'app, non salvato. */
     private val _mostraSaldi = MutableStateFlow(false)

@@ -11,7 +11,8 @@ private val RETENZIONE_MS = TimeUnit.DAYS.toMillis(30)
 
 /** Tipo di chiamata a Gemini registrata nel log. */
 enum class TipoChiamataGemini(val etichetta: String) {
-    ESTRATTO_CONTO("Estratto conto")
+    ESTRATTO_CONTO("Estratto conto"),
+    BUSTA_PAGA("Busta paga")
 }
 
 data class VoceRegistro(

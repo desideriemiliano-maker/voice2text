@@ -18,6 +18,8 @@ import androidx.compose.material.icons.automirrored.filled.ShowChart
 import androidx.compose.material.icons.filled.AccountBalance
 import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.filled.CloudUpload
+import androidx.compose.material.icons.filled.Badge
+import androidx.compose.material.icons.filled.Payments
 import androidx.compose.material.icons.filled.EventRepeat
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Info
@@ -70,6 +72,7 @@ sealed interface Schermata {
     data object AnagraficaSpese : Schermata
     data object AnagraficaConti : Schermata
     data object AnagraficaAssociazioni : Schermata
+    data object AnagraficaStipendi : Schermata
     data object Impostazioni : Schermata
     data object Backup : Schermata
     data object MappaSpostamenti : Schermata
@@ -101,6 +104,7 @@ fun SpeseApp(vm: SpeseViewModel = viewModel()) {
             Schermata.AnagraficaSpese -> AnagraficaSpeseScreen(vm, onIndietro = ::chiudi)
             Schermata.AnagraficaConti -> AnagraficaContiScreen(vm, onIndietro = ::chiudi)
             Schermata.AnagraficaAssociazioni -> AnagraficaAssociazioniScreen(vm, onIndietro = ::chiudi)
+            Schermata.AnagraficaStipendi -> AnagraficaStipendiScreen(vm, onIndietro = ::chiudi)
             Schermata.Impostazioni -> ImpostazioniScreen(vm, onIndietro = ::chiudi)
             Schermata.Backup -> BackupScreen(vm, onIndietro = ::chiudi)
             Schermata.MappaSpostamenti -> MappaSpostamentiScreen(vm, onIndietro = ::chiudi)
@@ -117,6 +121,7 @@ private fun SchermataPrincipale(vm: SpeseViewModel, sezione: Sezione, onSezione:
     var menuAperto by remember { mutableStateOf(false) }
     var mostraVersioni by remember { mutableStateOf(false) }
     var mostraRegistro by remember { mutableStateOf(false) }
+    var mostraStipendi by remember { mutableStateOf(false) }
     val importazioneInCorso by vm.importazioneInCorso.collectAsStateWithLifecycle()
     val importEstratto by vm.importEstratto.collectAsStateWithLifecycle()
     val testoAttesa by vm.testoAttesa.collectAsStateWithLifecycle()
@@ -135,9 +140,12 @@ private fun SchermataPrincipale(vm: SpeseViewModel, sezione: Sezione, onSezione:
                             VoceMenu("Anagrafica spese", Icons.AutoMirrored.Filled.List) { menuAperto = false; onApri(Schermata.AnagraficaSpese) }
                             VoceMenu("Anagrafica conti", Icons.Filled.AccountBalanceWallet) { menuAperto = false; onApri(Schermata.AnagraficaConti) }
                             VoceMenu("Anagrafica associazioni", Icons.Filled.Link) { menuAperto = false; onApri(Schermata.AnagraficaAssociazioni) }
+                            VoceMenu("Anagrafica stipendi", Icons.Filled.Badge) { menuAperto = false; onApri(Schermata.AnagraficaStipendi) }
                             HorizontalDivider()
                             VoceMenu("Riscontro spostamenti", Icons.AutoMirrored.Filled.CompareArrows) { menuAperto = false; onApri(Schermata.MappaSpostamenti) }
                             VoceMenu("Cambi CHF/EUR", Icons.Filled.CurrencyExchange) { menuAperto = false; onApri(Schermata.Cambi) }
+                            HorizontalDivider()
+                            VoceMenu("Stipendi", Icons.Filled.Payments) { menuAperto = false; mostraStipendi = true }
                             HorizontalDivider()
                             VoceMenu("Backup Google Drive", Icons.Filled.CloudUpload) { menuAperto = false; onApri(Schermata.Backup) }
                             HorizontalDivider()
@@ -174,6 +182,7 @@ private fun SchermataPrincipale(vm: SpeseViewModel, sezione: Sezione, onSezione:
 
     if (mostraVersioni) VersioniDialog(onDismiss = { mostraVersioni = false })
     if (mostraRegistro) RegistroDialog(onDismiss = { mostraRegistro = false })
+    if (mostraStipendi) StipendiDialog(vm, onChiudi = { mostraStipendi = false })
 
     colonneExcel?.let { ColonneExcelDialog(vm, dati, it) }
 
