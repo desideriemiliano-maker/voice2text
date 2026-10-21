@@ -485,6 +485,8 @@ fun StipendiDialog(vm: SpeseViewModel, onChiudi: () -> Unit) {
                         righe = stipendi.stipendiDi(tipo.id).sortedByDescending { it.mese },
                         importi = stipendi.importiPerStipendio,
                         percentuali = stipendi.percentualiPerStipendio,
+                        sostituzioni = stipendi.sostituzioniPerStipendio,
+                        tutteLeVoci = vociTipo,
                         manuali = stipendi.manualiPerStipendio,
                         valuta = tipo.valuta,
                         onCella = { s, v -> cella = s to v },
@@ -502,7 +504,22 @@ fun StipendiDialog(vm: SpeseViewModel, onChiudi: () -> Unit) {
         val vociTipo = stipendi.vociDi(s.tipoId)
         val importiMese = stipendi.importiPerStipendio[s.id].orEmpty()
         val percentualiMese = stipendi.percentualiPerStipendio[s.id].orEmpty()
+        val sostituzioniMese = stipendi.sostituzioniPerStipendio[s.id].orEmpty()
         val addendi = v.idAddendi.mapNotNull { id -> vociTipo.firstOrNull { it.id == id } }
+        // Valori delle voci calcolate senza le sostituzioni di questa voce (il loro valore "proprio").
+        val valoriPropri = valoriStipendio(vociTipo, importiMese, percentualiMese, sostituzioniMese - v.id)
+        // Voci sommate calcolate: valore usato solo da questa voce (sostitutivo o il proprio).
+        val testiCalcolate = remember(s, v) {
+            androidx.compose.runtime.mutableStateMapOf<Long, String>().apply {
+                addendi.filter { it.calcolata }.forEach { a ->
+                    put(a.id, (sostituzioniMese[v.id]?.get(a.id) ?: valoriPropri[a.id])?.let { centInTesto(it) } ?: "")
+                }
+            }
+        }
+        /** Sostituzioni scritte: solo dove il valore è diverso da quello proprio della voce sommata. */
+        fun sostituzioniScritte(): Map<Long, Long> = testiCalcolate.mapNotNull { (id, t) ->
+            testoInCent(t)?.takeIf { it != valoriPropri[id] }?.let { id to it }
+        }.toMap()
         val testi = remember(s, v) {
             androidx.compose.runtime.mutableStateMapOf<Long, String>().apply {
                 addendi.filterNot { it.calcolata }.forEach { a -> put(a.id, importiMese[a.id]?.let { centInTesto(it) } ?: "") }
@@ -517,7 +534,7 @@ fun StipendiDialog(vm: SpeseViewModel, onChiudi: () -> Unit) {
         val anteprimaPerc = percentualiMese.toMutableMap().apply {
             if (v.percentuale != null) testoPerc.trim().replace(',', '.').toDoubleOrNull()?.let { put(v.id, it) }
         }
-        val anteprima = valoriStipendio(vociTipo, anteprimaImporti, anteprimaPerc)
+        val anteprima = valoriStipendio(vociTipo, anteprimaImporti, anteprimaPerc, (sostituzioniMese - v.id) + (v.id to sostituzioniScritte()))
         AlertDialog(
             onDismissRequest = { cella = null },
             title = { Text("${v.descrizione} · ${formattaMese(YearMonth.parse(s.mese))}") },
@@ -527,10 +544,13 @@ fun StipendiDialog(vm: SpeseViewModel, onChiudi: () -> Unit) {
                     Text("Valori di questo stipendio; l'anagrafica e gli altri stipendi non cambiano.", style = MaterialTheme.typography.bodySmall)
                     addendi.forEach { a ->
                         if (a.calcolata) {
-                            Row {
-                                Text("${a.descrizione} (calcolata)", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
-                                Text(anteprima[a.id]?.let { formattaCent(it, tipo?.valuta ?: "EUR") } ?: "—", style = MaterialTheme.typography.bodyMedium)
-                            }
+                            // Valore usato solo da questa voce: la colonna «${a.descrizione}» non cambia.
+                            OutlinedTextField(
+                                value = testiCalcolate[a.id].orEmpty(), onValueChange = { testiCalcolate[a.id] = it; errore = null },
+                                label = { Text("${a.descrizione} (calcolata, solo per questa voce)") }, singleLine = true,
+                                supportingText = { valoriPropri[a.id]?.let { p -> Text("Valore proprio: ${formattaCent(p, tipo?.valuta ?: "EUR")}") } },
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth()
+                            )
                         } else {
                             OutlinedTextField(
                                 value = testi[a.id].orEmpty(), onValueChange = { testi[a.id] = it; errore = null },
@@ -559,9 +579,15 @@ fun StipendiDialog(vm: SpeseViewModel, onChiudi: () -> Unit) {
                     val perc = if (v.percentuale != null) testoPerc.trim().replace(',', '.').toDoubleOrNull() else null
                     when {
                         importi.values.any { it == Long.MIN_VALUE } -> errore = "Ci sono importi non validi"
+                        testiCalcolate.values.any { it.isNotBlank() && testoInCent(it) == null } -> errore = "Ci sono importi non validi"
                         v.percentuale != null && perc == null -> errore = "Percentuale non valida"
                         else -> {
-                            vm.salvaInputCalcolata(s.id, importi.filter { (id, c) -> c != importiMese[id] }, perc?.let { v.id to it })
+                            val sost = sostituzioniScritte()
+                            vm.salvaInputCalcolata(
+                                s.id, importi.filter { (id, c) -> c != importiMese[id] },
+                                perc?.takeIf { it != (percentualiMese[v.id] ?: v.percentuale) }?.let { v.id to it },
+                                if (sost != sostituzioniMese[v.id].orEmpty()) v.id to sost else null
+                            )
                             cella = null
                         }
                     }
@@ -571,7 +597,7 @@ fun StipendiDialog(vm: SpeseViewModel, onChiudi: () -> Unit) {
                 Row {
                     // Voci sommate cambiate a mano o percentuale cambiata: si torna ai valori importati e all'anagrafica.
                     val daRipristinare = addendi.filter { stipendi.importatiPerStipendio[s.id]?.containsKey(it.id) == true }.map { it.id }
-                    val percentualeManuale = v.percentuale != null && v.id in stipendi.manualiPerStipendio[s.id].orEmpty()
+                    val percentualeManuale = v.id in stipendi.manualiPerStipendio[s.id].orEmpty()
                     if (daRipristinare.isNotEmpty() || percentualeManuale) {
                         TextButton(onClick = {
                             vm.ripristinaImportati(s.id, daRipristinare, if (percentualeManuale) listOf(v) else emptyList())
@@ -670,6 +696,8 @@ private fun TabellaStipendi(
     righe: List<Stipendio>,
     importi: Map<Long, Map<Long, Long>>,
     percentuali: Map<Long, Map<Long, Double>>,
+    sostituzioni: Map<Long, Map<Long, Map<Long, Long>>>,
+    tutteLeVoci: List<VoceStipendio>,
     manuali: Map<Long, Set<Long>>,
     valuta: String,
     onCella: (Stipendio, VoceStipendio) -> Unit,
@@ -707,7 +735,8 @@ private fun TabellaStipendi(
             Column(modifier = Modifier.verticalScroll(verticale).horizontalScroll(orizzontale)) {
                 righe.forEachIndexed { i, s ->
                     // Valori registrati e calcolati.
-                    val valori = valoriStipendio(voci, importi[s.id].orEmpty(), percentuali[s.id].orEmpty())
+                    // Calcolo con tutte le voci (anche le colonne nascoste) e le sostituzioni dello stipendio.
+                    val valori = valoriStipendio(tutteLeVoci, importi[s.id].orEmpty(), percentuali[s.id].orEmpty(), sostituzioni[s.id].orEmpty())
                     Row {
                         voci.forEach { v ->
                             if (v.calcolata) {

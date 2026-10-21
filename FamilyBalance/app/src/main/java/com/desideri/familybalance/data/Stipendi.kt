@@ -79,7 +79,13 @@ fun arrotonda(cent: Long, decimali: Int, aCinque: Boolean): Long {
     return java.math.BigDecimal(cent).divide(java.math.BigDecimal(passo)).setScale(0, java.math.RoundingMode.HALF_UP).toLong() * passo
 }
 
-fun valoriStipendio(voci: List<VoceStipendio>, importi: Map<Long, Long>, percentuali: Map<Long, Double> = emptyMap()): Map<Long, Long> {
+fun valoriStipendio(
+    voci: List<VoceStipendio>,
+    importi: Map<Long, Long>,
+    percentuali: Map<Long, Double> = emptyMap(),
+    /** Voce calcolata -> (voce sommata -> valore usato solo da lei). */
+    sostituzioni: Map<Long, Map<Long, Long>> = emptyMap()
+): Map<Long, Long> {
     val perId = voci.associateBy { it.id }
     val risultato = HashMap<Long, Long?>()
     fun valore(id: Long, inCorso: Set<Long>): Long? {
@@ -87,7 +93,7 @@ fun valoriStipendio(voci: List<VoceStipendio>, importi: Map<Long, Long>, percent
         val v = perId[id] ?: return null
         if (!v.calcolata) return importi[id]
         if (id in inCorso) return null
-        val parti = v.idAddendi.mapNotNull { valore(it, inCorso + id) }
+        val parti = v.idAddendi.mapNotNull { a -> sostituzioni[id]?.get(a) ?: valore(a, inCorso + id) }
         val somma = if (parti.isEmpty()) null else parti.sum()
         // La percentuale dello stipendio, se memorizzata, prevale su quella dell'anagrafica.
         val percentuale = if (v.percentuale != null) percentuali[id] ?: v.percentuale else null
@@ -137,8 +143,23 @@ data class ImportoStipendio(
     @androidx.room.ColumnInfo(defaultValue = "0")
     val manuale: Boolean = false,
     /** Valore importato dalla busta paga (o presente prima della modifica a mano), per ripristinarlo. */
-    val importoImportatoCent: Long? = null
-)
+    val importoImportatoCent: Long? = null,
+    /**
+     * Voce calcolata: valori usati al posto di quelli delle voci sommate calcolate, solo per questa
+     * voce in questo stipendio ("idVoce:centesimi" separati da virgola).
+     */
+    val sostituzioni: String? = null
+) {
+    val mappaSostituzioni: Map<Long, Long>
+        get() = sostituzioni.orEmpty().split(',').mapNotNull { p ->
+            val (id, cent) = p.split(':').takeIf { it.size == 2 } ?: return@mapNotNull null
+            (id.trim().toLongOrNull() ?: return@mapNotNull null) to (cent.trim().toLongOrNull() ?: return@mapNotNull null)
+        }.toMap()
+
+    companion object {
+        fun testoSostituzioni(m: Map<Long, Long>): String? = m.entries.joinToString(",") { "${it.key}:${it.value}" }.ifEmpty { null }
+    }
+}
 
 @Dao
 interface StipendiDao {

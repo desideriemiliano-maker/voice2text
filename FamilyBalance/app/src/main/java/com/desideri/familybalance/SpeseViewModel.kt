@@ -124,6 +124,10 @@ data class DatiStipendi(
         importi.filter { it.manuale && it.importoImportatoCent != null }.groupBy { it.stipendioId }
             .mapValues { (_, l) -> l.associate { it.voceId to it.importoImportatoCent!! } }
     }
+    /** Valori sostitutivi delle voci calcolate (id stipendio -> voce calcolata -> voce sommata -> centesimi). */
+    val sostituzioniPerStipendio by lazy {
+        importi.filter { it.sostituzioni != null }.groupBy { it.stipendioId }.mapValues { (_, l) -> l.associate { it.voceId to it.mappaSostituzioni } }
+    }
     /** Voci modificate a mano in ogni stipendio (id stipendio -> id voci). */
     val manualiPerStipendio by lazy { importi.filter { it.manuale }.groupBy { it.stipendioId }.mapValues { (_, l) -> l.map { it.voceId }.toSet() } }
     /** Percentuali delle voci calcolate memorizzate in ogni stipendio (id stipendio -> id voce -> %). */
@@ -230,12 +234,15 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
         val importi = stipendiDao.importi(stipendioId)
         val percentuali = importi.filter { it.percentuale != null }.associate { it.voceId to it.percentuale!! }.toMutableMap()
         conPercentuale.forEach { v -> percentuali.getOrPut(v.id) { v.percentuale!! } }
-        val valori = com.desideri.familybalance.data.valoriStipendio(voci, importi.associate { it.voceId to it.importoCent }, percentuali)
+        val sostituzioni = importi.filter { it.sostituzioni != null }.associate { it.voceId to it.mappaSostituzioni }
+        val valori = com.desideri.familybalance.data.valoriStipendio(voci, importi.associate { it.voceId to it.importoCent }, percentuali, sostituzioni)
         conPercentuale.forEach { v ->
+            val esistente = importi.firstOrNull { it.voceId == v.id }
             val nuovo = com.desideri.familybalance.data.ImportoStipendio(
                 stipendioId = stipendioId, voceId = v.id, importoCent = valori[v.id] ?: 0L, percentuale = percentuali[v.id],
-                manuale = importi.firstOrNull { it.voceId == v.id }?.manuale ?: false,
-                importoImportatoCent = importi.firstOrNull { it.voceId == v.id }?.importoImportatoCent
+                manuale = esistente?.manuale ?: false,
+                importoImportatoCent = esistente?.importoImportatoCent,
+                sostituzioni = esistente?.sostituzioni
             )
             val attuale = importi.firstOrNull { it.voceId == v.id }
             if (attuale?.importoCent != nuovo.importoCent || attuale.percentuale != nuovo.percentuale) stipendiDao.salvaImporto(nuovo)
@@ -277,7 +284,7 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
      * Riporta le voci [voci] dello stipendio al valore importato e le percentuali delle voci calcolate
      * [percentualiDa] a quella dell'anagrafica; non sono più modificate a mano.
      */
-    fun ripristinaImportati(stipendioId: Long, voci: Collection<Long>, percentualiDa: Collection<com.desideri.familybalance.data.VoceStipendio> = emptyList()) = viewModelScope.launch {
+    fun ripristinaImportati(stipendioId: Long, voci: Collection<Long>, calcolate: Collection<com.desideri.familybalance.data.VoceStipendio> = emptyList()) = viewModelScope.launch {
         db.withTransaction {
             val importi = stipendiDao.importi(stipendioId)
             voci.forEach { id ->
@@ -285,9 +292,11 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
                 val importato = x.importoImportatoCent ?: return@forEach
                 stipendiDao.salvaImporto(x.copy(importoCent = importato, manuale = false))
             }
-            percentualiDa.forEach { v ->
+            // Voci calcolate: percentuale dell'anagrafica e niente valori sostitutivi.
+            calcolate.forEach { v ->
                 val x = importi.firstOrNull { it.voceId == v.id } ?: return@forEach
-                stipendiDao.salvaImporto(x.copy(percentuale = v.percentuale, manuale = false))
+                if (v.percentuale == null) stipendiDao.eliminaImporto(stipendioId, v.id)
+                else stipendiDao.salvaImporto(x.copy(percentuale = v.percentuale, manuale = false, sostituzioni = null))
             }
             aggiornaCalcolate(stipendioId)
         }
@@ -297,14 +306,30 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
      * Valori di partenza di una voce calcolata in uno stipendio: [importi] delle voci sommate (null =
      * tolto) e l'eventuale [percentuale] (voce -> %); poi si ricalcolano le voci calcolate.
      */
-    fun salvaInputCalcolata(stipendioId: Long, importi: Map<Long, Long?>, percentuale: Pair<Long, Double>?) = viewModelScope.launch {
+    fun salvaInputCalcolata(
+        stipendioId: Long,
+        importi: Map<Long, Long?>,
+        percentuale: Pair<Long, Double>?,
+        /** Voce calcolata e valori sostitutivi delle sue voci sommate calcolate (vuoto = nessuno). */
+        sostituzioni: Pair<Long, Map<Long, Long>>? = null
+    ) = viewModelScope.launch {
         db.withTransaction {
             importi.forEach { (voceId, cent) ->
                 if (cent == null) stipendiDao.eliminaImporto(stipendioId, voceId)
                 else salvaManuale(stipendioId, voceId, cent)
             }
-            percentuale?.let { (voceId, p) ->
-                stipendiDao.salvaImporto(com.desideri.familybalance.data.ImportoStipendio(stipendioId = stipendioId, voceId = voceId, importoCent = 0, percentuale = p, manuale = true))
+            // Percentuale e sostituzioni stanno nella riga della voce calcolata.
+            val voceCalcolata = percentuale?.first ?: sostituzioni?.first
+            if (voceCalcolata != null) {
+                val esistente = stipendiDao.importi(stipendioId).firstOrNull { it.voceId == voceCalcolata }
+                val base = esistente ?: com.desideri.familybalance.data.ImportoStipendio(stipendioId = stipendioId, voceId = voceCalcolata, importoCent = 0)
+                val nuoveSostituzioni = sostituzioni?.second?.let { com.desideri.familybalance.data.ImportoStipendio.testoSostituzioni(it) } ?: base.sostituzioni
+                val aggiornata = base.copy(
+                    percentuale = percentuale?.second ?: base.percentuale,
+                    sostituzioni = nuoveSostituzioni,
+                    manuale = base.manuale || percentuale != null || nuoveSostituzioni != base.sostituzioni
+                )
+                if (aggiornata != esistente) stipendiDao.salvaImporto(aggiornata)
             }
             aggiornaCalcolate(stipendioId)
         }
