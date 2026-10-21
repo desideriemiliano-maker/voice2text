@@ -111,6 +111,15 @@ class Preferenze(context: Context) {
     fun salvaVociEscluseStipendio(tipoId: Long, nomi: Set<String>) =
         prefs.edit().putString("stipendi_esclusi_$tipoId", nomi.joinToString("|")).apply()
 
+    /** Colonne (id delle voci) nascoste nella tabella dello stipendio [tipoId], se si è scelto di ricordarle. */
+    fun colonneNascosteStipendio(tipoId: Long): Set<Long>? =
+        prefs.getString("stipendi_colonne_nascoste_$tipoId", null)?.split(',')?.mapNotNull { it.toLongOrNull() }?.toSet()
+
+    /** null = non ricordare (si torna a tutte le colonne alla prossima apertura). */
+    fun salvaColonneNascosteStipendio(tipoId: Long, ids: Set<Long>?) = prefs.edit().apply {
+        if (ids == null) remove("stipendi_colonne_nascoste_$tipoId") else putString("stipendi_colonne_nascoste_$tipoId", ids.joinToString(","))
+    }.apply()
+
     /** Ultimo stato della casella «Ricorda la selezione» dell'import delle buste paga (predefinito sì). */
     fun ricordaSelezioneStipendio(): Boolean = prefs.getString("stipendi_ricorda_selezione", "true") == "true"
 

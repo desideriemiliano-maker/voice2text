@@ -298,6 +298,8 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun vociEscluseStipendio(tipoId: Long): Set<String> = preferenze.vociEscluseStipendio(tipoId)
+    fun colonneNascosteStipendio(tipoId: Long): Set<Long>? = preferenze.colonneNascosteStipendio(tipoId)
+    fun salvaColonneNascosteStipendio(tipoId: Long, ids: Set<Long>?) = preferenze.salvaColonneNascosteStipendio(tipoId, ids)
     fun ricordaSelezioneStipendio(): Boolean = preferenze.ricordaSelezioneStipendio()
 
     /**

@@ -453,8 +453,33 @@ fun StipendiDialog(vm: SpeseViewModel, onChiudi: () -> Unit) {
                         }
                         OutlinedButton(onClick = { nuovoMese = true }) { Text("+ Mese") }
                     }
+                    // Colonne mostrate: le nascoste si ricordano solo se scelto (anche le voci nuove sono mostrate).
+                    var nascoste by remember(tipo.id) { mutableStateOf(vm.colonneNascosteStipendio(tipo.id) ?: emptySet()) }
+                    var ricordaColonne by remember(tipo.id) { mutableStateOf(vm.colonneNascosteStipendio(tipo.id) != null) }
+                    val vociTipo = stipendi.vociDi(tipo.id)
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(bottom = 6.dp)) {
+                        MenuMultiplo(
+                            "Colonne", vociTipo, vociTipo.filter { it.id !in nascoste }, { it.descrizione },
+                            onCambia = { scelte ->
+                                nascoste = vociTipo.map { it.id }.toSet() - scelte.map { it.id }.toSet()
+                                if (ricordaColonne) vm.salvaColonneNascosteStipendio(tipo.id, nascoste)
+                            },
+                            modifier = Modifier.weight(1f),
+                            conTutti = true
+                        )
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.clickable {
+                            ricordaColonne = !ricordaColonne
+                            vm.salvaColonneNascosteStipendio(tipo.id, if (ricordaColonne) nascoste else null)
+                        }) {
+                            Checkbox(checked = ricordaColonne, onCheckedChange = {
+                                ricordaColonne = it
+                                vm.salvaColonneNascosteStipendio(tipo.id, if (it) nascoste else null)
+                            })
+                            Text("Ricorda", style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
                     TabellaStipendi(
-                        voci = stipendi.vociDi(tipo.id),
+                        voci = vociTipo.filter { it.id !in nascoste },
                         righe = stipendi.stipendiDi(tipo.id).sortedByDescending { it.mese },
                         importi = stipendi.importiPerStipendio,
                         percentuali = stipendi.percentualiPerStipendio,
