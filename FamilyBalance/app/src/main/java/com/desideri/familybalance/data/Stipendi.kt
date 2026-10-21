@@ -65,7 +65,7 @@ data class VoceStipendio(
  * voce) e quelli delle voci calcolate, anche a partire da altre voci calcolate (i riferimenti
  * circolari valgono zero). Senza nessun addendo valorizzato la voce calcolata resta vuota.
  */
-fun valoriStipendio(voci: List<VoceStipendio>, importi: Map<Long, Long>): Map<Long, Long> {
+fun valoriStipendio(voci: List<VoceStipendio>, importi: Map<Long, Long>, percentuali: Map<Long, Double> = emptyMap()): Map<Long, Long> {
     val perId = voci.associateBy { it.id }
     val risultato = HashMap<Long, Long?>()
     fun valore(id: Long, inCorso: Set<Long>): Long? {
@@ -75,7 +75,9 @@ fun valoriStipendio(voci: List<VoceStipendio>, importi: Map<Long, Long>): Map<Lo
         if (id in inCorso) return null
         val parti = v.idAddendi.mapNotNull { valore(it, inCorso + id) }
         val somma = if (parti.isEmpty()) null else parti.sum()
-        val calcolato = somma?.let { s -> v.percentuale?.let { Math.round(s * it / 100.0) } ?: s }
+        // La percentuale dello stipendio, se memorizzata, prevale su quella dell'anagrafica.
+        val percentuale = if (v.percentuale != null) percentuali[id] ?: v.percentuale else null
+        val calcolato = somma?.let { s -> percentuale?.let { Math.round(s * it / 100.0) } ?: s }
         risultato[id] = calcolato
         return calcolato
     }
@@ -94,7 +96,11 @@ data class Stipendio(
     val mese: String
 )
 
-/** Importo (centesimi, con segno) di una voce in uno stipendio. */
+/**
+ * Importo (centesimi, con segno) di una voce in uno stipendio. Per una voce calcolata con percentuale
+ * [percentuale] è quella usata in questo stipendio (può cambiare da uno stipendio all'altro) e
+ * [importoCent] il valore calcolato con essa.
+ */
 @Entity(
     tableName = "stipendi_importi",
     foreignKeys = [
@@ -107,7 +113,8 @@ data class ImportoStipendio(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val stipendioId: Long,
     val voceId: Long,
-    val importoCent: Long
+    val importoCent: Long,
+    val percentuale: Double? = null
 )
 
 @Dao
@@ -160,6 +167,15 @@ interface StipendiDao {
     /** Importo di una voce in uno stipendio: sostituisce quello che c'era. */
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun salvaImporto(importo: ImportoStipendio)
+
+    @Query("SELECT * FROM stipendi_importi WHERE stipendioId = :stipendioId")
+    suspend fun importi(stipendioId: Long): List<ImportoStipendio>
+
+    @Query("SELECT * FROM stipendi")
+    suspend fun tuttiStipendi(): List<Stipendio>
+
+    @Query("SELECT * FROM stipendi WHERE id = :id")
+    suspend fun stipendioPerId(id: Long): Stipendio?
 
     @Query("DELETE FROM stipendi_importi WHERE stipendioId = :stipendioId AND voceId = :voceId")
     suspend fun eliminaImporto(stipendioId: Long, voceId: Long)

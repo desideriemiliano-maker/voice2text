@@ -251,6 +251,8 @@ private fun TipoStipendioDialog(vm: SpeseViewModel, tipo: TipoStipendio, vociIni
     }
 }
 
+private fun testoPercentuale(p: Double): String = p.toString().removeSuffix(".0").replace('.', ',')
+
 /** Formula di una voce calcolata in chiaro: "A + B" o "(A + B) × 23%". */
 private fun testoFormula(v: VoceStipendio, voci: List<VoceStipendio>): String {
     val nomi = v.idAddendi.mapNotNull { id -> voci.firstOrNull { it.id == id }?.descrizione }
@@ -289,7 +291,7 @@ private fun FormulaVoceDialog(voce: VoceStipendio, altre: List<VoceStipendio>, o
                     OutlinedTextField(
                         value = percentuale, onValueChange = { percentuale = it; errore = null },
                         label = { Text("Percentuale della somma (facoltativa)") },
-                        supportingText = { Text("Vuota = la somma intera; es. 23 = il 23% della somma.") },
+                        supportingText = { Text("Vuota = la somma intera; es. 23 = il 23% della somma. Ogni stipendio memorizza la sua percentuale: cambiarla qui vale per gli stipendi nuovi.") },
                         singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                         modifier = Modifier.fillMaxWidth()
                     )
@@ -366,6 +368,7 @@ fun StipendiDialog(vm: SpeseViewModel, onChiudi: () -> Unit) {
                         voci = stipendi.vociDi(tipo.id),
                         righe = stipendi.stipendiDi(tipo.id).sortedByDescending { it.mese },
                         importi = stipendi.importiPerStipendio,
+                        percentuali = stipendi.percentualiPerStipendio,
                         valuta = tipo.valuta,
                         onCella = { s, v -> cella = s to v },
                         onMese = { meseAperto = it },
@@ -376,7 +379,34 @@ fun StipendiDialog(vm: SpeseViewModel, onChiudi: () -> Unit) {
         }
     }
 
-    cella?.let { (s, v) ->
+    cella?.takeIf { it.second.calcolata }?.let { (s, v) ->
+        // Voce calcolata con percentuale: si cambia la percentuale di questo solo stipendio.
+        val attuale = stipendi.percentualiPerStipendio[s.id]?.get(v.id) ?: v.percentuale ?: 100.0
+        var testo by remember(s, v) { mutableStateOf(testoPercentuale(attuale)) }
+        var errore by remember(s, v) { mutableStateOf<String?>(null) }
+        AlertDialog(
+            onDismissRequest = { cella = null },
+            title = { Text("${v.descrizione} · ${formattaMese(YearMonth.parse(s.mese))}") },
+            text = {
+                Column {
+                    Text("Percentuale applicata alla somma delle voci in questo stipendio; l'anagrafica e gli altri stipendi non cambiano.", style = MaterialTheme.typography.bodySmall)
+                    OutlinedTextField(
+                        value = testo, onValueChange = { testo = it; errore = null }, label = { Text("Percentuale") },
+                        singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth()
+                    )
+                    errore?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val p = testo.trim().replace(',', '.').toDoubleOrNull()
+                    if (p == null) errore = "Percentuale non valida" else { vm.impostaPercentualeStipendio(s.id, v.id, p); cella = null }
+                }) { Text("Salva") }
+            },
+            dismissButton = { TextButton(onClick = { cella = null }) { Text("Annulla") } }
+        )
+    }
+    cella?.takeIf { !it.second.calcolata }?.let { (s, v) ->
         var testo by remember(s, v) { mutableStateOf(stipendi.importiPerStipendio[s.id]?.get(v.id)?.let { centInTesto(it) } ?: "") }
         var errore by remember(s, v) { mutableStateOf<String?>(null) }
         AlertDialog(
@@ -452,6 +482,7 @@ private fun TabellaStipendi(
     voci: List<VoceStipendio>,
     righe: List<Stipendio>,
     importi: Map<Long, Map<Long, Long>>,
+    percentuali: Map<Long, Map<Long, Double>>,
     valuta: String,
     onCella: (Stipendio, VoceStipendio) -> Unit,
     onMese: (Stipendio) -> Unit,
@@ -488,11 +519,16 @@ private fun TabellaStipendi(
             Column(modifier = Modifier.verticalScroll(verticale).horizontalScroll(orizzontale)) {
                 righe.forEachIndexed { i, s ->
                     // Valori registrati e calcolati; il totale somma solo le voci non calcolate.
-                    val valori = valoriStipendio(voci, importi[s.id].orEmpty())
+                    val valori = valoriStipendio(voci, importi[s.id].orEmpty(), percentuali[s.id].orEmpty())
                     Row {
                         voci.forEach { v ->
                             if (v.calcolata) {
-                                CellaReport(testo(valori[v.id]), null, L_VOCE_STIPENDIO, alta = true, sfondo = coloreCalcolate)
+                                // Con percentuale: si tocca per cambiarla solo in questo stipendio.
+                                val perc = if (v.percentuale != null) percentuali[s.id]?.get(v.id) ?: v.percentuale else null
+                                CellaReport(
+                                    testo(valori[v.id]) + (perc?.let { "\n" + testoPercentuale(it) + "%" } ?: ""), null, L_VOCE_STIPENDIO, alta = true, sfondo = coloreCalcolate,
+                                    modifier = if (perc != null) Modifier.clickable { onCella(s, v) } else Modifier
+                                )
                             } else {
                                 CellaReport(testo(valori[v.id]), null, L_VOCE_STIPENDIO, alta = true, sfondo = sfondo(i), modifier = Modifier.clickable { onCella(s, v) })
                             }

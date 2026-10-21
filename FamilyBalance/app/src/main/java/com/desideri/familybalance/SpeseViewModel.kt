@@ -119,6 +119,10 @@ data class DatiStipendi(
     fun vociDi(tipoId: Long) = voci.filter { it.tipoId == tipoId }
     fun stipendiDi(tipoId: Long) = stipendi.filter { it.tipoId == tipoId }
     val importiPerStipendio by lazy { importi.groupBy { it.stipendioId }.mapValues { (_, l) -> l.associate { it.voceId to it.importoCent } } }
+    /** Percentuali delle voci calcolate memorizzate in ogni stipendio (id stipendio -> id voce -> %). */
+    val percentualiPerStipendio by lazy {
+        importi.filter { it.percentuale != null }.groupBy { it.stipendioId }.mapValues { (_, l) -> l.associate { it.voceId to it.percentuale!! } }
+    }
 }
 
 /** Busta paga letta da Gemini in attesa di conferma per la tipologia [tipoId]. */
@@ -200,21 +204,67 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
                 val addendi = v.idAddendi.map { nuoviId[it] ?: it }.filter { it in esistenti && it != v.id }
                 stipendiDao.aggiornaVoce(v.copy(addendi = addendi.joinToString(",").ifEmpty { null }))
             }
+            // Formule cambiate: si ricalcolano i valori memorizzati (ogni stipendio tiene la sua percentuale).
+            stipendiDao.tuttiStipendi().filter { it.tipoId == id }.forEach { aggiornaCalcolate(it.id, id) }
         }
         onFatto()
     }
 
     fun eliminaTipoStipendio(tipo: com.desideri.familybalance.data.TipoStipendio) = viewModelScope.launch { stipendiDao.eliminaTipo(tipo) }
 
+    /**
+     * Memorizza nello stipendio le voci calcolate con percentuale: la percentuale già usata dallo
+     * stipendio (o, la prima volta, quella dell'anagrafica) e il valore calcolato con essa.
+     */
+    private suspend fun aggiornaCalcolate(stipendioId: Long, tipoId: Long) {
+        val voci = stipendiDao.voci(tipoId)
+        val conPercentuale = voci.filter { it.calcolata && it.percentuale != null }
+        if (conPercentuale.isEmpty()) return
+        val importi = stipendiDao.importi(stipendioId)
+        val percentuali = importi.filter { it.percentuale != null }.associate { it.voceId to it.percentuale!! }.toMutableMap()
+        conPercentuale.forEach { v -> percentuali.getOrPut(v.id) { v.percentuale!! } }
+        val valori = com.desideri.familybalance.data.valoriStipendio(voci, importi.associate { it.voceId to it.importoCent }, percentuali)
+        conPercentuale.forEach { v ->
+            val nuovo = com.desideri.familybalance.data.ImportoStipendio(
+                stipendioId = stipendioId, voceId = v.id, importoCent = valori[v.id] ?: 0L, percentuale = percentuali[v.id]
+            )
+            val attuale = importi.firstOrNull { it.voceId == v.id }
+            if (attuale?.importoCent != nuovo.importoCent || attuale.percentuale != nuovo.percentuale) stipendiDao.salvaImporto(nuovo)
+        }
+    }
+
+    private suspend fun aggiornaCalcolate(stipendioId: Long) {
+        stipendiDao.stipendioPerId(stipendioId)?.let { aggiornaCalcolate(it.id, it.tipoId) }
+    }
+
+    init {
+        // Stipendi registrati prima delle percentuali memorizzate: prendono quella attuale dell'anagrafica.
+        viewModelScope.launch {
+            db.withTransaction { stipendiDao.tuttiStipendi().forEach { aggiornaCalcolate(it.id, it.tipoId) } }
+        }
+    }
+
     /** Importo di una voce in uno stipendio; null lo toglie. */
     fun impostaImportoStipendio(stipendioId: Long, voceId: Long, importoCent: Long?) = viewModelScope.launch {
-        if (importoCent == null) stipendiDao.eliminaImporto(stipendioId, voceId)
-        else stipendiDao.salvaImporto(com.desideri.familybalance.data.ImportoStipendio(stipendioId = stipendioId, voceId = voceId, importoCent = importoCent))
+        db.withTransaction {
+            if (importoCent == null) stipendiDao.eliminaImporto(stipendioId, voceId)
+            else stipendiDao.salvaImporto(com.desideri.familybalance.data.ImportoStipendio(stipendioId = stipendioId, voceId = voceId, importoCent = importoCent))
+            aggiornaCalcolate(stipendioId)
+        }
+    }
+
+    /** Percentuale di una voce calcolata in un solo stipendio (il valore viene ricalcolato). */
+    fun impostaPercentualeStipendio(stipendioId: Long, voceId: Long, percentuale: Double) = viewModelScope.launch {
+        db.withTransaction {
+            stipendiDao.salvaImporto(com.desideri.familybalance.data.ImportoStipendio(stipendioId = stipendioId, voceId = voceId, importoCent = 0, percentuale = percentuale))
+            aggiornaCalcolate(stipendioId)
+        }
     }
 
     fun aggiungiStipendio(tipoId: Long, mese: YearMonth) = viewModelScope.launch {
         if (stipendiDao.stipendio(tipoId, mese.toString()) != null) return@launch messaggio("C'è già lo stipendio di ${formattaMese(mese)}")
-        stipendiDao.inserisciStipendio(com.desideri.familybalance.data.Stipendio(tipoId = tipoId, mese = mese.toString()))
+        val id = stipendiDao.inserisciStipendio(com.desideri.familybalance.data.Stipendio(tipoId = tipoId, mese = mese.toString()))
+        aggiornaCalcolate(id, tipoId)
     }
 
     fun cambiaMeseStipendio(stipendio: com.desideri.familybalance.data.Stipendio, mese: YearMonth) = viewModelScope.launch {
@@ -295,6 +345,7 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
             righe.groupBy { voceId(it) }.forEach { (voce, rr) ->
                 stipendiDao.salvaImporto(com.desideri.familybalance.data.ImportoStipendio(stipendioId = stipendioId, voceId = voce, importoCent = rr.sumOf { it.importoCent }))
             }
+            aggiornaCalcolate(stipendioId, tipoId)
         }
         messaggio("Stipendio di ${formattaMese(mese)} registrato (${righe.size} voci)")
     }
