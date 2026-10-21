@@ -124,8 +124,11 @@ data class DatiStipendi(
 /** Busta paga letta da Gemini in attesa di conferma per la tipologia [tipoId]. */
 data class ImportStipendio(val tipoId: Long, val letta: com.desideri.familybalance.estratto.BustaPagaLetta)
 
-/** Una riga confermata dell'import: voce esistente ([voceId]) o nuova ([nuovaVoce]) e importo. */
-data class RigaImportStipendio(val voceId: Long?, val nuovaVoce: String?, val importoCent: Long)
+/**
+ * Una riga confermata dell'import: voce esistente ([voceId]) o nuova con nome [nuovaVoce], importo e
+ * nome letto dalla busta paga ([nomeLetto]), ricordato sulla voce per gli import successivi.
+ */
+data class RigaImportStipendio(val voceId: Long?, val nuovaVoce: String?, val importoCent: Long, val nomeLetto: String)
 
 /** Estratto conto letto per il riscontro con le operazioni del conto/valuta [contoValutaId]. */
 /** Foglio Excel letto per il riscontro, in attesa della scelta delle colonne (proposta già calcolata). */
@@ -233,7 +236,7 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
         _importazioneInCorso.value = true
         try {
             val letta = com.desideri.familybalance.estratto.BustaPagaGemini(BuildConfig.GEMINI_API_KEY, RegistroPromptStore(getApplication()))
-                .leggi(getApplication(), uri, tipo.nome, tipo.valuta, dati.vociDi(tipoId).filterNot { it.calcolata }.map { it.descrizione })
+                .leggi(getApplication(), uri, tipo.nome, tipo.valuta, dati.vociDi(tipoId).filterNot { it.calcolata }.flatMap { listOf(it.descrizione) + it.listaNomiImport }.distinct())
             if (letta.voci.isEmpty()) messaggio("Nessuna voce trovata nella busta paga")
             else _importStipendio.value = ImportStipendio(tipoId, letta)
         } catch (e: Exception) {
@@ -257,11 +260,20 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
         _importStipendio.value = null
         db.withTransaction {
             val voci = stipendiDao.voci(tipoId).toMutableList()
+            /** La voce della riga (creata se nuova), con il nome letto dalla busta tra i suoi nomi di import. */
             suspend fun voceId(r: RigaImportStipendio): Long {
-                r.voceId?.let { return it }
-                val descrizione = r.nuovaVoce!!.trim()
-                voci.firstOrNull { it.descrizione.equals(descrizione, true) && !it.calcolata }?.let { return it.id }
-                val nuova = com.desideri.familybalance.data.VoceStipendio(tipoId = tipoId, descrizione = descrizione, ordine = voci.size)
+                val esistente = r.voceId?.let { id -> voci.firstOrNull { it.id == id } }
+                    ?: voci.firstOrNull { it.descrizione.equals(r.nuovaVoce!!.trim(), true) && !it.calcolata }
+                if (esistente != null) {
+                    val aggiornata = esistente.conNomeImport(r.nomeLetto)
+                    if (aggiornata != esistente) {
+                        stipendiDao.aggiornaVoce(aggiornata)
+                        voci[voci.indexOf(esistente)] = aggiornata
+                    }
+                    return esistente.id
+                }
+                val nuova = com.desideri.familybalance.data.VoceStipendio(tipoId = tipoId, descrizione = r.nuovaVoce!!.trim(), ordine = voci.size)
+                    .conNomeImport(r.nomeLetto)
                 return stipendiDao.inserisciVoce(nuova).also { voci += nuova.copy(id = it) }
             }
             val stipendioId = stipendiDao.stipendio(tipoId, mese.toString())?.id

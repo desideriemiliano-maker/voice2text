@@ -8,7 +8,7 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import java.io.File
 
-@Database(entities = [Conto::class, ContoValuta::class, Voce::class, Operazione::class, Associazione::class, Cambio::class, PrevisioneRicorrente::class, TipoStipendio::class, VoceStipendio::class, Stipendio::class, ImportoStipendio::class], version = 18, exportSchema = false)
+@Database(entities = [Conto::class, ContoValuta::class, Voce::class, Operazione::class, Associazione::class, Cambio::class, PrevisioneRicorrente::class, TipoStipendio::class, VoceStipendio::class, Stipendio::class, ImportoStipendio::class], version = 19, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun dao(): SpeseDao
     abstract fun stipendiDao(): StipendiDao
@@ -24,7 +24,7 @@ abstract class AppDatabase : RoomDatabase() {
                 // TRUNCATE invece di WAL: tutto il contenuto sta nel solo file .db, così il backup
                 // su Drive è una semplice copia del file senza dover gestire -wal/-shm.
                 .setJournalMode(JournalMode.TRUNCATE)
-                .addMigrations(MIGRAZIONE_1_2, MIGRAZIONE_2_3, MIGRAZIONE_3_4, MIGRAZIONE_4_5, MIGRAZIONE_5_6, MIGRAZIONE_6_7, MIGRAZIONE_7_8, MIGRAZIONE_8_9, MIGRAZIONE_9_10, MIGRAZIONE_10_11, MIGRAZIONE_11_12, MIGRAZIONE_12_13, MIGRAZIONE_13_14, MIGRAZIONE_14_15, MIGRAZIONE_15_16, MIGRAZIONE_16_17, MIGRAZIONE_17_18)
+                .addMigrations(MIGRAZIONE_1_2, MIGRAZIONE_2_3, MIGRAZIONE_3_4, MIGRAZIONE_4_5, MIGRAZIONE_5_6, MIGRAZIONE_6_7, MIGRAZIONE_7_8, MIGRAZIONE_8_9, MIGRAZIONE_9_10, MIGRAZIONE_10_11, MIGRAZIONE_11_12, MIGRAZIONE_12_13, MIGRAZIONE_13_14, MIGRAZIONE_14_15, MIGRAZIONE_15_16, MIGRAZIONE_16_17, MIGRAZIONE_17_18, MIGRAZIONE_18_19)
                 .build()
                 .also { istanza = it }
         }
@@ -236,6 +236,13 @@ abstract class AppDatabase : RoomDatabase() {
                 db.execSQL("ALTER TABLE `stipendi_voci` ADD COLUMN `calcolata` INTEGER NOT NULL DEFAULT 0")
                 db.execSQL("ALTER TABLE `stipendi_voci` ADD COLUMN `addendi` TEXT")
                 db.execSQL("ALTER TABLE `stipendi_voci` ADD COLUMN `percentuale` REAL")
+            }
+        }
+
+        /** Versione 19: nomi con cui le voci di stipendio compaiono nelle buste paga. */
+        private val MIGRAZIONE_18_19 = object : Migration(18, 19) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `stipendi_voci` ADD COLUMN `nomiImport` TEXT")
             }
         }
 

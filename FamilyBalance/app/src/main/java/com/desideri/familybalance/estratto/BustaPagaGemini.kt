@@ -51,9 +51,10 @@ class BustaPagaGemini(private val apiKey: String, private val registro: Registro
             append("Per ogni voce: descrizione (breve, come appare) e importo (numero in $valuta: positivo per competenze e netto, ")
             append("negativo per trattenute, contributi e imposte).")
             if (vociNote.isNotEmpty()) {
-                append(" Voci già definite dall'utente per questo stipendio: ")
+                append(" Nomi di voci già noti per questo stipendio: ")
                 append(vociNote.joinToString("; ") { "\"$it\"" })
-                append(". Se una voce della busta corrisponde a una di queste, usa ESATTAMENTE quel nome come descrizione.")
+                append(". Se una voce della busta corrisponde a uno di questi, usa ESATTAMENTE quel nome come descrizione; ")
+                append("altrimenti usa la descrizione come appare nella busta.")
             }
         }
         val schema = Schema.builder()

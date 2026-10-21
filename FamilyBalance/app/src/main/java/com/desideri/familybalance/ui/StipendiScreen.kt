@@ -186,6 +186,17 @@ private fun TipoStipendioDialog(vm: SpeseViewModel, tipo: TipoStipendio, vociIni
                         }
                         IconButton(onClick = { voci.removeAt(i) }) { Icon(Icons.Filled.Delete, contentDescription = "Togli la voce") }
                     }
+                    // Nomi con cui la voce compare nelle buste paga (ricordati dagli import).
+                    if (v.listaNomiImport.isNotEmpty()) {
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 8.dp)) {
+                            Text(
+                                "In busta paga: " + v.listaNomiImport.joinToString(", "),
+                                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.weight(1f)
+                            )
+                            TextButton(onClick = { voci[i] = v.copy(nomiImport = null) }) { Text("Dimentica") }
+                        }
+                    }
                     if (v.calcolata) {
                         Text(
                             "= " + testoFormula(v, voci),
@@ -495,7 +506,7 @@ private fun TabellaStipendi(
 }
 
 /** Riga modificabile della conferma dell'import: inclusa, voce di destinazione (o nuova) e importo. */
-private data class RigaConferma(val inclusa: Boolean, val descrizioneLetta: String, val voceId: Long?, val importo: String)
+private data class RigaConferma(val inclusa: Boolean, val descrizioneLetta: String, val voceId: Long?, val importo: String, val nomeNuova: String)
 
 /**
  * Conferma dell'import di una busta paga: mese (modificabile) e, per ogni voce letta, se includerla,
@@ -507,7 +518,8 @@ private fun ConfermaImportStipendioDialog(vm: SpeseViewModel, tipo: TipoStipendi
     val righe = remember(imp) {
         mutableStateListOf<RigaConferma>().apply {
             imp.letta.voci.forEach { l ->
-                add(RigaConferma(true, l.descrizione, voci.firstOrNull { !it.calcolata && it.descrizione.equals(l.descrizione, true) }?.id, centInTesto(l.importoCent)))
+                // Voce riconosciuta per descrizione o per un nome con cui è stata importata in passato.
+                add(RigaConferma(true, l.descrizione, voci.firstOrNull { it.riconosce(l.descrizione) }?.id, centInTesto(l.importoCent), l.descrizione))
             }
         }
     }
@@ -522,7 +534,11 @@ private fun ConfermaImportStipendioDialog(vm: SpeseViewModel, tipo: TipoStipendi
             Column(modifier = Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 if (imp.letta.mese == null) Text("Mese non riconosciuto: sceglilo.", color = MaterialTheme.colorScheme.error)
                 SceltaMese("Mese dello stipendio", mese, { mese = it })
-                Text("Scegli le voci da includere, la voce dell'anagrafica a cui associarle e l'importo (${tipo.valuta}).", style = MaterialTheme.typography.bodySmall)
+                Text(
+                    "Scegli le voci da includere, la voce dell'anagrafica a cui associarle (o una nuova, con il nome che vuoi) e l'importo (${tipo.valuta}). " +
+                        "Il nome letto dalla busta resta associato alla voce: ai prossimi import sarà riconosciuta.",
+                    style = MaterialTheme.typography.bodySmall
+                )
                 righe.forEachIndexed { i, r ->
                     HorizontalDivider()
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -530,7 +546,7 @@ private fun ConfermaImportStipendioDialog(vm: SpeseViewModel, tipo: TipoStipendi
                         Text(r.descrizioneLetta, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
                     }
                     if (r.inclusa) {
-                        val opzioni = voci.filterNot { it.calcolata }.map { Opzione(it.id, it.descrizione) } + Opzione(null, "Nuova voce: ${r.descrizioneLetta}")
+                        val opzioni = voci.filterNot { it.calcolata }.map { Opzione(it.id, it.descrizione) } + Opzione(null, "Nuova voce")
                         CampoScelta(
                             etichetta = "Voce",
                             selezionato = opzioni.firstOrNull { it.voceId == r.voceId },
@@ -539,6 +555,14 @@ private fun ConfermaImportStipendioDialog(vm: SpeseViewModel, tipo: TipoStipendi
                             onScelta = { righe[i] = r.copy(voceId = it.voceId) },
                             modifier = Modifier.fillMaxWidth()
                         )
+                        if (r.voceId == null) {
+                            // Nome della nuova voce: può essere diverso da quello della busta, che resta ricordato.
+                            OutlinedTextField(
+                                value = r.nomeNuova, onValueChange = { righe[i] = r.copy(nomeNuova = it); errore = null },
+                                label = { Text("Nome della nuova voce") }, singleLine = true,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
                         OutlinedTextField(
                             value = r.importo, onValueChange = { righe[i] = r.copy(importo = it); errore = null },
                             label = { Text("Importo") }, singleLine = true,
@@ -547,7 +571,7 @@ private fun ConfermaImportStipendioDialog(vm: SpeseViewModel, tipo: TipoStipendi
                         )
                     }
                 }
-                val stessaVoce = righe.filter { it.inclusa }.groupBy { it.voceId ?: it.descrizioneLetta.lowercase() }.any { it.value.size > 1 }
+                val stessaVoce = righe.filter { it.inclusa }.groupBy { it.voceId ?: it.nomeNuova.trim().lowercase() }.any { it.value.size > 1 }
                 if (stessaVoce) Text("Più righe sulla stessa voce: i loro importi verranno sommati.", style = MaterialTheme.typography.bodySmall)
                 errore?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             }
@@ -555,9 +579,12 @@ private fun ConfermaImportStipendioDialog(vm: SpeseViewModel, tipo: TipoStipendi
         confirmButton = {
             TextButton(onClick = {
                 val scelte = righe.filter { it.inclusa }
-                val convertite = scelte.map { r -> testoInCent(r.importo)?.let { RigaImportStipendio(r.voceId, r.descrizioneLetta.takeIf { _ -> r.voceId == null }, it) } }
+                val convertite = scelte.map { r ->
+                    testoInCent(r.importo)?.let { RigaImportStipendio(r.voceId, r.nomeNuova.trim().takeIf { _ -> r.voceId == null }, it, r.descrizioneLetta) }
+                }
                 when {
                     scelte.isEmpty() -> errore = "Nessuna voce inclusa"
+                    scelte.any { it.voceId == null && it.nomeNuova.isBlank() } -> errore = "Dai un nome alle nuove voci"
                     convertite.any { it == null } -> errore = "Ci sono importi non validi"
                     else -> vm.confermaImportStipendio(tipo.id, mese, convertite.filterNotNull())
                 }

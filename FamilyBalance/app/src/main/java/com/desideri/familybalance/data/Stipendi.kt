@@ -44,9 +44,20 @@ data class VoceStipendio(
     @androidx.room.ColumnInfo(defaultValue = "0")
     val calcolata: Boolean = false,
     val addendi: String? = null,
-    val percentuale: Double? = null
+    val percentuale: Double? = null,
+    /** Nomi con cui la voce compare nelle buste paga (separati da "|"), per riconoscerla agli import. */
+    val nomiImport: String? = null
 ) {
     val idAddendi: List<Long> get() = addendi.orEmpty().split(',').mapNotNull { it.trim().toLongOrNull() }
+    val listaNomiImport: List<String> get() = nomiImport.orEmpty().split('|').map { it.trim() }.filter { it.isNotEmpty() }
+
+    /** true se [nome] (letto dalla busta paga) è questa voce: per descrizione o per uno dei nomi di import. */
+    fun riconosce(nome: String): Boolean =
+        !calcolata && (descrizione.equals(nome.trim(), true) || listaNomiImport.any { it.equals(nome.trim(), true) })
+
+    /** La voce con [nome] tra i nomi di import (se non c'è già e non è la descrizione). */
+    fun conNomeImport(nome: String): VoceStipendio =
+        if (riconosce(nome)) this else copy(nomiImport = (listaNomiImport + nome.trim()).joinToString("|"))
 }
 
 /**
