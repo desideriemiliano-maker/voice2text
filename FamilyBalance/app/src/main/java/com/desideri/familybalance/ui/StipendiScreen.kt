@@ -302,7 +302,8 @@ private fun testoFormula(v: VoceStipendio, voci: List<VoceStipendio>): String {
     val nomi = v.idAddendi.mapNotNull { id -> voci.firstOrNull { it.id == id }?.descrizione }
     if (nomi.isEmpty()) return "nessuna voce scelta"
     val somma = nomi.joinToString(" + ")
-    val formula = v.percentuale?.let { p -> (if (nomi.size > 1) "($somma)" else somma) + " × ${p.toString().removeSuffix(".0").replace('.', ',')}%" } ?: somma
+    val base = v.percentuale?.let { p -> (if (nomi.size > 1) "($somma)" else somma) + " × ${p.toString().removeSuffix(".0").replace('.', ',')}%" } ?: somma
+    val formula = if (v.invertiSegno) "−(" + base + ")" else base
     return formula + (v.arrotondaDecimali?.let { d ->
         ", arrotondato a " + (if (d == 1) "1 decimale" else "$d decimali") + if (v.arrotondaCinque) " (a 0 o 5)" else ""
     } ?: "")
@@ -317,6 +318,7 @@ private fun FormulaVoceDialog(voce: VoceStipendio, altre: List<VoceStipendio>, o
     var arrotonda by remember { mutableStateOf(voce.arrotondaDecimali != null) }
     var decimali by remember { mutableStateOf(voce.arrotondaDecimali ?: 1) }
     var aCinque by remember { mutableStateOf(voce.arrotondaCinque) }
+    var invertiSegno by remember { mutableStateOf(voce.invertiSegno) }
     var errore by remember { mutableStateOf<String?>(null) }
     AlertDialog(
         onDismissRequest = onAnnulla,
@@ -345,6 +347,13 @@ private fun FormulaVoceDialog(voce: VoceStipendio, altre: List<VoceStipendio>, o
                         singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                         modifier = Modifier.fillMaxWidth()
                     )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Cambia segno al risultato")
+                            Text("Es. una trattenuta calcolata da voci positive.", style = MaterialTheme.typography.bodySmall)
+                        }
+                        Switch(checked = invertiSegno, onCheckedChange = { invertiSegno = it })
+                    }
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text("Arrotonda il risultato", modifier = Modifier.weight(1f))
                         Switch(checked = arrotonda, onCheckedChange = { arrotonda = it })
@@ -377,13 +386,14 @@ private fun FormulaVoceDialog(voce: VoceStipendio, altre: List<VoceStipendio>, o
             TextButton(onClick = {
                 val p = percentuale.trim().replace(',', '.').takeIf { it.isNotEmpty() }?.let { it.toDoubleOrNull() ?: return@TextButton run { errore = "Percentuale non valida" } }
                 when {
-                    !calcolata -> onSalva(voce.copy(calcolata = false, addendi = null, percentuale = null, arrotondaDecimali = null, arrotondaCinque = false))
+                    !calcolata -> onSalva(voce.copy(calcolata = false, addendi = null, percentuale = null, arrotondaDecimali = null, arrotondaCinque = false, invertiSegno = false))
                     scelte.isEmpty() -> errore = "Scegli almeno una voce da sommare"
                     else -> onSalva(
                         voce.copy(
                             calcolata = true, addendi = altre.map { it.id }.filter { it in scelte }.joinToString(","), percentuale = p,
                             arrotondaDecimali = if (arrotonda) decimali else null,
-                            arrotondaCinque = arrotonda && aCinque
+                            arrotondaCinque = arrotonda && aCinque,
+                            invertiSegno = invertiSegno
                         )
                     )
                 }

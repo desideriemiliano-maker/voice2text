@@ -51,7 +51,10 @@ data class VoceStipendio(
     val arrotondaDecimali: Int? = null,
     /** Arrotondamento all'ultima cifra 0 o 5 (es. con 1 decimale: 7,62 → 7,60 e 7,63 → 7,65). */
     @androidx.room.ColumnInfo(defaultValue = "0")
-    val arrotondaCinque: Boolean = false
+    val arrotondaCinque: Boolean = false,
+    /** Voce calcolata: il risultato cambia segno (es. una trattenuta calcolata da competenze positive). */
+    @androidx.room.ColumnInfo(defaultValue = "0")
+    val invertiSegno: Boolean = false
 ) {
     val idAddendi: List<Long> get() = addendi.orEmpty().split(',').mapNotNull { it.trim().toLongOrNull() }
     val listaNomiImport: List<String> get() = nomiImport.orEmpty().split('|').map { it.trim() }.filter { it.isNotEmpty() }
@@ -92,6 +95,7 @@ fun valoriStipendio(voci: List<VoceStipendio>, importi: Map<Long, Long>, percent
             // Arrotondamento a [arrotondaDecimali] cifre (con 1: 7,64 → 7,6 e 7,68 → 7,7), o all'ultima
             // cifra 0 o 5 con [arrotondaCinque] (con 1: 7,62 → 7,60 e 7,63 → 7,65).
             ?.let { c -> v.arrotondaDecimali?.takeIf { it in 0..1 }?.let { d -> arrotonda(c, d, v.arrotondaCinque) } ?: c }
+            ?.let { c -> if (v.invertiSegno) -c else c }
         risultato[id] = calcolato
         return calcolato
     }
