@@ -200,7 +200,8 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
         db.withTransaction {
             val id = if (tipo.id == 0L) stipendiDao.inserisciTipo(tipo.copy(nome = nome)) else tipo.id.also { stipendiDao.aggiornaTipo(tipo.copy(nome = nome)) }
             val tenute = pulite.filter { it.id > 0L }.map { it.id }.toSet()
-            stipendiDao.voci(id).filter { it.id !in tenute }.forEach { stipendiDao.eliminaVoce(it) }
+            val prima = stipendiDao.voci(id).associateBy { it.id }
+            prima.values.filter { it.id !in tenute }.forEach { stipendiDao.eliminaVoce(it) }
             // Prima si salvano tutte (le nuove ricevono il loro id), poi si sistemano gli addendi.
             val nuoviId = HashMap<Long, Long>()
             val salvate = pulite.mapIndexed { i, v ->
@@ -215,8 +216,21 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
                 val addendi = v.idAddendi.map { nuoviId[it] ?: it }.filter { it in esistenti && it != v.id }
                 stipendiDao.aggiornaVoce(v.copy(addendi = addendi.joinToString(",").ifEmpty { null }))
             }
-            // Formule cambiate: si ricalcolano i valori memorizzati (ogni stipendio tiene la sua percentuale).
-            stipendiDao.tuttiStipendi().filter { it.tipoId == id }.forEach { aggiornaCalcolate(it.id, id) }
+            // Voce calcolata che riceve ora una percentuale: gli stipendi già registrati la tengono al 100%,
+            // così il loro valore non cambia (la nuova percentuale vale per gli stipendi nuovi).
+            val stipendiTipo = stipendiDao.tuttiStipendi().filter { it.tipoId == id }
+            salvate.filter { v -> v.calcolata && v.percentuale != null && prima[v.id]?.let { it.calcolata && it.percentuale == null } == true }.forEach { v ->
+                stipendiTipo.forEach { st ->
+                    val esistente = stipendiDao.importi(st.id).firstOrNull { it.voceId == v.id }
+                    if (esistente?.percentuale == null) {
+                        stipendiDao.salvaImporto(
+                            (esistente ?: com.desideri.familybalance.data.ImportoStipendio(stipendioId = st.id, voceId = v.id, importoCent = 0)).copy(percentuale = 100.0)
+                        )
+                    }
+                }
+            }
+            // Si aggiornano i valori memorizzati: ogni stipendio tiene la sua percentuale.
+            stipendiTipo.forEach { aggiornaCalcolate(it.id, id) }
         }
         onFatto()
     }
