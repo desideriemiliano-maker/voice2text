@@ -302,7 +302,8 @@ private fun testoFormula(v: VoceStipendio, voci: List<VoceStipendio>): String {
     val nomi = v.idAddendi.mapNotNull { id -> voci.firstOrNull { it.id == id }?.descrizione }
     if (nomi.isEmpty()) return "nessuna voce scelta"
     val somma = nomi.joinToString(" + ")
-    return v.percentuale?.let { p -> (if (nomi.size > 1) "($somma)" else somma) + " × ${p.toString().removeSuffix(".0").replace('.', ',')}%" } ?: somma
+    val formula = v.percentuale?.let { p -> (if (nomi.size > 1) "($somma)" else somma) + " × ${p.toString().removeSuffix(".0").replace('.', ',')}%" } ?: somma
+    return formula + (v.arrotondaDecimali?.let { d -> ", arrotondato a " + if (d == 1) "1 decimale" else "$d decimali" } ?: "")
 }
 
 /** Formula di una voce: calcolata o no; se calcolata, le voci da sommare e la percentuale facoltativa. */
@@ -311,6 +312,8 @@ private fun FormulaVoceDialog(voce: VoceStipendio, altre: List<VoceStipendio>, o
     var calcolata by remember { mutableStateOf(voce.calcolata) }
     val scelte = remember { mutableStateListOf<Long>().apply { addAll(voce.idAddendi) } }
     var percentuale by remember { mutableStateOf(voce.percentuale?.toString()?.removeSuffix(".0")?.replace('.', ',') ?: "") }
+    var arrotonda by remember { mutableStateOf(voce.arrotondaDecimali != null) }
+    var decimali by remember { mutableStateOf(voce.arrotondaDecimali ?: 1) }
     var errore by remember { mutableStateOf<String?>(null) }
     AlertDialog(
         onDismissRequest = onAnnulla,
@@ -339,6 +342,20 @@ private fun FormulaVoceDialog(voce: VoceStipendio, altre: List<VoceStipendio>, o
                         singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                         modifier = Modifier.fillMaxWidth()
                     )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("Arrotonda il risultato", modifier = Modifier.weight(1f))
+                        Switch(checked = arrotonda, onCheckedChange = { arrotonda = it })
+                    }
+                    if (arrotonda) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Text("Cifre decimali", style = MaterialTheme.typography.labelMedium)
+                            listOf(0, 1).forEach { d -> FilterChip(selected = decimali == d, onClick = { decimali = d }, label = { Text(d.toString()) }) }
+                        }
+                        Text(
+                            if (decimali == 1) "Es. 7,64 → 7,6 e 7,68 → 7,7" else "Es. 7,49 → 7 e 7,50 → 8",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
                     Text("Le voci calcolate non si importano dalla busta paga e non entrano nel totale.", style = MaterialTheme.typography.bodySmall)
                 }
                 errore?.let { Text(it, color = MaterialTheme.colorScheme.error) }
@@ -348,9 +365,14 @@ private fun FormulaVoceDialog(voce: VoceStipendio, altre: List<VoceStipendio>, o
             TextButton(onClick = {
                 val p = percentuale.trim().replace(',', '.').takeIf { it.isNotEmpty() }?.let { it.toDoubleOrNull() ?: return@TextButton run { errore = "Percentuale non valida" } }
                 when {
-                    !calcolata -> onSalva(voce.copy(calcolata = false, addendi = null, percentuale = null))
+                    !calcolata -> onSalva(voce.copy(calcolata = false, addendi = null, percentuale = null, arrotondaDecimali = null))
                     scelte.isEmpty() -> errore = "Scegli almeno una voce da sommare"
-                    else -> onSalva(voce.copy(calcolata = true, addendi = altre.map { it.id }.filter { it in scelte }.joinToString(","), percentuale = p))
+                    else -> onSalva(
+                        voce.copy(
+                            calcolata = true, addendi = altre.map { it.id }.filter { it in scelte }.joinToString(","), percentuale = p,
+                            arrotondaDecimali = if (arrotonda) decimali else null
+                        )
+                    )
                 }
             }) { Text("OK") }
         },

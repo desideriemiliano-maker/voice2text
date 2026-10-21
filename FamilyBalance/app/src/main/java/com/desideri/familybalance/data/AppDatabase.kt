@@ -8,7 +8,7 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import java.io.File
 
-@Database(entities = [Conto::class, ContoValuta::class, Voce::class, Operazione::class, Associazione::class, Cambio::class, PrevisioneRicorrente::class, TipoStipendio::class, VoceStipendio::class, Stipendio::class, ImportoStipendio::class], version = 20, exportSchema = false)
+@Database(entities = [Conto::class, ContoValuta::class, Voce::class, Operazione::class, Associazione::class, Cambio::class, PrevisioneRicorrente::class, TipoStipendio::class, VoceStipendio::class, Stipendio::class, ImportoStipendio::class], version = 21, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun dao(): SpeseDao
     abstract fun stipendiDao(): StipendiDao
@@ -24,7 +24,7 @@ abstract class AppDatabase : RoomDatabase() {
                 // TRUNCATE invece di WAL: tutto il contenuto sta nel solo file .db, così il backup
                 // su Drive è una semplice copia del file senza dover gestire -wal/-shm.
                 .setJournalMode(JournalMode.TRUNCATE)
-                .addMigrations(MIGRAZIONE_1_2, MIGRAZIONE_2_3, MIGRAZIONE_3_4, MIGRAZIONE_4_5, MIGRAZIONE_5_6, MIGRAZIONE_6_7, MIGRAZIONE_7_8, MIGRAZIONE_8_9, MIGRAZIONE_9_10, MIGRAZIONE_10_11, MIGRAZIONE_11_12, MIGRAZIONE_12_13, MIGRAZIONE_13_14, MIGRAZIONE_14_15, MIGRAZIONE_15_16, MIGRAZIONE_16_17, MIGRAZIONE_17_18, MIGRAZIONE_18_19, MIGRAZIONE_19_20)
+                .addMigrations(MIGRAZIONE_1_2, MIGRAZIONE_2_3, MIGRAZIONE_3_4, MIGRAZIONE_4_5, MIGRAZIONE_5_6, MIGRAZIONE_6_7, MIGRAZIONE_7_8, MIGRAZIONE_8_9, MIGRAZIONE_9_10, MIGRAZIONE_10_11, MIGRAZIONE_11_12, MIGRAZIONE_12_13, MIGRAZIONE_13_14, MIGRAZIONE_14_15, MIGRAZIONE_15_16, MIGRAZIONE_16_17, MIGRAZIONE_17_18, MIGRAZIONE_18_19, MIGRAZIONE_19_20, MIGRAZIONE_20_21)
                 .build()
                 .also { istanza = it }
         }
@@ -250,6 +250,13 @@ abstract class AppDatabase : RoomDatabase() {
         private val MIGRAZIONE_19_20 = object : Migration(19, 20) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE `stipendi_importi` ADD COLUMN `percentuale` REAL")
+            }
+        }
+
+        /** Versione 21: arrotondamento del risultato delle voci di stipendio calcolate. */
+        private val MIGRAZIONE_20_21 = object : Migration(20, 21) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `stipendi_voci` ADD COLUMN `arrotondaDecimali` INTEGER")
             }
         }
 

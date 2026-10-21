@@ -46,7 +46,9 @@ data class VoceStipendio(
     val addendi: String? = null,
     val percentuale: Double? = null,
     /** Nomi con cui la voce compare nelle buste paga (separati da "|"), per riconoscerla agli import. */
-    val nomiImport: String? = null
+    val nomiImport: String? = null,
+    /** Voce calcolata: cifre decimali a cui arrotondare il risultato (null = nessun arrotondamento). */
+    val arrotondaDecimali: Int? = null
 ) {
     val idAddendi: List<Long> get() = addendi.orEmpty().split(',').mapNotNull { it.trim().toLongOrNull() }
     val listaNomiImport: List<String> get() = nomiImport.orEmpty().split('|').map { it.trim() }.filter { it.isNotEmpty() }
@@ -78,6 +80,8 @@ fun valoriStipendio(voci: List<VoceStipendio>, importi: Map<Long, Long>, percent
         // La percentuale dello stipendio, se memorizzata, prevale su quella dell'anagrafica.
         val percentuale = if (v.percentuale != null) percentuali[id] ?: v.percentuale else null
         val calcolato = somma?.let { s -> percentuale?.let { Math.round(s * it / 100.0) } ?: s }
+            // Arrotondamento a [arrotondaDecimali] cifre (es. con 1: 7,64 → 7,6 e 7,68 → 7,7).
+            ?.let { c -> v.arrotondaDecimali?.takeIf { it in 0..1 }?.let { d -> java.math.BigDecimal(c).movePointLeft(2).setScale(d, java.math.RoundingMode.HALF_UP).movePointRight(2).toLong() } ?: c }
         risultato[id] = calcolato
         return calcolato
     }
