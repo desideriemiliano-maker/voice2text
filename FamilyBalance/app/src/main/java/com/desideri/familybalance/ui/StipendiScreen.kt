@@ -847,7 +847,10 @@ private fun DettaglioCalcoliDialog(
     onModifica: (() -> Unit)? = null
 ) {
     val incluse = voce?.let { dipendenzeVoce(voci, it.id) }
-    val calcoli = calcoliStipendio(voci, importi, percentuali, sostituzioni).filter { incluse == null || it.voce.id in incluse }
+    // Le voci vuote (senza importo o senza valore calcolato) non si mostrano.
+    val calcoli = calcoliStipendio(voci, importi, percentuali, sostituzioni)
+        .filter { (incluse == null || it.voce.id in incluse) && it.passi != null }
+        .map { c -> c.copy(addendi = c.addendi.filter { it.valore != null }) }
     val registrate = voci.filter { !it.calcolata && importi[it.id] != null && (incluse == null || it.id in incluse) }
     fun testo(cent: Long?) = cent?.let { formattaCent(it, valuta) } ?: "—"
     @Composable
