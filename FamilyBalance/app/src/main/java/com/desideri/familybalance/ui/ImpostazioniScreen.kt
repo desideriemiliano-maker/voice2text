@@ -47,6 +47,7 @@ fun ImpostazioniScreen(vm: SpeseViewModel, onIndietro: () -> Unit) {
     var giornoStipendio by remember { mutableStateOf(impostazioni.giornoStipendio.toString()) }
     var giornoLavorativo by remember { mutableStateOf(impostazioni.stipendioGiornoLavorativo) }
     var giorniPromemoria by remember { mutableStateOf(impostazioni.giorniPromemoriaRicorrenti.toString()) }
+    var pausaRadar by remember { mutableStateOf((impostazioni.pausaRadarMs / 1000.0).toString().removeSuffix(".0").replace('.', ',')) }
     val bloccoPossibile = bloccoDisponibile(LocalContext.current)
     var errore by remember { mutableStateOf<String?>(null) }
 
@@ -137,6 +138,15 @@ fun ImpostazioniScreen(vm: SpeseViewModel, onIndietro: () -> Unit) {
                 modifier = Modifier.fillMaxWidth()
             )
             OutlinedTextField(
+                value = pausaRadar,
+                onValueChange = { pausaRadar = it },
+                label = { Text("Sosta del radar degli stipendi (secondi)") },
+                supportingText = { Text("Nel radar animato del grafico degli stipendi, pausa su ogni mese raggiunto (0-10, predefinito 1; 0 = nessuna pausa).") },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                modifier = Modifier.fillMaxWidth()
+            )
+            OutlinedTextField(
                 value = backupDaMantenere,
                 onValueChange = { backupDaMantenere = it },
                 label = { Text("Backup su Drive da mantenere") },
@@ -179,6 +189,7 @@ fun ImpostazioniScreen(vm: SpeseViewModel, onIndietro: () -> Unit) {
                     val media = mesiMedia.trim().toIntOrNull()
                     val giornoStip = giornoStipendio.trim().toIntOrNull()
                     val promemoria = giorniPromemoria.trim().toIntOrNull()
+                    val sosta = pausaRadar.trim().replace(',', '.').toDoubleOrNull()
                     errore = when {
                         targetCent == null -> "Target non valido"
                         tasso == null || tasso <= 0 -> "Cambio non valido"
@@ -190,6 +201,7 @@ fun ImpostazioniScreen(vm: SpeseViewModel, onIndietro: () -> Unit) {
                         media == null || media !in 1..24 -> "Mesi per la media dello stipendio non validi (1-24)"
                         giornoStip == null || giornoStip !in 1..31 -> "Giorno dello stipendio non valido (1-31)"
                         promemoria == null || promemoria !in 0..60 -> "Giorni del promemoria non validi (0-60)"
+                        sosta == null || sosta < 0 || sosta > 10 -> "Sosta del radar non valida (0-10 secondi)"
                         else -> {
                             vm.salvaImpostazioni(
                                 impostazioni.copy(
@@ -204,7 +216,8 @@ fun ImpostazioniScreen(vm: SpeseViewModel, onIndietro: () -> Unit) {
                                     mesiMediaStipendio = media,
                                     giornoStipendio = giornoStip,
                                     stipendioGiornoLavorativo = giornoLavorativo,
-                                    giorniPromemoriaRicorrenti = promemoria
+                                    giorniPromemoriaRicorrenti = promemoria,
+                                    pausaRadarMs = Math.round(sosta * 1000).toInt()
                                 )
                             )
                             onIndietro()

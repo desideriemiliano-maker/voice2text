@@ -78,7 +78,10 @@ import com.desideri.familybalance.logica.TipoGrafico
 import com.desideri.familybalance.logica.formattaCent
 import com.desideri.familybalance.logica.formattaMese
 import com.desideri.familybalance.logica.formattaMeseBreve
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlin.math.abs
+import kotlin.math.floor
 import java.time.YearMonth
 import kotlin.math.PI
 import kotlin.math.cos
@@ -97,6 +100,8 @@ fun GraficoStipendiDialog(
     valoriPerStipendio: Map<Long, Map<Long, Long>>,
     valuta: String,
     annoIniziale: Int,
+    /** Sosta del radar animato su ogni mese raggiunto (ms, Impostazioni). */
+    pausaRadarMs: Int = 1000,
     onChiudi: () -> Unit
 ) {
     val mesiDisponibili = stipendi.map { YearMonth.parse(it.mese) }.sorted()
@@ -144,7 +149,7 @@ fun GraficoStipendiDialog(
                         Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
                             Text("Scegli almeno una voce e un periodo con stipendi.", style = MaterialTheme.typography.bodyMedium)
                         }
-                    radar -> RadarStipendi(vociScelte, righe, valoriPerStipendio, valuta, Modifier.fillMaxWidth().weight(1f))
+                    radar -> RadarStipendi(vociScelte, righe, valoriPerStipendio, valuta, pausaRadarMs, Modifier.fillMaxWidth().weight(1f))
                     else -> {
                         Row(
                             horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -189,6 +194,7 @@ private fun RadarStipendi(
     righe: List<Stipendio>,
     valoriPerStipendio: Map<Long, Map<Long, Long>>,
     valuta: String,
+    pausaMs: Int,
     modifier: Modifier
 ) {
     val frazioniPerRiga = remember(righe, voci, valoriPerStipendio) {
@@ -213,14 +219,23 @@ private fun RadarStipendi(
     var schermoIntero by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
-    // Un secondo per mese a velocità 1.
+    // Un secondo per mese a velocità 1, con una sosta di [pausaMs] su ogni mese raggiunto.
     fun avvia(daZero: Boolean = false) {
         if (righe.size < 2) return
         animazione?.cancel()
         animazione = scope.launch {
             if (daZero) progresso.snapTo(0f)
-            val durata = (transizioni * 1000 / velocita).toInt().coerceAtLeast(1)
-            progresso.animateTo(1f, tween((durata * (1f - progresso.value)).toInt().coerceAtLeast(0), easing = LinearEasing))
+            val passoMs = 1000 / velocita
+            while (true) {
+                val corrente = progresso.value * transizioni
+                if (abs(corrente - corrente.roundToInt()) < 0.001f && pausaMs > 0) delay(pausaMs.toLong())
+                val prossimo = floor(corrente + 0.001f).toInt() + 1
+                if (prossimo > transizioni) break
+                progresso.animateTo(
+                    prossimo.toFloat() / transizioni,
+                    tween(((prossimo - corrente) * passoMs).toInt().coerceAtLeast(1), easing = LinearEasing)
+                )
+            }
             inPausa = true
         }
     }

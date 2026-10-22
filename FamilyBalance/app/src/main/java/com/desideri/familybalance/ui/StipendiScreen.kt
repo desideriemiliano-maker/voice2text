@@ -631,6 +631,7 @@ fun StipendiScreen(vm: SpeseViewModel) {
                             },
                             valuta = tipo.valuta,
                             annoIniziale = anno,
+                            pausaRadarMs = vm.impostazioni.collectAsStateWithLifecycle().value.pausaRadarMs,
                             onChiudi = { mostraGrafico = false }
                         )
                     }
