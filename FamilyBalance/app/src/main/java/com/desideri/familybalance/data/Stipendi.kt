@@ -204,7 +204,9 @@ fun calcoliStipendio(
 data class Stipendio(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val tipoId: Long,
-    val mese: String
+    val mese: String,
+    /** Operazione di accredito sul conto associata dal riscontro stipendi; null = non associato. */
+    val operazioneId: Long? = null
 )
 
 /**

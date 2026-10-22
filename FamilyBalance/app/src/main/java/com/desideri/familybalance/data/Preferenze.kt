@@ -120,6 +120,12 @@ class Preferenze(context: Context) {
         if (ids == null) remove("stipendi_colonne_nascoste_$tipoId") else putString("stipendi_colonne_nascoste_$tipoId", ids.joinToString(","))
     }.apply()
 
+    /** Voce dello stipendio [tipoId] da confrontare con gli accrediti nel riscontro stipendi. */
+    fun voceRiscontroStipendio(tipoId: Long): Long? = prefs.getString("stipendi_voce_riscontro_$tipoId", null)?.toLongOrNull()
+
+    fun salvaVoceRiscontroStipendio(tipoId: Long, voceId: Long) =
+        prefs.edit().putString("stipendi_voce_riscontro_$tipoId", voceId.toString()).apply()
+
     /** Ultimo stato della casella «Ricorda la selezione» dell'import delle buste paga (predefinito sì). */
     fun ricordaSelezioneStipendio(): Boolean = prefs.getString("stipendi_ricorda_selezione", "true") == "true"
 

@@ -369,6 +369,16 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
 
     fun eliminaStipendio(stipendio: com.desideri.familybalance.data.Stipendio) = viewModelScope.launch { stipendiDao.eliminaStipendio(stipendio) }
 
+    // --- Riscontro stipendi ---
+
+    fun voceRiscontroStipendio(tipoId: Long): Long? = preferenze.voceRiscontroStipendio(tipoId)
+    fun salvaVoceRiscontroStipendio(tipoId: Long, voceId: Long) = preferenze.salvaVoceRiscontroStipendio(tipoId, voceId)
+
+    /** Associa l'accredito [operazioneId] allo [stipendio] (o lo scollega con null). */
+    fun associaStipendio(stipendio: com.desideri.familybalance.data.Stipendio, operazioneId: Long?) = viewModelScope.launch {
+        stipendiDao.aggiornaStipendio(stipendio.copy(operazioneId = operazioneId))
+    }
+
     private val _importStipendio = MutableStateFlow<ImportStipendio?>(null)
     val importStipendio: StateFlow<ImportStipendio?> = _importStipendio.asStateFlow()
 

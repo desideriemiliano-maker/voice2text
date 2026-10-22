@@ -122,6 +122,7 @@ private fun SchermataPrincipale(vm: SpeseViewModel, sezione: Sezione, onSezione:
     var menuAperto by remember { mutableStateOf(false) }
     var mostraVersioni by remember { mutableStateOf(false) }
     var mostraRegistro by remember { mutableStateOf(false) }
+    var mostraRiscontroStipendi by remember { mutableStateOf(false) }
     val importazioneInCorso by vm.importazioneInCorso.collectAsStateWithLifecycle()
     val importEstratto by vm.importEstratto.collectAsStateWithLifecycle()
     val testoAttesa by vm.testoAttesa.collectAsStateWithLifecycle()
@@ -143,6 +144,7 @@ private fun SchermataPrincipale(vm: SpeseViewModel, sezione: Sezione, onSezione:
                             VoceMenu("Anagrafica stipendi", Icons.Filled.Badge) { menuAperto = false; onApri(Schermata.AnagraficaStipendi) }
                             HorizontalDivider()
                             VoceMenu("Riscontro spostamenti", Icons.AutoMirrored.Filled.CompareArrows) { menuAperto = false; onApri(Schermata.MappaSpostamenti) }
+                            VoceMenu("Riscontro stipendi", Icons.Filled.Badge) { menuAperto = false; mostraRiscontroStipendi = true }
                             VoceMenu("Cambi CHF/EUR", Icons.Filled.CurrencyExchange) { menuAperto = false; onApri(Schermata.Cambi) }
                             HorizontalDivider()
                             VoceMenu("Backup Google Drive", Icons.Filled.CloudUpload) { menuAperto = false; onApri(Schermata.Backup) }
@@ -183,6 +185,7 @@ private fun SchermataPrincipale(vm: SpeseViewModel, sezione: Sezione, onSezione:
     if (mostraRegistro) RegistroDialog(onDismiss = { mostraRegistro = false })
 
     colonneExcel?.let { ColonneExcelDialog(vm, dati, it) }
+    if (mostraRiscontroStipendi) RiscontroStipendiDialog(vm, onChiudi = { mostraRiscontroStipendi = false })
 
     riscontroEstratto?.let { RiscontroEstrattoDialog(vm, dati, it, onChiudi = { vm.chiudiRiscontroEstratto() }) }
 
