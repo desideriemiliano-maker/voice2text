@@ -1324,7 +1324,7 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
         withContext(Dispatchers.IO) {
             // Le Impostazioni salvate nel backup (se presenti) sostituiscono quelle attuali.
             preferenze.salva(ImpostazioniBackup.leggi(scaricato, _impostazioni.value), subito = true)
-            preferenze.ripristinaAltre(ImpostazioniBackup.leggiAltre(scaricato, listOf("ordine_colonne_", "duplicati_fino_")))
+            preferenze.ripristinaAltre(ImpostazioniBackup.leggiAltre(scaricato, com.desideri.familybalance.data.Preferenze.PREFISSI_BACKUP))
             AppDatabase.chiudi()
             val destinazione = AppDatabase.fileDatabase(app)
             scaricato.copyTo(destinazione, overwrite = true)

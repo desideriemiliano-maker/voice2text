@@ -178,7 +178,7 @@ class Preferenze(context: Context) {
         prefs.edit().putString("colonne_excel_$contoValutaId", j.toString()).apply()
     }
 
-    private companion object {
+    companion object {
         const val PREFISSO_ORDINE = "ordine_colonne_"
         val PREFISSI_BACKUP = listOf(PREFISSO_ORDINE, "duplicati_fino_", "stipendi_")
         const val CHIAVE_TARGET = "target_risparmio_cent"
