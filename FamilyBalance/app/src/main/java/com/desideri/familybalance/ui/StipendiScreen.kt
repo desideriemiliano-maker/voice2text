@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -21,6 +22,9 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.automirrored.filled.FormatIndentIncrease
+import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.automirrored.filled.ShowChart
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
@@ -484,6 +488,16 @@ fun StipendiScreen(vm: SpeseViewModel) {
                     var ordine by remember(tipo.id) { mutableStateOf(vm.ordineColonne("stipendi_${tipo.id}")) }
                     var sceltaOrdine by remember(tipo.id) { mutableStateOf(false) }
                     val vociTipo = ordinaColonne(stipendi.vociDi(tipo.id), ordine) { it.id.toString() }
+                    // Colonne rientrate: si vedono solo espandendo la colonna non rientrata che le precede (la «madre»).
+                    var rientrate by remember(tipo.id) { mutableStateOf(vm.colonneRientrateStipendio(tipo.id)) }
+                    var espanse by remember(tipo.id) { mutableStateOf(vm.colonneEspanseStipendio(tipo.id)) }
+                    var sceltaRientri by remember(tipo.id) { mutableStateOf(false) }
+                    val madri = HashMap<Long, Long>()
+                    run {
+                        var madre: Long? = null
+                        vociTipo.forEach { v -> val m = madre; if (v.id in rientrate && m != null) madri[v.id] = m else madre = v.id }
+                    }
+                    val conFigli = madri.values.toSet()
                     // Anno e azioni sulla stessa riga; la scelta delle colonne compare con l'icona del filtro.
                     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 4.dp)) {
                         IconButton(onClick = { anno-- }) { Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, contentDescription = "Anno precedente") }
@@ -525,6 +539,7 @@ fun StipendiScreen(vm: SpeseViewModel) {
                             Text("Ricorda", style = MaterialTheme.typography.bodySmall)
                         }
                         IconButton(onClick = { sceltaOrdine = true }) { Icon(Icons.Filled.ViewColumn, contentDescription = "Ordine delle colonne") }
+                        IconButton(onClick = { sceltaRientri = true }) { Icon(Icons.AutoMirrored.Filled.FormatIndentIncrease, contentDescription = "Colonne rientrate") }
                     }
                     if (sceltaOrdine) {
                         OrdineColonneDialog(
@@ -537,8 +552,49 @@ fun StipendiScreen(vm: SpeseViewModel) {
                             onAnnulla = { sceltaOrdine = false }
                         )
                     }
+                    if (sceltaRientri) {
+                        val scelte = remember { mutableStateListOf<Long>().apply { addAll(rientrate) } }
+                        AlertDialog(
+                            onDismissRequest = { sceltaRientri = false },
+                            title = { Text("Colonne rientrate") },
+                            text = {
+                                Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                                    Text(
+                                        "Una colonna rientrata si vede solo espandendo, con l'icona nell'intestazione, la colonna non rientrata che la precede.",
+                                        style = MaterialTheme.typography.bodySmall
+                                    )
+                                    vociTipo.forEachIndexed { i, v ->
+                                        val attiva = i > 0
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            modifier = Modifier.fillMaxWidth().clickable(enabled = attiva) { if (v.id in scelte) scelte.remove(v.id) else scelte.add(v.id) }
+                                                .padding(start = if (v.id in scelte && attiva) 24.dp else 0.dp)
+                                        ) {
+                                            Checkbox(checked = v.id in scelte && attiva, enabled = attiva, onCheckedChange = { if (it) scelte.add(v.id) else scelte.remove(v.id) })
+                                            Text((if (v.id in scelte && attiva) "↳ " else "") + v.descrizione)
+                                        }
+                                    }
+                                }
+                            },
+                            confirmButton = {
+                                TextButton(onClick = {
+                                    rientrate = scelte.toSet()
+                                    vm.salvaColonneRientrateStipendio(tipo.id, rientrate)
+                                    sceltaRientri = false
+                                }) { Text("OK") }
+                            },
+                            dismissButton = { TextButton(onClick = { sceltaRientri = false }) { Text("Annulla") } }
+                        )
+                    }
                     TabellaStipendi(
-                        voci = vociTipo.filter { it.id !in nascoste },
+                        voci = vociTipo.filter { v -> v.id !in nascoste && (madri[v.id]?.let { m -> m in espanse && m !in nascoste } ?: true) },
+                        rientrate = madri.keys,
+                        conFigli = conFigli,
+                        espanse = espanse,
+                        onEspandi = { id ->
+                            espanse = if (id in espanse) espanse - id else espanse + id
+                            vm.salvaColonneEspanseStipendio(tipo.id, espanse)
+                        },
                         righe = stipendi.stipendiDi(tipo.id).filter { it.mese.startsWith("$anno-") }
                             .sortedWith(compareByDescending<Stipendio> { it.mese }.thenBy { it.id }),
                         importi = stipendi.importiPerStipendio,
@@ -590,7 +646,7 @@ fun StipendiScreen(vm: SpeseViewModel) {
                 Text(
                     "Celle in giallo: valori modificati a mano. Tieni premuta un'intestazione e trascinala per spostare la colonna. " +
                         "Tocca una cella per modificarla, il mese per cambiarlo o eliminarlo, un totale per il suo dettaglio; tieni premuto il mese per il dettaglio dei calcoli (una cella calcolata mostra i suoi, con «Modifica» per cambiarli). Icone: importa busta paga, aggiungi un mese, grafico (andamento o radar animato), " +
-                        "colonne mostrate."
+                        "colonne mostrate (con ordine e colonne rientrate, che si aprono con la freccia nell'intestazione della colonna precedente)."
                 )
             },
             confirmButton = { TextButton(onClick = { mostraInfo = false }) { Text("OK") } }
@@ -987,6 +1043,10 @@ private fun DettaglioTotaliDialog(
 @Composable
 private fun TabellaStipendi(
     voci: List<VoceStipendio>,
+    rientrate: Set<Long>,
+    conFigli: Set<Long>,
+    espanse: Set<Long>,
+    onEspandi: (Long) -> Unit,
     righe: List<Stipendio>,
     importi: Map<Long, Map<Long, Long>>,
     percentuali: Map<Long, Map<Long, Double>>,
@@ -1030,9 +1090,11 @@ private fun TabellaStipendi(
                 voci.forEachIndexed { c, v ->
                     key(v.id) {
                         IntestazioneTrascinabile(
-                            if (v.calcolata) "ƒ ${v.descrizione}" else v.descrizione, c, voci.size, L_VOCE_STIPENDIO,
+                            (if (v.id in rientrate) "↳ " else "") + (if (v.calcolata) "ƒ ${v.descrizione}" else v.descrizione), c, voci.size, L_VOCE_STIPENDIO,
                             sfondo = if (v.calcolata) coloreCalcolate else Color.Transparent,
-                            onSposta = { da, a -> onSposta(voci[da].id, voci[a].id) }
+                            onSposta = { da, a -> onSposta(voci[da].id, voci[a].id) },
+                            espansa = if (v.id in conFigli) v.id in espanse else null,
+                            onEspandi = { onEspandi(v.id) }
                         )
                     }
                 }
@@ -1238,15 +1300,16 @@ private fun IntestazioneTrascinabile(
     numeroColonne: Int,
     larghezza: androidx.compose.ui.unit.Dp,
     sfondo: Color,
-    onSposta: (Int, Int) -> Unit
+    onSposta: (Int, Int) -> Unit,
+    /** Con colonne rientrate dopo di sé: se sono mostrate (null = nessuna rientrata). */
+    espansa: Boolean? = null,
+    onEspandi: () -> Unit = {}
 ) {
     var spostamento by remember { mutableStateOf(0f) }
     var trascinata by remember { mutableStateOf(false) }
     val sposta by androidx.compose.runtime.rememberUpdatedState(onSposta)
     val indiceAttuale by androidx.compose.runtime.rememberUpdatedState(indice)
-    CellaReport(
-        testo, null, larghezza, grassetto = true, alta = true,
-        sfondo = if (trascinata) MaterialTheme.colorScheme.primaryContainer else sfondo,
+    androidx.compose.foundation.layout.Box(
         modifier = Modifier
             .zIndex(if (trascinata) 1f else 0f)
             .graphicsLayer { translationX = spostamento }
@@ -1264,5 +1327,19 @@ private fun IntestazioneTrascinabile(
                     onDragCancel = { trascinata = false; spostamento = 0f }
                 )
             }
-    )
+    ) {
+        CellaReport(
+            testo, null, larghezza, grassetto = true, alta = true,
+            sfondo = if (trascinata) MaterialTheme.colorScheme.primaryContainer else sfondo
+        )
+        // Icona per mostrare o nascondere le colonne rientrate che seguono.
+        espansa?.let { aperta ->
+            Icon(
+                if (aperta) Icons.Filled.ExpandMore else Icons.Filled.ChevronRight,
+                contentDescription = if (aperta) "Nascondi le colonne rientrate" else "Mostra le colonne rientrate",
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.align(Alignment.TopStart).size(22.dp).clickable(onClick = onEspandi)
+            )
+        }
+    }
 }

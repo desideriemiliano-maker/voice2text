@@ -120,6 +120,18 @@ class Preferenze(context: Context) {
         if (ids == null) remove("stipendi_colonne_nascoste_$tipoId") else putString("stipendi_colonne_nascoste_$tipoId", ids.joinToString(","))
     }.apply()
 
+    /** Colonne (id delle voci) rientrate nella tabella dello stipendio [tipoId]: si vedono espandendo la precedente. */
+    fun colonneRientrateStipendio(tipoId: Long): Set<Long> = idDa("stipendi_rientrate_$tipoId")
+
+    fun salvaColonneRientrateStipendio(tipoId: Long, ids: Set<Long>) = prefs.edit().putString("stipendi_rientrate_$tipoId", ids.joinToString(",")).apply()
+
+    /** Colonne dello stipendio [tipoId] espanse (con le rientrate che seguono mostrate). */
+    fun colonneEspanseStipendio(tipoId: Long): Set<Long> = idDa("stipendi_espanse_$tipoId")
+
+    fun salvaColonneEspanseStipendio(tipoId: Long, ids: Set<Long>) = prefs.edit().putString("stipendi_espanse_$tipoId", ids.joinToString(",")).apply()
+
+    private fun idDa(chiave: String): Set<Long> = prefs.getString(chiave, null).orEmpty().split(',').mapNotNull { it.toLongOrNull() }.toSet()
+
     /** Voce dello stipendio [tipoId] da confrontare con gli accrediti nel riscontro stipendi. */
     fun voceRiscontroStipendio(tipoId: Long): Long? = prefs.getString("stipendi_voce_riscontro_$tipoId", null)?.toLongOrNull()
 
