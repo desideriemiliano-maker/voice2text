@@ -212,6 +212,8 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
                 } else v.copy(tipoId = id, ordine = i).also { stipendiDao.aggiornaVoce(it) }
             }
             val esistenti = salvate.map { it.id }.toSet()
+            // Voce del riscontro: con l'id definitivo se nuova, nessuna se tolta.
+            stipendiDao.aggiornaTipo(tipo.copy(id = id, nome = nome, voceRiscontroId = tipo.voceRiscontroId?.let { nuoviId[it] ?: it }?.takeIf { it in esistenti }))
             salvate.filter { it.calcolata }.forEach { v ->
                 val addendi = v.idAddendi.map { nuoviId[it] ?: it }.filter { it in esistenti && it != v.id }
                 stipendiDao.aggiornaVoce(v.copy(addendi = addendi.joinToString(",").ifEmpty { null }))
@@ -370,9 +372,6 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
     fun eliminaStipendio(stipendio: com.desideri.familybalance.data.Stipendio) = viewModelScope.launch { stipendiDao.eliminaStipendio(stipendio) }
 
     // --- Riscontro stipendi ---
-
-    fun voceRiscontroStipendio(tipoId: Long): Long? = preferenze.voceRiscontroStipendio(tipoId)
-    fun salvaVoceRiscontroStipendio(tipoId: Long, voceId: Long) = preferenze.salvaVoceRiscontroStipendio(tipoId, voceId)
 
     /** Associa l'accredito [operazioneId] allo [stipendio] (o lo scollega con null). */
     fun associaStipendio(stipendio: com.desideri.familybalance.data.Stipendio, operazioneId: Long?) = viewModelScope.launch {

@@ -72,7 +72,10 @@ data class Voce(
     /** Colore scelto per la voce (ARGB), null = nessuno. */
     val colore: Int? = null,
     @ColumnInfo(defaultValue = "0")
-    val obsoleta: Boolean = false
+    val obsoleta: Boolean = false,
+    /** Entrata usata nel riscontro stipendi: gli accrediti mostrati sono solo le operazioni di queste voci. */
+    @ColumnInfo(defaultValue = "0")
+    val riscontroStipendi: Boolean = false
 ) {
     val descrizione: String get() = tipo
 }

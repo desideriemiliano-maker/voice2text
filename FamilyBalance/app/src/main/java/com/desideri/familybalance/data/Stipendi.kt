@@ -23,7 +23,9 @@ data class TipoStipendio(
     val nome: String,
     val valuta: String,
     val contoValutaId: Long? = null,
-    val obsoleto: Boolean = false
+    val obsoleto: Boolean = false,
+    /** Voce confrontata con gli accrediti nel riscontro stipendi (es. il netto); null = non indicata. */
+    val voceRiscontroId: Long? = null
 )
 
 /**

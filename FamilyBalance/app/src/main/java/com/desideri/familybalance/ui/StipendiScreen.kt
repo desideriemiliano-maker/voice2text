@@ -160,6 +160,7 @@ private fun TipoStipendioDialog(vm: SpeseViewModel, tipo: TipoStipendio, vociIni
     var valuta by remember { mutableStateOf(tipo.valuta) }
     var conto by remember { mutableStateOf(tipo.contoValutaId) }
     var obsoleto by remember { mutableStateOf(tipo.obsoleto) }
+    var voceRiscontro by remember { mutableStateOf(tipo.voceRiscontroId) }
     val voci = remember { mutableStateListOf<VoceStipendio>().apply { addAll(vociIniziali) } }
     var nuovaVoce by remember { mutableStateOf("") }
     // Le voci nuove hanno id negativi provvisori, così possono essere addendi di una voce calcolata.
@@ -277,6 +278,15 @@ private fun TipoStipendioDialog(vm: SpeseViewModel, tipo: TipoStipendio, vociIni
                         nuovaVoce = ""
                     }) { Icon(Icons.Filled.Add, contentDescription = "Aggiungi la voce") }
                 }
+                CampoScelta(
+                    etichetta = "Voce per il riscontro stipendi",
+                    selezionato = voci.firstOrNull { it.id == voceRiscontro },
+                    opzioni = voci.filter { it.descrizione.isNotBlank() },
+                    testo = { it.descrizione },
+                    onScelta = { voceRiscontro = it.id },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Text("Confrontata con gli accrediti sul conto nel riscontro stipendi (es. il netto).", style = MaterialTheme.typography.bodySmall)
                 if (vociIniziali.any { iniziale -> voci.none { it.id == iniziale.id } }) {
                     Text("Le voci tolte vengono eliminate con i loro importi negli stipendi.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
                 }
@@ -285,7 +295,7 @@ private fun TipoStipendioDialog(vm: SpeseViewModel, tipo: TipoStipendio, vociIni
         confirmButton = {
             TextButton(onClick = {
                 val tutte = voci.toList() + listOfNotNull(nuovaVoce.trim().takeIf { it.isNotEmpty() }?.let { VoceStipendio(id = nuovoId(), tipoId = tipo.id, descrizione = it) })
-                vm.salvaTipoStipendio(tipo.copy(nome = nome, valuta = valuta, contoValutaId = conto, obsoleto = obsoleto), tutte, onChiudi)
+                vm.salvaTipoStipendio(tipo.copy(nome = nome, valuta = valuta, contoValutaId = conto, obsoleto = obsoleto, voceRiscontroId = voceRiscontro), tutte, onChiudi)
             }) { Text("Salva") }
         },
         dismissButton = {

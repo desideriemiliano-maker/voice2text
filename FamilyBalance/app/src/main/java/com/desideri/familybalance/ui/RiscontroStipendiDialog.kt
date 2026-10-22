@@ -83,13 +83,10 @@ fun RiscontroStipendiDialog(vm: SpeseViewModel, onChiudi: () -> Unit) {
     var tipoId by rememberSaveable { mutableStateOf<Long?>(null) }
     val tipo = tipi.firstOrNull { it.id == tipoId } ?: tipi.firstOrNull()
     val voci = tipo?.let { stipendi.vociDi(it.id) }.orEmpty()
-    // Voce da confrontare con gli accrediti: quella ricordata, altrimenti il «netto», altrimenti l'ultima.
-    var voceId by remember(tipo?.id) {
-        mutableStateOf(
-            tipo?.let { t -> vm.voceRiscontroStipendio(t.id)?.takeIf { id -> voci.any { it.id == id } } }
-                ?: voci.firstOrNull { it.descrizione.contains("netto", true) }?.id ?: voci.lastOrNull()?.id
-        )
-    }
+    // Voce da confrontare con gli accrediti: quella dell'anagrafica stipendi (null = non indicata).
+    val voceId = tipo?.voceRiscontroId?.takeIf { id -> voci.any { it.id == id } }
+    // Voci di spesa (entrate) usate nel riscontro: gli accrediti mostrati sono solo le loro operazioni.
+    val vociSpesaRiscontro = dati.voci.filter { it.entrata && it.riscontroStipendi }.map { it.id }.toSet()
     val oggi = YearMonth.now()
     var da by remember { mutableStateOf<YearMonth?>(oggi.minusMonths(11)) }
     var a by remember { mutableStateOf<YearMonth?>(null) }
@@ -106,7 +103,7 @@ fun RiscontroStipendiDialog(vm: SpeseViewModel, onChiudi: () -> Unit) {
     val righeStipendi = tuttiDelTipo.filter { nelPeriodo(YearMonth.parse(it.mese)) && (!soloDaAssociare || associato(it) == null) }
     val accrediti = tipo?.contoValutaId?.let { cv ->
         dati.operazioni.filter { op ->
-            op.contoValutaId == cv && (op.importoCent > 0 || op.id in associati) &&
+            op.contoValutaId == cv && ((op.importoCent > 0 && op.voceId in vociSpesaRiscontro) || op.id in associati) &&
                 nelPeriodo(YearMonth.from(LocalDate.ofEpochDay(op.data))) && (!soloDaAssociare || op.id !in associati)
         }
     }.orEmpty()
@@ -169,19 +166,20 @@ fun RiscontroStipendiDialog(vm: SpeseViewModel, onChiudi: () -> Unit) {
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
                         tipi.forEach { t -> FilterChip(selected = t.id == tipo.id, onClick = { tipoId = t.id }, label = { Text(t.nome) }) }
                     }
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.horizontalScroll(rememberScrollState())
-                    ) {
-                        Text("Confronta", style = MaterialTheme.typography.labelMedium)
-                        voci.forEach { v ->
-                            FilterChip(
-                                selected = v.id == voceId,
-                                onClick = { voceId = v.id; vm.salvaVoceRiscontroStipendio(tipo.id, v.id) },
-                                label = { Text(v.descrizione) }
-                            )
-                        }
-                    }
+                    val nomiSpese = dati.voci.filter { it.id in vociSpesaRiscontro }.joinToString(", ") { it.descrizione }
+                    Text(
+                        "Confronto: " + (voci.firstOrNull { it.id == voceId }?.descrizione ?: "—") +
+                            (if (nomiSpese.isNotEmpty()) " · accrediti: $nomiSpese" else ""),
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    if (voceId == null) Text(
+                        "Indica la voce da confrontare nell'anagrafica stipendi (Voce per il riscontro stipendi).",
+                        color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall
+                    )
+                    if (vociSpesaRiscontro.isEmpty()) Text(
+                        "Nessuna entrata usata nel riscontro stipendi: indicala nell'anagrafica spese.",
+                        color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall
+                    )
                     Row {
                         SceltaMese("Dal", da ?: tuttiDelTipo.minOfOrNull { YearMonth.parse(it.mese) } ?: oggi, { da = it; if (a != null && a!! < it) a = it }, Modifier.weight(1f))
                         SceltaMese("Al", a ?: oggi, { a = it; if (da != null && da!! > it) da = it }, Modifier.weight(1f))
@@ -349,8 +347,8 @@ fun RiscontroStipendiDialog(vm: SpeseViewModel, onChiudi: () -> Unit) {
             title = { Text("Riscontro stipendi") },
             text = {
                 Text(
-                    "A sinistra gli stipendi registrati con il valore della voce scelta in «Confronta» (es. il netto), a destra le entrate " +
-                        "del conto di accredito, mese per mese. Tieni premuta una riga non associata e trascinala su quella corrispondente " +
+                    "A sinistra gli stipendi registrati con il valore della voce indicata nell'anagrafica stipendi (es. il netto), a destra le entrate " +
+                        "del conto di accredito con le voci di spesa usate nel riscontro stipendi (anagrafica spese), mese per mese. Tieni premuta una riga non associata e trascinala su quella corrispondente " +
                         "dell'altra colonna per associarle; la linea è rossa se gli importi sono diversi. Tocca una linea per scollegarle. " +
                         "↗ indica un accredito associato fuori dal periodo mostrato."
                 )

@@ -181,6 +181,7 @@ private fun RigaVoce(voce: Voce, utilizzi: Int, onClick: () -> Unit, onOperazion
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 if (voce.obsoleta) AssistChip(onClick = onClick, label = { Text("Obsoleta") })
                 if (voce.entrata) AssistChip(onClick = onClick, label = { Text("Entrata") })
+                if (voce.entrata && voce.riscontroStipendi) AssistChip(onClick = onClick, label = { Text("Riscontro stipendi") })
                 if (voce.ricorrente) {
                     val periodo = if (voce.mesiRicorrenza == 1) "ogni mese" else "ogni ${voce.mesiRicorrenza} mesi"
                     val inizio = voce.meseInizio?.let { testoInMese(it) }?.let { " da ${formattaMeseBreve(it)}" } ?: " (senza previsione)"
@@ -202,6 +203,7 @@ private fun VoceDialog(
 ) {
     var tipo by remember { mutableStateOf(voce.tipo) }
     var entrata by remember { mutableStateOf(voce.entrata) }
+    var riscontroStipendi by remember { mutableStateOf(voce.riscontroStipendi) }
     var ricorrente by remember { mutableStateOf(voce.ricorrente) }
     var mesi by remember { mutableStateOf(voce.mesiRicorrenza.toString()) }
     var meseInizio by remember {
@@ -222,6 +224,7 @@ private fun VoceDialog(
             voce.copy(
                 tipo = tipo,
                 entrata = entrata,
+                riscontroStipendi = entrata && riscontroStipendi,
                 ricorrente = ricorrente,
                 mesiRicorrenza = if (ricorrente) numeroMesi ?: 1 else voce.mesiRicorrenza,
                 meseInizio = if (ricorrente) inizio?.toString() else voce.meseInizio,
@@ -242,6 +245,15 @@ private fun VoceDialog(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Checkbox(checked = entrata, onCheckedChange = { entrata = it })
                     Text("Entrata (stipendio, interessi)")
+                }
+                if (entrata) {
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 24.dp)) {
+                        Checkbox(checked = riscontroStipendi, onCheckedChange = { riscontroStipendi = it })
+                        Column {
+                            Text("Usata nel riscontro stipendi")
+                            Text("Il riscontro stipendi mostra solo gli accrediti con le voci così indicate.", style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Checkbox(checked = ricorrente, onCheckedChange = { ricorrente = it })

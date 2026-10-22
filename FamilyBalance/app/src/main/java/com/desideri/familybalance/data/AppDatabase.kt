@@ -8,7 +8,7 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import java.io.File
 
-@Database(entities = [Conto::class, ContoValuta::class, Voce::class, Operazione::class, Associazione::class, Cambio::class, PrevisioneRicorrente::class, TipoStipendio::class, VoceStipendio::class, Stipendio::class, ImportoStipendio::class], version = 29, exportSchema = false)
+@Database(entities = [Conto::class, ContoValuta::class, Voce::class, Operazione::class, Associazione::class, Cambio::class, PrevisioneRicorrente::class, TipoStipendio::class, VoceStipendio::class, Stipendio::class, ImportoStipendio::class], version = 30, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun dao(): SpeseDao
     abstract fun stipendiDao(): StipendiDao
@@ -24,7 +24,7 @@ abstract class AppDatabase : RoomDatabase() {
                 // TRUNCATE invece di WAL: tutto il contenuto sta nel solo file .db, così il backup
                 // su Drive è una semplice copia del file senza dover gestire -wal/-shm.
                 .setJournalMode(JournalMode.TRUNCATE)
-                .addMigrations(MIGRAZIONE_1_2, MIGRAZIONE_2_3, MIGRAZIONE_3_4, MIGRAZIONE_4_5, MIGRAZIONE_5_6, MIGRAZIONE_6_7, MIGRAZIONE_7_8, MIGRAZIONE_8_9, MIGRAZIONE_9_10, MIGRAZIONE_10_11, MIGRAZIONE_11_12, MIGRAZIONE_12_13, MIGRAZIONE_13_14, MIGRAZIONE_14_15, MIGRAZIONE_15_16, MIGRAZIONE_16_17, MIGRAZIONE_17_18, MIGRAZIONE_18_19, MIGRAZIONE_19_20, MIGRAZIONE_20_21, MIGRAZIONE_21_22, MIGRAZIONE_22_23, MIGRAZIONE_23_24, MIGRAZIONE_24_25, MIGRAZIONE_25_26, MIGRAZIONE_26_27, MIGRAZIONE_27_28, MIGRAZIONE_28_29)
+                .addMigrations(MIGRAZIONE_1_2, MIGRAZIONE_2_3, MIGRAZIONE_3_4, MIGRAZIONE_4_5, MIGRAZIONE_5_6, MIGRAZIONE_6_7, MIGRAZIONE_7_8, MIGRAZIONE_8_9, MIGRAZIONE_9_10, MIGRAZIONE_10_11, MIGRAZIONE_11_12, MIGRAZIONE_12_13, MIGRAZIONE_13_14, MIGRAZIONE_14_15, MIGRAZIONE_15_16, MIGRAZIONE_16_17, MIGRAZIONE_17_18, MIGRAZIONE_18_19, MIGRAZIONE_19_20, MIGRAZIONE_20_21, MIGRAZIONE_21_22, MIGRAZIONE_22_23, MIGRAZIONE_23_24, MIGRAZIONE_24_25, MIGRAZIONE_25_26, MIGRAZIONE_26_27, MIGRAZIONE_27_28, MIGRAZIONE_28_29, MIGRAZIONE_29_30)
                 .build()
                 .also { istanza = it }
         }
@@ -314,6 +314,14 @@ abstract class AppDatabase : RoomDatabase() {
         private val MIGRAZIONE_28_29 = object : Migration(28, 29) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE `stipendi` ADD COLUMN `operazioneId` INTEGER")
+            }
+        }
+
+        /** Versione 30: voce dello stipendio e voci di spesa usate nel riscontro stipendi. */
+        private val MIGRAZIONE_29_30 = object : Migration(29, 30) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `stipendi_tipi` ADD COLUMN `voceRiscontroId` INTEGER")
+                db.execSQL("ALTER TABLE `voci` ADD COLUMN `riscontroStipendi` INTEGER NOT NULL DEFAULT 0")
             }
         }
 

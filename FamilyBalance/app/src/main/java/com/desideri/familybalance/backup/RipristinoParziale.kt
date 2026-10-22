@@ -72,7 +72,8 @@ class LetturaBackup(file: File) : AutoCloseable {
             meseInizio = c.testo("meseInizio"),
             importoPrevistoCent = c.long("importoPrevistoCent"),
             colore = c.int("colore"),
-            obsoleta = (c.int("obsoleta") ?: 0) != 0
+            obsoleta = (c.int("obsoleta") ?: 0) != 0,
+            riscontroStipendi = (c.int("riscontroStipendi") ?: 0) != 0
         )
     }
 
