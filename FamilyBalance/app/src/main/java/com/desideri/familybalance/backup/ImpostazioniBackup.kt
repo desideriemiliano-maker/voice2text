@@ -31,7 +31,8 @@ object ImpostazioniBackup {
                 "stipendioGiornoLavorativo" to imp.stipendioGiornoLavorativo.toString(),
                 "giorniPromemoriaRicorrenti" to imp.giorniPromemoriaRicorrenti.toString(),
                 "mostraContiVirtuali" to imp.mostraContiVirtuali.toString(),
-                "pausaRadarMs" to imp.pausaRadarMs.toString()
+                "pausaRadarMs" to imp.pausaRadarMs.toString(),
+                "cartellaBustePaga" to imp.cartellaBustePaga
             ).plus(altre).forEach { (k, v) -> db.execSQL("INSERT INTO $TABELLA (chiave, valore) VALUES (?, ?)", arrayOf(k, v)) }
         }
     }
@@ -68,7 +69,8 @@ object ImpostazioniBackup {
             stipendioGiornoLavorativo = valori["stipendioGiornoLavorativo"]?.toBooleanStrictOrNull() ?: attuali.stipendioGiornoLavorativo,
             giorniPromemoriaRicorrenti = valori["giorniPromemoriaRicorrenti"]?.toIntOrNull() ?: attuali.giorniPromemoriaRicorrenti,
             mostraContiVirtuali = valori["mostraContiVirtuali"]?.toBooleanStrictOrNull() ?: attuali.mostraContiVirtuali,
-            pausaRadarMs = valori["pausaRadarMs"]?.toIntOrNull() ?: attuali.pausaRadarMs
+            pausaRadarMs = valori["pausaRadarMs"]?.toIntOrNull() ?: attuali.pausaRadarMs,
+            cartellaBustePaga = valori["cartellaBustePaga"] ?: attuali.cartellaBustePaga
         )
     }
 }

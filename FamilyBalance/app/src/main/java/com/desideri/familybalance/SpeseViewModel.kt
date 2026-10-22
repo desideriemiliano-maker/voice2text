@@ -137,7 +137,14 @@ data class DatiStipendi(
 }
 
 /** Busta paga letta da Gemini in attesa di conferma per la tipologia [tipoId]. */
-data class ImportStipendio(val tipoId: Long, val letta: com.desideri.familybalance.estratto.BustaPagaLetta)
+data class ImportStipendio(
+    val tipoId: Long,
+    val letta: com.desideri.familybalance.estratto.BustaPagaLetta,
+    /** Copia locale del file della busta paga, da salvare su Drive alla conferma (null se non copiato). */
+    val file: File? = null,
+    val estensione: String = "pdf",
+    val mime: String = "application/pdf"
+)
 
 /**
  * Una riga confermata dell'import: voce esistente ([voceId]) o nuova con nome [nuovaVoce], importo e
@@ -391,7 +398,20 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
             val letta = com.desideri.familybalance.estratto.BustaPagaGemini(BuildConfig.GEMINI_API_KEY, RegistroPromptStore(getApplication()))
                 .leggi(getApplication(), uri, tipo.nome, tipo.valuta, dati.vociDi(tipoId).filterNot { it.calcolata }.map { it.descrizione to it.listaNomiImport.filterNot { a -> a.equals(it.descrizione, true) } })
             if (letta.voci.isEmpty()) messaggio("Nessuna voce trovata nella busta paga")
-            else _importStipendio.value = ImportStipendio(tipoId, letta)
+            else {
+                // Copia del file, da salvare su Drive alla conferma (il permesso sull'uri può scadere).
+                val app = getApplication<Application>()
+                val mime = app.contentResolver.getType(uri) ?: "application/pdf"
+                val estensione = android.webkit.MimeTypeMap.getSingleton().getExtensionFromMimeType(mime) ?: "pdf"
+                val copia = runCatching {
+                    withContext(Dispatchers.IO) {
+                        File(File(app.filesDir, "buste_paga").apply { mkdirs() }, "busta_${System.currentTimeMillis()}.$estensione").also { f ->
+                            app.contentResolver.openInputStream(uri)!!.use { input -> f.outputStream().use { input.copyTo(it) } }
+                        }
+                    }
+                }.getOrNull()
+                _importStipendio.value = ImportStipendio(tipoId, letta, copia, estensione, mime)
+            }
         } catch (e: Exception) {
             messaggio("Lettura della busta paga non riuscita: ${e.message ?: e.javaClass.simpleName}")
         } finally {
@@ -421,6 +441,7 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun annullaImportStipendio() {
+        _importStipendio.value?.file?.delete()
         _importStipendio.value = null
     }
 
@@ -431,8 +452,9 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
      * stessa voce si sommano.
      */
     fun confermaImportStipendio(tipoId: Long, mese: YearMonth, righe: List<RigaImportStipendio>, stipendioId: Long?) = viewModelScope.launch {
+        val imp = _importStipendio.value
         _importStipendio.value = null
-        db.withTransaction {
+        val registrato = db.withTransaction {
             val voci = stipendiDao.voci(tipoId).toMutableList()
             /** La voce della riga (creata se nuova), con il nome letto dalla busta tra i suoi nomi di import. */
             suspend fun voceId(r: RigaImportStipendio): Long {
@@ -459,8 +481,39 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
                 )
             }
             aggiornaCalcolate(stipendioId, tipoId)
+            stipendioId
         }
         messaggio("Stipendio di ${formattaMese(mese)} registrato (${righe.size} voci)")
+        imp?.file?.let { f ->
+            val nome = (stipendi.value.tipi.firstOrNull { it.id == tipoId }?.nome ?: "Stipendio") + " $mese.${imp.estensione}"
+            salvaBustaPagaSuDrive(registrato, f, nome, imp.mime)
+        }
+    }
+
+    /**
+     * Salva su Drive (cartella delle Impostazioni) il file della busta paga dello stipendio
+     * [stipendioId] e ne memorizza il link; senza cartella o account non salva nulla.
+     */
+    private fun salvaBustaPagaSuDrive(stipendioId: Long, file: File, nome: String, mime: String) {
+        val cartella = _impostazioni.value.cartellaBustePaga.trim()
+        if (cartella.isEmpty()) return run { file.delete() }
+        val email = _impostazioni.value.emailBackup
+            ?: return run { file.delete(); messaggio("Busta paga non salvata su Drive: scegli l'account in Backup Google Drive") }
+        viewModelScope.launch {
+            try {
+                val link = com.desideri.familybalance.backup.BustePagaDrive(getApplication(), email).carica(file, nome, mime, cartella)
+                stipendiDao.stipendio(stipendioId)?.let { stipendiDao.aggiornaStipendio(it.copy(bustaPagaLink = link)) }
+                file.delete()
+                messaggio("Busta paga salvata su Drive in «$cartella»")
+            } catch (e: UserRecoverableAuthIOException) {
+                // Consenso Google per la cartella su Drive: si riprova dopo la risposta.
+                azioneInSospeso = { salvaBustaPagaSuDrive(stipendioId, file, nome, mime) }
+                _richiestaAutorizzazione.value = e.intent
+            } catch (e: Exception) {
+                file.delete()
+                messaggio("Busta paga non salvata su Drive: ${e.message ?: e.javaClass.simpleName}")
+            }
+        }
     }
 
     /** Saldi della sezione Conti visibili: nascosti a ogni avvio dell'app, non salvato. */

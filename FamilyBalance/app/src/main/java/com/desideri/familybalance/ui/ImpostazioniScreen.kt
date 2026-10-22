@@ -47,6 +47,7 @@ fun ImpostazioniScreen(vm: SpeseViewModel, onIndietro: () -> Unit) {
     var giornoStipendio by remember { mutableStateOf(impostazioni.giornoStipendio.toString()) }
     var giornoLavorativo by remember { mutableStateOf(impostazioni.stipendioGiornoLavorativo) }
     var giorniPromemoria by remember { mutableStateOf(impostazioni.giorniPromemoriaRicorrenti.toString()) }
+    var cartellaBuste by remember { mutableStateOf(impostazioni.cartellaBustePaga) }
     var pausaRadar by remember { mutableStateOf((impostazioni.pausaRadarMs / 1000.0).toString().removeSuffix(".0").replace('.', ',')) }
     val bloccoPossibile = bloccoDisponibile(LocalContext.current)
     var errore by remember { mutableStateOf<String?>(null) }
@@ -138,6 +139,19 @@ fun ImpostazioniScreen(vm: SpeseViewModel, onIndietro: () -> Unit) {
                 modifier = Modifier.fillMaxWidth()
             )
             OutlinedTextField(
+                value = cartellaBuste,
+                onValueChange = { cartellaBuste = it },
+                label = { Text("Cartella Google Drive delle buste paga") },
+                supportingText = {
+                    Text(
+                        "Le buste paga importate si salvano in questa cartella del Drive dell'account del backup (sottocartelle separate da «/»; vuota = non salvarle). " +
+                            "La cartella è creata dall'app: una cartella con lo stesso nome creata a mano non è visibile all'app."
+                    )
+                },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+            )
+            OutlinedTextField(
                 value = pausaRadar,
                 onValueChange = { pausaRadar = it },
                 label = { Text("Sosta del radar degli stipendi (secondi)") },
@@ -217,7 +231,8 @@ fun ImpostazioniScreen(vm: SpeseViewModel, onIndietro: () -> Unit) {
                                     giornoStipendio = giornoStip,
                                     stipendioGiornoLavorativo = giornoLavorativo,
                                     giorniPromemoriaRicorrenti = promemoria,
-                                    pausaRadarMs = Math.round(sosta * 1000).toInt()
+                                    pausaRadarMs = Math.round(sosta * 1000).toInt(),
+                                    cartellaBustePaga = cartellaBuste.trim()
                                 )
                             )
                             onIndietro()

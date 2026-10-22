@@ -32,7 +32,9 @@ data class Impostazioni(
     /** Nella sezione Conti mostra anche i conti virtuali. */
     val mostraContiVirtuali: Boolean = true,
     /** Sosta del radar animato degli stipendi su ogni mese raggiunto, in millisecondi. */
-    val pausaRadarMs: Int = 1000
+    val pausaRadarMs: Int = 1000,
+    /** Cartella di Google Drive in cui salvare le buste paga importate ("" = non salvarle). */
+    val cartellaBustePaga: String = "FamilyBalance/Buste paga"
 )
 
 class Preferenze(context: Context) {
@@ -53,7 +55,8 @@ class Preferenze(context: Context) {
         stipendioGiornoLavorativo = prefs.getBoolean(CHIAVE_STIPENDIO_LAVORATIVO, true),
         giorniPromemoriaRicorrenti = prefs.getInt(CHIAVE_GIORNI_PROMEMORIA, 7),
         mostraContiVirtuali = prefs.getBoolean(CHIAVE_MOSTRA_VIRTUALI, true),
-        pausaRadarMs = prefs.getInt(CHIAVE_PAUSA_RADAR, 1000)
+        pausaRadarMs = prefs.getInt(CHIAVE_PAUSA_RADAR, 1000),
+        cartellaBustePaga = prefs.getString(CHIAVE_CARTELLA_BUSTE, null) ?: "FamilyBalance/Buste paga"
     )
 
     /** Con [subito] la scrittura è sincrona (es. prima di riavviare l'app dopo un ripristino). */
@@ -74,6 +77,7 @@ class Preferenze(context: Context) {
             .putInt(CHIAVE_GIORNI_PROMEMORIA, impostazioni.giorniPromemoriaRicorrenti)
             .putBoolean(CHIAVE_MOSTRA_VIRTUALI, impostazioni.mostraContiVirtuali)
             .putInt(CHIAVE_PAUSA_RADAR, impostazioni.pausaRadarMs)
+            .putString(CHIAVE_CARTELLA_BUSTE, impostazioni.cartellaBustePaga)
         if (subito) editor.commit() else editor.apply()
     }
 
@@ -193,6 +197,7 @@ class Preferenze(context: Context) {
         const val CHIAVE_STIPENDIO_LAVORATIVO = "stipendio_giorno_lavorativo"
         const val CHIAVE_GIORNI_PROMEMORIA = "giorni_promemoria_ricorrenti"
         const val CHIAVE_PAUSA_RADAR = "pausa_radar_ms"
+        const val CHIAVE_CARTELLA_BUSTE = "cartella_buste_paga"
         const val CHIAVE_MOSTRA_VIRTUALI = "mostra_conti_virtuali"
         const val CHIAVE_PROMEMORIA_CONFERMATO = "promemoria_ricorrenti_confermato"
         const val PREFISSO_DUPLICATI = "duplicati_fino_"

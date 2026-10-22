@@ -208,7 +208,9 @@ data class Stipendio(
     val tipoId: Long,
     val mese: String,
     /** Operazione di accredito sul conto associata dal riscontro stipendi; null = non associato. */
-    val operazioneId: Long? = null
+    val operazioneId: Long? = null,
+    /** Link al file della busta paga importata, salvato su Google Drive; null = nessuno. */
+    val bustaPagaLink: String? = null
 )
 
 /**
@@ -286,6 +288,9 @@ interface StipendiDao {
 
     @Delete
     suspend fun eliminaVoce(voce: VoceStipendio)
+
+    @Query("SELECT * FROM stipendi WHERE id = :id")
+    suspend fun stipendio(id: Long): Stipendio?
 
     @Query("SELECT * FROM stipendi WHERE tipoId = :tipoId AND mese = :mese ORDER BY id")
     suspend fun stipendiDelMese(tipoId: Long, mese: String): List<Stipendio>

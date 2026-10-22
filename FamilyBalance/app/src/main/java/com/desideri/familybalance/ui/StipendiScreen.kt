@@ -473,6 +473,15 @@ fun StipendiScreen(vm: SpeseViewModel) {
     val sceltaFile = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null && tipo != null) vm.importaBustaPaga(uri, tipo.id)
     }
+    // Consenso Google per salvare la busta paga importata nella cartella di Drive.
+    val richiestaAutorizzazione by vm.richiestaAutorizzazione.collectAsStateWithLifecycle()
+    val autorizzazione = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { risultato ->
+        vm.esitoAutorizzazione(risultato.resultCode == android.app.Activity.RESULT_OK)
+    }
+    androidx.compose.runtime.LaunchedEffect(richiestaAutorizzazione) {
+        richiestaAutorizzazione?.let { autorizzazione.launch(it) }
+    }
+    val contesto = androidx.compose.ui.platform.LocalContext.current
 
     // Anno mostrato nella tabella (predefinito quello corrente).
     var anno by rememberSaveable { mutableStateOf(YearMonth.now().year) }
@@ -656,7 +665,7 @@ fun StipendiScreen(vm: SpeseViewModel) {
             text = {
                 Text(
                     "Celle in giallo: valori modificati a mano. Tieni premuta un'intestazione e trascinala per spostare la colonna. " +
-                        "Tocca una cella per modificarla, il mese per cambiarlo o eliminarlo, un totale per il suo dettaglio; tieni premuto il mese per il dettaglio dei calcoli (una cella calcolata mostra i suoi, con «Modifica» per cambiarli). Icone: importa busta paga, aggiungi un mese, grafico (andamento o radar animato), " +
+                        "📄 accanto al mese: busta paga salvata su Drive (si apre dal popup del mese). Tocca una cella per modificarla, il mese per cambiarlo o eliminarlo, un totale per il suo dettaglio; tieni premuto il mese per il dettaglio dei calcoli (una cella calcolata mostra i suoi, con «Modifica» per cambiarli). Icone: importa busta paga, aggiungi un mese, grafico (andamento o radar animato), " +
                         "colonne mostrate (con ordine e colonne rientrate, che si aprono con la freccia nell'intestazione della colonna precedente)."
                 )
             },
@@ -844,6 +853,15 @@ fun StipendiScreen(vm: SpeseViewModel) {
                     OutlinedButton(onClick = { dettaglio = s; meseAperto = null }, modifier = Modifier.padding(top = 8.dp)) {
                         Icon(Icons.Filled.Functions, contentDescription = null)
                         Text("Dettaglio dei calcoli", modifier = Modifier.padding(start = 6.dp))
+                    }
+                    // Busta paga importata salvata su Drive: si apre con il link.
+                    s.bustaPagaLink?.let { link ->
+                        OutlinedButton(onClick = {
+                            runCatching { contesto.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(link))) }
+                        }) {
+                            Icon(Icons.Filled.UploadFile, contentDescription = null)
+                            Text("Apri la busta paga", modifier = Modifier.padding(start = 6.dp))
+                        }
                     }
                     if (conferma) Text("Tocca di nuovo «Elimina» per eliminare lo stipendio con tutti i suoi importi.", color = MaterialTheme.colorScheme.error)
                 }
@@ -1115,7 +1133,7 @@ private fun TabellaStipendi(
             Column(modifier = Modifier.verticalScroll(verticale)) {
                 righe.forEachIndexed { i, s ->
                     CellaReport(
-                        formattaMeseBreve(YearMonth.parse(s.mese)) + (numeroNelMese(s, righe)?.let { " ($it)" } ?: ""),
+                        formattaMeseBreve(YearMonth.parse(s.mese)) + (numeroNelMese(s, righe)?.let { " ($it)" } ?: "") + (if (s.bustaPagaLink != null) " 📄" else ""),
                         null, L_MESE_STIPENDIO, grassetto = true, alta = true, sfondo = sfondo(i),
                         modifier = Modifier.combinedClickable(onClick = { onMese(s) }, onLongClick = { onDettaglio(s) })
                     )
