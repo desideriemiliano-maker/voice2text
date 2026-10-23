@@ -70,6 +70,7 @@ fun ContiScreen(vm: SpeseViewModel, onApriConto: (Long) -> Unit, onAnagraficaCon
     var mostraGrafico by remember { mutableStateOf(false) }
     var menuTotale by remember { mutableStateOf(false) }
     var saldiTotale by remember { mutableStateOf(false) }
+    var saldiConti by remember { mutableStateOf(false) }
     // Riscontro dell'estratto conto direttamente sul conto/valuta: menu aperto e conto del file in scelta.
     var menuRiscontro by remember { mutableStateOf<Long?>(null) }
     var contoRiscontro by rememberSaveable { mutableStateOf<Long?>(null) }
@@ -193,6 +194,12 @@ fun ContiScreen(vm: SpeseViewModel, onApriConto: (Long) -> Unit, onAnagraficaCon
                                 enabled = dati.operazioni.isNotEmpty(),
                                 onClick = { menuTotale = false; saldiTotale = true }
                             )
+                            DropdownMenuItem(
+                                text = { Text("Saldi dei conti") },
+                                leadingIcon = { Icon(Icons.Filled.TableChart, contentDescription = null) },
+                                enabled = dati.operazioni.isNotEmpty(),
+                                onClick = { menuTotale = false; saldiConti = true }
+                            )
                         }
                     }
                     }
@@ -292,6 +299,9 @@ fun ContiScreen(vm: SpeseViewModel, onApriConto: (Long) -> Unit, onAnagraficaCon
 
     duplicati?.let { DuplicatiDialog(vm, it, onChiudi = { duplicati = null }) }
     saldiMensili?.let { SaldiMensiliDialog(dati, it, pausaRadarMs = impostazioni.pausaRadarMs, onChiudi = { saldiMensili = null }) }
+    if (saldiConti) {
+        SaldiContiDialog(dati, impostazioni.mostraContiVirtuali, impostazioni.cambioChfEur, impostazioni.pausaRadarMs, onChiudi = { saldiConti = false })
+    }
     if (saldiTotale) {
         // Tutti i conti, i virtuali solo se mostrati; CHF convertiti al cambio delle Impostazioni (come il saldo totale).
         val conVirtuali = impostazioni.mostraContiVirtuali
