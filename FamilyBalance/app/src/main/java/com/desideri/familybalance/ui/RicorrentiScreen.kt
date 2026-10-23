@@ -173,7 +173,7 @@ fun RicorrentiScreen(vm: SpeseViewModel) {
             nota = "Spese di ${formattaMese(periodo.first)} – ${formattaMese(periodo.second)} (pagato e, dove manca, previsto), in EUR; un asse per spesa.",
             assi = assi.map { it.descrizione },
             mesi = filtrati.map { it.mese },
-            valori = filtrati.map { m -> assi.map { v -> m.righe.filter { it.voce.id == v.id }.takeIf { it.isNotEmpty() }?.sumOf { it.pagato + (it.previsto ?: 0.0) } } },
+            valori = filtrati.map { m -> assi.map { v -> m.righe.filter { it.voce.id == v.id }.takeIf { it.isNotEmpty() }?.let { rr -> kotlin.math.abs(rr.sumOf { it.pagato + (it.previsto ?: 0.0) }) } } },
             pausaMs = impostazioni.pausaRadarMs,
             onChiudi = { mostraRadar = false }
         )

@@ -140,13 +140,14 @@ fun BilancioScreen(vm: SpeseViewModel) {
     }
     if (mostraGrafico) GraficoBilancioDialog(righe, onChiudi = { mostraGrafico = false })
     if (mostraRadar) {
-        // Le voci del bilancio come nelle carte dei mesi (per corrente e futuri stime e previsioni).
+        // Le voci del bilancio come nelle carte dei mesi (per corrente e futuri stime e previsioni);
+        // entrate e spese senza segno, così una spesa più alta va verso il bordo.
         RadarMensileDialog(
             titolo = "Bilancio · radar",
-            nota = "Mesi del periodo scelto, in EUR: per il mese corrente la stima delle correnti, per i futuri le previsioni.",
+            nota = "Mesi del periodo scelto, in EUR: per il mese corrente la stima delle correnti, per i futuri le previsioni. Entrate e spese senza segno.",
             assi = listOf("Stipendio / interessi", "Spese correnti", "Spese ricorrenti", "Risparmio", "Saldo finale"),
             mesi = righe.map { it.mese },
-            valori = righe.map { r -> listOf(r.stipendio ?: r.entrate, r.correntiBilancio, r.ricorrentiTotali, r.risparmio, r.saldoFinale) },
+            valori = righe.map { r -> listOf(abs(r.stipendio ?: r.entrate), abs(r.correntiBilancio), abs(r.ricorrentiTotali), r.risparmio, r.saldoFinale) },
             pausaMs = impostazioni.pausaRadarMs,
             onChiudi = { mostraRadar = false }
         )
