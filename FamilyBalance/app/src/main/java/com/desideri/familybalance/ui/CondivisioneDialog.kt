@@ -64,8 +64,25 @@ fun CondivisioneDialog(vm: SpeseViewModel) {
     // Ricevuta letta: spese riconosciute dalla causale, scelta, mese e parola chiave da aggiungere.
     val letta = f.letta
     val riconosciute = letta?.let { l -> ricorrenti.filter { l.causale.isNotBlank() && it.riconosce(l.causale) } }.orEmpty()
+    // Pagamenti di una spesa nei due mesi prima e dopo quello letto (centesimi senza segno).
+    val centro = letta?.data?.let { YearMonth.from(it) } ?: YearMonth.now()
+    fun vicini(v: Voce): List<Pair<YearMonth, Long>> = (-2L..2L).map { centro.plusMonths(it) }.map { m ->
+        m to dati.operazioni.filter { it.voceId == v.id && !it.trasferimento && Calcoli.mese(it.dataPerRicorrente) == m }.sumOf { abs(it.importoCent) }
+    }
+    /** Mese con un pagamento della spesa di pari importo: prima il mese letto, poi i vicini dal più prossimo. */
+    fun meseStessoImporto(v: Voce): YearMonth? = letta?.importoCent?.let { imp ->
+        val per = vicini(v)
+        listOf(0, -1, 1, -2, 2).map { per[it + 2] }.firstOrNull { (_, c) -> c != 0L && abs(c - imp) <= 1 }?.first
+    }
+    val conImporto = riconosciute.associateWith { meseStessoImporto(it) }
     var manuale by remember(letta) { mutableStateOf(riconosciute.isEmpty()) }
-    var voce by remember(letta) { mutableStateOf<Voce?>(riconosciute.firstOrNull()) }
+    // Proposta: tra le riconosciute quella con il pagamento di pari importo più vicino al mese letto.
+    var voce by remember(letta) {
+        mutableStateOf<Voce?>(
+            riconosciute.filter { conImporto[it] != null }.minByOrNull { abs(java.time.temporal.ChronoUnit.MONTHS.between(centro, conImporto[it]!!)) }
+                ?: riconosciute.firstOrNull()
+        )
+    }
     var mese by remember(letta) { mutableStateOf(letta?.data?.let { YearMonth.from(it) } ?: YearMonth.now()) }
     var parola by remember(letta) { mutableStateOf(letta?.causale.orEmpty()) }
     var aggiungiParola by remember(letta) { mutableStateOf(letta?.causale?.isNotBlank() == true) }
@@ -124,9 +141,13 @@ fun CondivisioneDialog(vm: SpeseViewModel) {
                                     style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold
                                 )
                                 riconosciute.forEach { v ->
+                                    val m = conImporto[v]
                                     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().clickable { voce = v }) {
                                         RadioButton(selected = voce?.id == v.id, onClick = { voce = v })
-                                        Text(v.descrizione)
+                                        Column {
+                                            Text(v.descrizione, fontWeight = if (m != null) FontWeight.Bold else null, color = if (m != null) MaterialTheme.colorScheme.primary else androidx.compose.ui.graphics.Color.Unspecified)
+                                            if (m != null) Text("stesso importo in ${formattaMese(m)}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+                                        }
                                     }
                                 }
                                 TextButton(onClick = { manuale = true; voce = null }) { Text("Scegli un'altra spesa") }
@@ -155,13 +176,8 @@ fun CondivisioneDialog(vm: SpeseViewModel) {
                             }
                             // Spese della voce nei due mesi prima e dopo quello letto: si propone il mese con lo stesso importo.
                             voce?.let { v ->
-                                val centro = letta.data?.let { YearMonth.from(it) } ?: YearMonth.now()
-                                val vicini = (-2L..2L).map { centro.plusMonths(it) }.map { m ->
-                                    m to dati.operazioni.filter { it.voceId == v.id && !it.trasferimento && Calcoli.mese(it.dataPerRicorrente) == m }.sumOf { abs(it.importoCent) }
-                                }
-                                // Prima il mese letto, poi i vicini dal più prossimo (prima il precedente).
-                                val perVicinanza = listOf(0L, -1L, 1L, -2L, 2L).map { d -> vicini[(d + 2).toInt()] }
-                                val stessoImporto = letta.importoCent?.let { imp -> perVicinanza.firstOrNull { (_, c) -> c != 0L && abs(c - imp) <= 1 }?.first }
+                                val vicini = vicini(v)
+                                val stessoImporto = meseStessoImporto(v)
                                 LaunchedEffect(v.id, stessoImporto) { if (stessoImporto != null) mese = stessoImporto }
                                 Text("Spese di ${v.descrizione} vicino a ${formattaMese(centro)}:", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
                                 vicini.forEach { (m, cent) ->
