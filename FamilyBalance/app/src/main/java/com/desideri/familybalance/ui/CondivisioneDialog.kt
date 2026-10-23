@@ -35,6 +35,11 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.desideri.familybalance.SpeseViewModel
 import com.desideri.familybalance.data.Voce
 import com.desideri.familybalance.logica.formattaData
+import com.desideri.familybalance.logica.formattaCent
+import com.desideri.familybalance.logica.formattaMese
+import com.desideri.familybalance.logica.Calcoli
+import com.desideri.familybalance.data.dataPerRicorrente
+import kotlin.math.abs
 import java.time.YearMonth
 
 private enum class AzioneCondivisione { SCELTA, STIPENDIO, RICORRENTE }
@@ -108,7 +113,9 @@ fun CondivisioneDialog(vm: SpeseViewModel) {
                         else -> {
                             val letta = letta!!
                             Text(
-                                "Causale: " + letta.causale.ifBlank { "non riconosciuta" } + (letta.data?.let { " · eseguita il ${formattaData(it.toEpochDay())}" } ?: ""),
+                                "Causale: " + letta.causale.ifBlank { "non riconosciuta" } +
+                                    (letta.importoCent?.let { " · ${formattaCent(it)}" } ?: "") +
+                                    (letta.data?.let { " · eseguita il ${formattaData(it.toEpochDay())}" } ?: ""),
                                 style = MaterialTheme.typography.bodySmall
                             )
                             if (!manuale) {
@@ -144,6 +151,28 @@ fun CondivisioneDialog(vm: SpeseViewModel) {
                                         supportingText = { Text("Le prossime ricevute con questo testo nella causale saranno riconosciute.") },
                                         singleLine = true, modifier = Modifier.fillMaxWidth()
                                     )
+                                }
+                            }
+                            // Spese della voce nei due mesi prima e dopo quello letto: si propone il mese con lo stesso importo.
+                            voce?.let { v ->
+                                val centro = letta.data?.let { YearMonth.from(it) } ?: YearMonth.now()
+                                val vicini = (-2L..2L).map { centro.plusMonths(it) }.map { m ->
+                                    m to dati.operazioni.filter { it.voceId == v.id && !it.trasferimento && Calcoli.mese(it.dataPerRicorrente) == m }.sumOf { abs(it.importoCent) }
+                                }
+                                val stessoImporto = letta.importoCent?.let { imp -> vicini.firstOrNull { (_, c) -> c != 0L && abs(c - imp) <= 1 }?.first }
+                                LaunchedEffect(v.id, stessoImporto) { if (stessoImporto != null) mese = stessoImporto }
+                                Text("Spese di ${v.descrizione} vicino a ${formattaMese(centro)}:", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                                vicini.forEach { (m, cent) ->
+                                    val uguale = m == stessoImporto
+                                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().clickable { mese = m }) {
+                                        RadioButton(selected = mese == m, onClick = { mese = m })
+                                        Text(formattaMese(m), modifier = Modifier.weight(1f), fontWeight = if (uguale) FontWeight.Bold else null)
+                                        Text(
+                                            if (cent == 0L) "—" else formattaCent(cent) + if (uguale) " = importo" else "",
+                                            color = if (uguale) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                            fontWeight = if (uguale) FontWeight.Bold else null
+                                        )
+                                    }
                                 }
                             }
                             SceltaMese("Anno e mese della spesa", mese, { mese = it }, Modifier.fillMaxWidth())
