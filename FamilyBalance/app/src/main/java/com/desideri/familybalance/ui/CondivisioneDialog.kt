@@ -159,7 +159,9 @@ fun CondivisioneDialog(vm: SpeseViewModel) {
                                 val vicini = (-2L..2L).map { centro.plusMonths(it) }.map { m ->
                                     m to dati.operazioni.filter { it.voceId == v.id && !it.trasferimento && Calcoli.mese(it.dataPerRicorrente) == m }.sumOf { abs(it.importoCent) }
                                 }
-                                val stessoImporto = letta.importoCent?.let { imp -> vicini.firstOrNull { (_, c) -> c != 0L && abs(c - imp) <= 1 }?.first }
+                                // Prima il mese letto, poi i vicini dal più prossimo (prima il precedente).
+                                val perVicinanza = listOf(0L, -1L, 1L, -2L, 2L).map { d -> vicini[(d + 2).toInt()] }
+                                val stessoImporto = letta.importoCent?.let { imp -> perVicinanza.firstOrNull { (_, c) -> c != 0L && abs(c - imp) <= 1 }?.first }
                                 LaunchedEffect(v.id, stessoImporto) { if (stessoImporto != null) mese = stessoImporto }
                                 Text("Spese di ${v.descrizione} vicino a ${formattaMese(centro)}:", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
                                 vicini.forEach { (m, cent) ->
