@@ -18,6 +18,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.PieChart
+import androidx.compose.material.icons.filled.Radar
 import androidx.compose.material.icons.filled.TableChart
 import androidx.compose.material.icons.automirrored.filled.ShowChart
 import androidx.compose.material3.AlertDialog
@@ -82,6 +83,8 @@ fun CorrentiScreen(vm: SpeseViewModel) {
     var filtroVoci by rememberSaveable { mutableStateOf<List<Long>>(emptyList()) }
     var sceltaVoci by remember { mutableStateOf(false) }
     var mostraGrafico by remember { mutableStateOf(false) }
+    var mostraRadar by remember { mutableStateOf(false) }
+    val impostazioni by vm.impostazioni.collectAsStateWithLifecycle()
     var mostraReport by remember { mutableStateOf(false) }
     var graficoMese by remember { mutableStateOf<YearMonth?>(null) }
     // Torta delle spese filtrate: di un mese o di tutto il periodo.
@@ -137,6 +140,7 @@ fun CorrentiScreen(vm: SpeseViewModel) {
                     listOf(
                         VoceMenuSezione("Grafico", Icons.AutoMirrored.Filled.ShowChart, abilitata = correnti.isNotEmpty()) { mostraGrafico = true },
                         VoceMenuSezione("Ripartito", Icons.Filled.PieChart, abilitata = correnti.isNotEmpty()) { tortaPeriodo = true },
+                        VoceMenuSezione("Radar", Icons.Filled.Radar, abilitata = correnti.isNotEmpty()) { mostraRadar = true },
                         VoceMenuSezione("Report", Icons.Filled.TableChart) { mostraReport = true }
                     )
                 )
@@ -164,6 +168,19 @@ fun CorrentiScreen(vm: SpeseViewModel) {
             },
             onAnnulla = { sceltaVoci = false },
             titolo = "Spese correnti"
+        )
+    }
+    if (mostraRadar) {
+        // Un asse per spesa filtrata (con spese nel periodo), un poligono per mese; spese in positivo.
+        val assi = vociCorrenti.filter { v -> mesi.any { m -> m.righe.any { (it.voce?.id ?: SENZA_TIPO) == v.id } } }
+        RadarMensileDialog(
+            titolo = "Spese correnti · radar",
+            nota = "Spese di ${formattaMese(periodo.first)} – ${formattaMese(periodo.second)} delle voci filtrate, in EUR; un asse per spesa.",
+            assi = assi.map { it.descrizione },
+            mesi = mesi.map { it.mese },
+            valori = mesi.map { m -> assi.map { v -> -m.righe.filter { (it.voce?.id ?: SENZA_TIPO) == v.id }.sumOf { it.totale } } },
+            pausaMs = impostazioni.pausaRadarMs,
+            onChiudi = { mostraRadar = false }
         )
     }
     if (mostraGrafico) {

@@ -24,6 +24,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.CalendarMonth
+import androidx.compose.material.icons.filled.Radar
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material3.AlertDialog
@@ -94,6 +95,8 @@ fun RicorrentiScreen(vm: SpeseViewModel) {
     var sceltaVoci by remember { mutableStateOf(false) }
     var aperta by remember { mutableStateOf<RigaAperta?>(null) }
     var mostraGrafico by remember { mutableStateOf(false) }
+    var mostraRadar by remember { mutableStateOf(false) }
+    val impostazioni by vm.impostazioni.collectAsStateWithLifecycle()
     var mostraCalendario by remember { mutableStateOf(false) }
     var graficoMese by remember { mutableStateOf<MeseRicorrenti?>(null) }
     val cambi by vm.cambi.collectAsStateWithLifecycle()
@@ -132,6 +135,7 @@ fun RicorrentiScreen(vm: SpeseViewModel) {
                 MenuSezione(
                     listOf(
                         VoceMenuSezione("Grafico", Icons.AutoMirrored.Filled.ShowChart) { mostraGrafico = true },
+                        VoceMenuSezione("Radar", Icons.Filled.Radar) { mostraRadar = true },
                         VoceMenuSezione("Calendario ricorrenti", Icons.Filled.CalendarMonth) { mostraCalendario = true }
                     )
                 )
@@ -158,6 +162,20 @@ fun RicorrentiScreen(vm: SpeseViewModel) {
                 sceltaVoci = false
             },
             onAnnulla = { sceltaVoci = false }
+        )
+    }
+    if (mostraRadar) {
+        // Un asse per spesa filtrata, un poligono per mese: pagato e, dove manca, previsto.
+        val assi = (if (filtroVoci.isEmpty()) vociRicorrenti else vociRicorrenti.filter { it.id in filtroVoci })
+            .filter { v -> filtrati.any { m -> m.righe.any { it.voce.id == v.id } } }
+        RadarMensileDialog(
+            titolo = "Spese ricorrenti · radar",
+            nota = "Spese di ${formattaMese(periodo.first)} – ${formattaMese(periodo.second)} (pagato e, dove manca, previsto), in EUR; un asse per spesa.",
+            assi = assi.map { it.descrizione },
+            mesi = filtrati.map { it.mese },
+            valori = filtrati.map { m -> assi.map { v -> m.righe.filter { it.voce.id == v.id }.takeIf { it.isNotEmpty() }?.sumOf { it.pagato + (it.previsto ?: 0.0) } } },
+            pausaMs = impostazioni.pausaRadarMs,
+            onChiudi = { mostraRadar = false }
         )
     }
     if (mostraGrafico) {

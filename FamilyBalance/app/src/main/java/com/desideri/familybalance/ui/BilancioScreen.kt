@@ -32,6 +32,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.TableChart
+import androidx.compose.material.icons.filled.Radar
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.foundation.clickable
@@ -67,6 +68,7 @@ fun BilancioScreen(vm: SpeseViewModel) {
     val dati by vm.dati.collectAsStateWithLifecycle()
     val stato = rememberLazyListState()
     var mostraGrafico by remember { mutableStateOf(false) }
+    var mostraRadar by remember { mutableStateOf(false) }
     var mostraReport by remember { mutableStateOf(false) }
     var dettaglio by remember { mutableStateOf<Pair<YearMonth, ComponenteBilancio>?>(null) }
     val ricorrenti by vm.ricorrentiMeseCorrente.collectAsStateWithLifecycle()
@@ -101,6 +103,7 @@ fun BilancioScreen(vm: SpeseViewModel) {
                 MenuSezione(
                     listOf(
                         VoceMenuSezione("Grafico", Icons.AutoMirrored.Filled.ShowChart, abilitata = righe.isNotEmpty()) { mostraGrafico = true },
+                        VoceMenuSezione("Radar", Icons.Filled.Radar, abilitata = righe.isNotEmpty()) { mostraRadar = true },
                         VoceMenuSezione("Report", Icons.Filled.TableChart) { mostraReport = true }
                     )
                 )
@@ -136,6 +139,18 @@ fun BilancioScreen(vm: SpeseViewModel) {
         }
     }
     if (mostraGrafico) GraficoBilancioDialog(righe, onChiudi = { mostraGrafico = false })
+    if (mostraRadar) {
+        // Le voci del bilancio come nelle carte dei mesi (per corrente e futuri stime e previsioni).
+        RadarMensileDialog(
+            titolo = "Bilancio · radar",
+            nota = "Mesi del periodo scelto, in EUR: per il mese corrente la stima delle correnti, per i futuri le previsioni.",
+            assi = listOf("Stipendio / interessi", "Spese correnti", "Spese ricorrenti", "Risparmio", "Saldo finale"),
+            mesi = righe.map { it.mese },
+            valori = righe.map { r -> listOf(r.stipendio ?: r.entrate, r.correntiBilancio, r.ricorrentiTotali, r.risparmio, r.saldoFinale) },
+            pausaMs = impostazioni.pausaRadarMs,
+            onChiudi = { mostraRadar = false }
+        )
+    }
     if (mostraReport) ReportBilancioDialog(vm, onChiudi = { mostraReport = false })
     dettaglio?.let { (m, c) -> DettaglioBilancioDialog(vm, m, c, onChiudi = { dettaglio = null }) }
 }
