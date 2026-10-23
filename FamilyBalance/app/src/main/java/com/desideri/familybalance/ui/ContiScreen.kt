@@ -274,7 +274,7 @@ fun ContiScreen(vm: SpeseViewModel, onApriConto: (Long) -> Unit, onAnagraficaCon
     }
 
     duplicati?.let { DuplicatiDialog(vm, it, onChiudi = { duplicati = null }) }
-    saldiMensili?.let { SaldiMensiliDialog(dati, it, onChiudi = { saldiMensili = null }) }
+    saldiMensili?.let { SaldiMensiliDialog(dati, it, pausaRadarMs = impostazioni.pausaRadarMs, onChiudi = { saldiMensili = null }) }
 
     if (mostraGrafico) {
         // Per ogni conto/valuta e per il totale: saldo a fine giorno, entrate e uscite (senza gli

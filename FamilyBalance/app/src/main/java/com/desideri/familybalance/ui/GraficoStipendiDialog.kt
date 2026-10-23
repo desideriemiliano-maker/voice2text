@@ -196,14 +196,35 @@ private fun RadarStipendi(
     valuta: String,
     pausaMs: Int,
     modifier: Modifier
+) = RadarAnimato(
+    assi = voci.map { it.descrizione },
+    etichette = righe.map { s -> formattaMese(YearMonth.parse(s.mese)) + (numeroNelMese(s, righe)?.let { " ($it)" } ?: "") },
+    valori = righe.map { s -> voci.map { v -> valoriPerStipendio[s.id]?.get(v.id) } },
+    formatta = { formattaCent(it, valuta) },
+    pausaMs = pausaMs,
+    modifier = modifier
+)
+
+/**
+ * Radar animato generico: un asse per ciascuno degli [assi], un poligono per ogni riga ([etichette]
+ * e [valori], centesimi; null = mancante, al centro), con [formatta] per i valori accanto agli assi.
+ */
+@Composable
+internal fun RadarAnimato(
+    assi: List<String>,
+    etichette: List<String>,
+    valori: List<List<Long?>>,
+    formatta: (Long) -> String,
+    pausaMs: Int,
+    modifier: Modifier
 ) {
-    val frazioniPerRiga = remember(righe, voci, valoriPerStipendio) {
-        val minMax = voci.map { v ->
-            righe.mapNotNull { valoriPerStipendio[it.id]?.get(v.id) }.takeIf { it.isNotEmpty() }?.let { it.min() to it.max() }
+    val frazioniPerRiga = remember(assi, valori) {
+        val minMax = assi.indices.map { k ->
+            valori.mapNotNull { it.getOrNull(k) }.takeIf { it.isNotEmpty() }?.let { it.min() to it.max() }
         }
-        righe.map { s ->
-            voci.mapIndexed { k, v ->
-                val valore = valoriPerStipendio[s.id]?.get(v.id)
+        valori.map { riga ->
+            assi.indices.map { k ->
+                val valore = riga.getOrNull(k)
                 val mm = minMax[k]
                 if (valore == null || mm == null) 0f
                 else if (mm.first == mm.second) 1f
@@ -211,7 +232,7 @@ private fun RadarStipendi(
             }
         }
     }
-    val transizioni = (righe.size - 1).coerceAtLeast(1)
+    val transizioni = (etichette.size - 1).coerceAtLeast(1)
     val progresso = remember { Animatable(0f) }
     var inPausa by remember { mutableStateOf(false) }
     var animazione by remember { mutableStateOf<Job?>(null) }
@@ -221,7 +242,7 @@ private fun RadarStipendi(
 
     // Un secondo per mese a velocità 1, con una sosta di [pausaMs] su ogni mese raggiunto.
     fun avvia(daZero: Boolean = false) {
-        if (righe.size < 2) return
+        if (etichette.size < 2) return
         animazione?.cancel()
         animazione = scope.launch {
             if (daZero) progresso.snapTo(0f)
@@ -246,13 +267,12 @@ private fun RadarStipendi(
     }
 
     val continuo = progresso.value * transizioni
-    val base = continuo.toInt().coerceIn(0, (righe.size - 2).coerceAtLeast(0))
+    val base = continuo.toInt().coerceIn(0, (etichette.size - 2).coerceAtLeast(0))
     val frazione = (continuo - base).coerceIn(0f, 1f)
-    val vicino = continuo.roundToInt().coerceIn(0, righe.lastIndex)
-    val frazioniCorrenti = if (righe.size < 2) frazioniPerRiga.first()
+    val vicino = continuo.roundToInt().coerceIn(0, etichette.lastIndex)
+    val frazioniCorrenti = if (etichette.size < 2) frazioniPerRiga.first()
     else frazioniPerRiga[base].indices.map { k -> frazioniPerRiga[base][k] + (frazioniPerRiga[base + 1][k] - frazioniPerRiga[base][k]) * frazione }
-    val rigaCorrente = righe[vicino]
-    val valoriCorrenti = voci.map { v -> valoriPerStipendio[rigaCorrente.id]?.get(v.id)?.let { formattaCent(it, valuta) } }
+    val valoriCorrenti = valori[vicino].map { it?.let(formatta) }
 
     val coloreEtichette = MaterialTheme.colorScheme.onSurfaceVariant
     val coloreLinee = MaterialTheme.colorScheme.outlineVariant
@@ -264,8 +284,8 @@ private fun RadarStipendi(
             Canvas(Modifier.fillMaxWidth().weight(1f)) {
                 val centro = Offset(size.width / 2, size.height / 2)
                 val raggio = minOf(size.width, size.height) / 2 * 0.62f
-                val assi = voci.size
-                fun angolo(k: Int) = -PI / 2 + 2 * PI * k / assi
+                val numeroAssi = assi.size
+                fun angolo(k: Int) = -PI / 2 + 2 * PI * k / numeroAssi
                 fun vertice(k: Int, r: Float) = Offset(
                     centro.x + (raggio * r * cos(angolo(k))).toFloat(),
                     centro.y + (raggio * r * sin(angolo(k))).toFloat()
@@ -273,15 +293,15 @@ private fun RadarStipendi(
                 // Griglia: anelli al 25/50/75/100% e gli assi dal centro.
                 listOf(0.25f, 0.5f, 0.75f, 1f).forEach { r ->
                     val anello = Path()
-                    (0 until assi).forEach { k -> val q = vertice(k, r); if (k == 0) anello.moveTo(q.x, q.y) else anello.lineTo(q.x, q.y) }
+                    (0 until numeroAssi).forEach { k -> val q = vertice(k, r); if (k == 0) anello.moveTo(q.x, q.y) else anello.lineTo(q.x, q.y) }
                     anello.close()
                     drawPath(anello, coloreLinee, style = Stroke(1.5f))
                 }
-                (0 until assi).forEach { k -> drawLine(coloreLinee, centro, vertice(k, 1f), strokeWidth = 1.5f) }
+                (0 until numeroAssi).forEach { k -> drawLine(coloreLinee, centro, vertice(k, 1f), strokeWidth = 1.5f) }
                 // Poligono dei valori, interpolato tra un mese e il successivo.
-                if (assi >= 2) {
+                if (numeroAssi >= 2) {
                     val dati = Path()
-                    (0 until assi).forEach { k ->
+                    (0 until numeroAssi).forEach { k ->
                         val q = vertice(k, frazioniCorrenti.getOrElse(k) { 0f })
                         if (k == 0) dati.moveTo(q.x, q.y) else dati.lineTo(q.x, q.y)
                     }
@@ -289,10 +309,10 @@ private fun RadarStipendi(
                     drawPath(dati, COLORE_RADAR.copy(alpha = 0.35f))
                     drawPath(dati, COLORE_RADAR, style = Stroke(3f))
                 }
-                (0 until assi).forEach { k -> drawCircle(COLORE_RADAR, radius = 5f, center = vertice(k, frazioniCorrenti.getOrElse(k) { 0f })) }
+                (0 until numeroAssi).forEach { k -> drawCircle(COLORE_RADAR, radius = 5f, center = vertice(k, frazioniCorrenti.getOrElse(k) { 0f })) }
                 // Nome della voce appena fuori dall'anello esterno, con sotto il valore del mese indicato.
-                (0 until assi).forEach { k ->
-                    val nome = misuraTesto.measure(voci[k].descrizione, style = TextStyle(fontSize = 11.sp, color = coloreEtichette))
+                (0 until numeroAssi).forEach { k ->
+                    val nome = misuraTesto.measure(assi[k], style = TextStyle(fontSize = 11.sp, color = coloreEtichette))
                     val valore = valoriCorrenti[k]?.let {
                         misuraTesto.measure(it, style = TextStyle(fontSize = 11.sp, color = COLORE_RADAR, fontWeight = FontWeight.Bold))
                     }
@@ -305,11 +325,11 @@ private fun RadarStipendi(
                 }
             }
             Text(
-                formattaMese(YearMonth.parse(rigaCorrente.mese)) + (numeroNelMese(rigaCorrente, righe)?.let { " ($it)" } ?: ""),
+                etichette[vicino],
                 style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold,
                 textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
             )
-            if (righe.size >= 2) {
+            if (etichette.size >= 2) {
                 Slider(
                     value = progresso.value,
                     onValueChange = { v ->
