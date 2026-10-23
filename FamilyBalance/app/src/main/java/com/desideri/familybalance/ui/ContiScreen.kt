@@ -68,6 +68,8 @@ fun ContiScreen(vm: SpeseViewModel, onApriConto: (Long) -> Unit, onAnagraficaCon
     val ricaricaInCorso by vm.ricaricaInCorso.collectAsStateWithLifecycle()
     val cambi by vm.cambi.collectAsStateWithLifecycle()
     var mostraGrafico by remember { mutableStateOf(false) }
+    var menuTotale by remember { mutableStateOf(false) }
+    var saldiTotale by remember { mutableStateOf(false) }
     // Riscontro dell'estratto conto direttamente sul conto/valuta: menu aperto e conto del file in scelta.
     var menuRiscontro by remember { mutableStateOf<Long?>(null) }
     var contoRiscontro by rememberSaveable { mutableStateOf<Long?>(null) }
@@ -175,8 +177,23 @@ fun ContiScreen(vm: SpeseViewModel, onApriConto: (Long) -> Unit, onAnagraficaCon
                             )
                         }
                     }
-                    IconButton(onClick = { mostraGrafico = true }, enabled = dati.operazioni.isNotEmpty()) {
-                        Icon(Icons.AutoMirrored.Filled.ShowChart, contentDescription = "Grafico del saldo")
+                    // Menu del saldo totale: andamento dei conti e saldi mensili di tutti i conti.
+                    Box {
+                        IconButton(onClick = { menuTotale = true }) { Icon(Icons.Filled.MoreVert, contentDescription = "Menu del saldo totale") }
+                        DropdownMenu(expanded = menuTotale, onDismissRequest = { menuTotale = false }) {
+                            DropdownMenuItem(
+                                text = { Text("Andamento dei conti") },
+                                leadingIcon = { Icon(Icons.AutoMirrored.Filled.ShowChart, contentDescription = null) },
+                                enabled = dati.operazioni.isNotEmpty(),
+                                onClick = { menuTotale = false; mostraGrafico = true }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Saldi mensili") },
+                                leadingIcon = { Icon(Icons.Filled.CalendarMonth, contentDescription = null) },
+                                enabled = dati.operazioni.isNotEmpty(),
+                                onClick = { menuTotale = false; saldiTotale = true }
+                            )
+                        }
                     }
                     }
                 }
@@ -275,6 +292,20 @@ fun ContiScreen(vm: SpeseViewModel, onApriConto: (Long) -> Unit, onAnagraficaCon
 
     duplicati?.let { DuplicatiDialog(vm, it, onChiudi = { duplicati = null }) }
     saldiMensili?.let { SaldiMensiliDialog(dati, it, pausaRadarMs = impostazioni.pausaRadarMs, onChiudi = { saldiMensili = null }) }
+    if (saldiTotale) {
+        // Tutti i conti, i virtuali solo se mostrati; CHF convertiti al cambio delle Impostazioni (come il saldo totale).
+        val conVirtuali = impostazioni.mostraContiVirtuali
+        val conti = (if (conVirtuali) dati.contiValuta else dati.contiValutaReali).map { it.id }
+        val cambio = impostazioni.cambioChfEur
+        SaldiMensiliDialog(
+            dati, conti, "Saldo totale" + (if (conVirtuali && dati.contiValutaVirtuali.isNotEmpty()) " con i virtuali" else ""), "EUR",
+            "Tutti i conti" + (if (dati.contiValutaVirtuali.isEmpty()) "" else if (conVirtuali) ", virtuali compresi" else ", senza i virtuali") +
+                ", in EUR (CHF a $cambio, Impostazioni); entrate e uscite senza gli spostamenti tra questi conti",
+            { cent, valuta -> Math.round(Calcoli.inEuro(cent, valuta, cambio) * 100) },
+            impostazioni.pausaRadarMs,
+            onChiudi = { saldiTotale = false }
+        )
+    }
 
     if (mostraGrafico) {
         // Per ogni conto/valuta e per il totale: saldo a fine giorno, entrate e uscite (senza gli

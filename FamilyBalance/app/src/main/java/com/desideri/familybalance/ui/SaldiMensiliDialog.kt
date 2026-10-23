@@ -47,9 +47,7 @@ import com.desideri.familybalance.logica.formattaMese
 import java.time.YearMonth
 
 /** Un mese della tabella dei saldi (centesimi nella valuta del conto). */
-private data class SaldoMese(val mese: YearMonth, val iniziale: Long, val entrate: Long, val uscite: Long) {
-    val finale: Long get() = iniziale + entrate + uscite
-}
+private data class SaldoMese(val mese: YearMonth, val iniziale: Long, val entrate: Long, val uscite: Long, val finale: Long = iniziale + entrate + uscite)
 
 /**
  * Saldi mese per mese di un conto/valuta: saldo precedente, totale entrate, totale uscite (tutte le
@@ -58,16 +56,53 @@ private data class SaldoMese(val mese: YearMonth, val iniziale: Long, val entrat
 @Composable
 fun SaldiMensiliDialog(dati: DatiApp, contoValutaId: Long, pausaRadarMs: Int = 1000, onChiudi: () -> Unit) {
     val cv = dati.contiValutaPerId[contoValutaId] ?: return
-    val tuttiIMesi: List<SaldoMese> = remember(dati.operazioni, contoValutaId) {
-        val ops = dati.operazioni.filter { it.contoValutaId == contoValutaId }
-        if (ops.isEmpty()) return@remember emptyList<SaldoMese>()
-        val perMese = ops.groupBy { Calcoli.mese(it.data) }
+    SaldiMensiliDialog(
+        dati, listOf(contoValutaId), dati.etichetta(contoValutaId), cv.valuta,
+        "Tutte le operazioni del conto, spostamenti compresi, in ${cv.valuta}", null, pausaRadarMs, onChiudi
+    )
+}
+
+/**
+ * Saldi mensili di più conti/valuta insieme (es. il saldo totale): saldo a fine mese dei conti
+ * convertito in [valuta] con [converti] (null = stessa valuta), entrate e uscite senza gli
+ * spostamenti tra i conti considerati; il saldo precedente è quello di fine mese prima.
+ */
+@Composable
+fun SaldiMensiliDialog(
+    dati: DatiApp,
+    contiValutaIds: List<Long>,
+    nome: String,
+    valuta: String,
+    nota: String,
+    converti: ((Long, String) -> Long)?,
+    pausaRadarMs: Int = 1000,
+    onChiudi: () -> Unit
+) {
+    val insieme = contiValutaIds.toSet()
+    fun inValuta(cent: Long, cvId: Long): Long = converti?.invoke(cent, dati.contiValutaPerId[cvId]?.valuta ?: valuta) ?: cent
+    // Operazioni dei conti, senza gli spostamenti tra due conti considerati (con più conti).
+    val operazioni = remember(dati.operazioni, insieme) {
+        val perId = dati.operazioni.associateBy { it.id }
+        dati.operazioni.filter { op ->
+            op.contoValutaId in insieme && !(op.trasferimento && insieme.size > 1 &&
+                (op.contoValutaDestId in insieme || op.collegataId?.let { perId[it]?.contoValutaId } in insieme))
+        }
+    }
+    // Saldo nativo di ogni conto a fine di ogni giorno con operazioni (spostamenti interni compresi).
+    val tutteDeiConti = remember(dati.operazioni, insieme) { dati.operazioni.filter { it.contoValutaId in insieme } }
+    fun saldoConvertito(saldi: Map<Long, Long>) = saldi.entries.sumOf { (id, c) -> inValuta(c, id) }
+    val tuttiIMesi: List<SaldoMese> = remember(tutteDeiConti, operazioni) {
+        if (tutteDeiConti.isEmpty()) return@remember emptyList<SaldoMese>()
+        val perMese = tutteDeiConti.groupBy { Calcoli.mese(it.data) }
+        val esterniPerMese = operazioni.groupBy { Calcoli.mese(it.data) }
         val ultimo = maxOf(YearMonth.now(), perMese.keys.max())
-        var saldo = cv.saldoInizialeCent
+        val saldi = insieme.associateWith { dati.contiValutaPerId[it]?.saldoInizialeCent ?: 0L }.toMutableMap()
+        var precedente = saldoConvertito(saldi)
         generateSequence(perMese.keys.min()) { it.plusMonths(1) }.takeWhile { it <= ultimo }.map { m ->
-            val del = perMese[m].orEmpty()
-            SaldoMese(m, saldo, del.filter { it.importoCent > 0 }.sumOf { it.importoCent }, del.filter { it.importoCent < 0 }.sumOf { it.importoCent })
-                .also { saldo = it.finale }
+            perMese[m].orEmpty().forEach { saldi[it.contoValutaId] = (saldi[it.contoValutaId] ?: 0L) + it.importoCent }
+            val esterni = esterniPerMese[m].orEmpty().map { inValuta(it.importoCent, it.contoValutaId) }
+            SaldoMese(m, precedente, esterni.filter { it > 0 }.sum(), esterni.filter { it < 0 }.sum(), saldoConvertito(saldi))
+                .also { precedente = it.finale }
         }.toList()
     }
     // Periodo mostrato (filtro a scomparsa): null = senza limite.
@@ -85,7 +120,7 @@ fun SaldiMensiliDialog(dati: DatiApp, contoValutaId: Long, pausaRadarMs: Int = 1
         Surface(modifier = Modifier.fillMaxSize(), tonalElevation = 4.dp) {
             Column(modifier = Modifier.fillMaxSize().paddingBarreDialog().padding(12.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("Saldi mensili · ${dati.etichetta(contoValutaId)}", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                    Text("Saldi mensili · $nome", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
                     IconButton(onClick = { mostraFiltro = !mostraFiltro }) {
                         Icon(
                             Icons.Filled.FilterList, contentDescription = "Periodo",
@@ -117,21 +152,21 @@ fun SaldiMensiliDialog(dati: DatiApp, contoValutaId: Long, pausaRadarMs: Int = 1
                     }
                 }
                 Text(
-                    "Tutte le operazioni del conto, spostamenti compresi, in ${cv.valuta}.",
+                    "$nota.",
                     style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier.padding(bottom = 6.dp)
                 )
                 Riga("Mese", "Saldo prec.", "Entrate", "Uscite", "Saldo fine", intestazione = true)
                 HorizontalDivider()
-                if (mesi.isEmpty()) Text(if (tuttiIMesi.isEmpty()) "Nessuna operazione sul conto." else "Nessun mese nel periodo scelto.", modifier = Modifier.padding(16.dp))
+                if (mesi.isEmpty()) Text(if (tuttiIMesi.isEmpty()) "Nessuna operazione." else "Nessun mese nel periodo scelto.", modifier = Modifier.padding(16.dp))
                 LazyColumn(state = stato, modifier = Modifier.weight(1f)) {
                     itemsIndexed(mesi, key = { _, m -> m.mese.toString() }) { i, m ->
                         Riga(
                             formattaMeseBreve(m.mese),
-                            formattaCent(m.iniziale, cv.valuta),
-                            formattaCent(m.entrate, cv.valuta),
-                            formattaCent(m.uscite, cv.valuta),
-                            formattaCent(m.finale, cv.valuta),
+                            formattaCent(m.iniziale, valuta),
+                            formattaCent(m.entrate, valuta),
+                            formattaCent(m.uscite, valuta),
+                            formattaCent(m.finale, valuta),
                             sfondo = if (i % 2 == 1) zebra else Color.Transparent,
                             evidenzia = m.mese == YearMonth.now()
                         )
@@ -142,31 +177,27 @@ fun SaldiMensiliDialog(dati: DatiApp, contoValutaId: Long, pausaRadarMs: Int = 1
     }
 
     if (mostraRadar) {
-        RadarSaldiDialog("Radar · ${dati.etichetta(contoValutaId)}", mesi, cv.valuta, pausaRadarMs, onChiudi = { mostraRadar = false })
+        RadarSaldiDialog("Radar · $nome", mesi, valuta, pausaRadarMs, onChiudi = { mostraRadar = false })
     }
     if (mostraGrafico) {
-        // Saldo a fine giorno, entrate e uscite (positive) delle singole operazioni, nella valuta del conto.
-        val conto = remember(dati.operazioni, contoValutaId, da, a) {
-            val tutte = dati.operazioni.filter { it.contoValutaId == contoValutaId }.sortedBy { it.data }
-            // Nel periodo scelto: il saldo parte da quello a inizio periodo.
-            val ops = tutte.filter { op -> Calcoli.mese(op.data).let { (da == null || it >= da!!) && (a == null || it <= a!!) } }
-            var saldo = cv.saldoInizialeCent + tutte.filter { op -> da != null && Calcoli.mese(op.data) < da!! }.sumOf { it.importoCent }
-            val saldi = ops.groupBy { it.data }.toSortedMap().map { (giorno, del) ->
-                saldo += del.sumOf { it.importoCent }
-                giorno to saldo / 100.0
+        // Saldo a fine giorno dei conti (convertito), entrate e uscite (positive) delle operazioni considerate.
+        val conto = remember(tutteDeiConti, operazioni, da, a) {
+            fun nelPeriodo(giorno: Long) = Calcoli.mese(giorno).let { (da == null || it >= da!!) && (a == null || it <= a!!) }
+            val saldiConti = insieme.associateWith { dati.contiValutaPerId[it]?.saldoInizialeCent ?: 0L }.toMutableMap()
+            val saldi = ArrayList<Pair<Long, Double>>()
+            tutteDeiConti.groupBy { it.data }.toSortedMap().forEach { (giorno, del) ->
+                del.forEach { saldiConti[it.contoValutaId] = (saldiConti[it.contoValutaId] ?: 0L) + it.importoCent }
+                if (nelPeriodo(giorno)) saldi += giorno to saldoConvertito(saldiConti) / 100.0
             }
-            ContoGrafico(
-                dati.etichetta(contoValutaId), saldi,
-                ops.filter { it.importoCent > 0 }.map { it.data to it.importoCent / 100.0 },
-                ops.filter { it.importoCent < 0 }.map { it.data to -it.importoCent / 100.0 }
-            )
+            val ops = operazioni.filter { nelPeriodo(it.data) }.map { it.data to inValuta(it.importoCent, it.contoValutaId) / 100.0 }
+            ContoGrafico(nome, saldi, ops.filter { it.second > 0 }, ops.filter { it.second < 0 }.map { it.first to -it.second })
         }
         GraficoContiDialog(
-            titolo = "Saldi · ${dati.etichetta(contoValutaId)}",
-            nota = "Tutte le operazioni del conto, spostamenti compresi, in ${cv.valuta}" + (if (da != null || a != null) ", nel periodo scelto" else "") +
+            titolo = "Saldi · $nome",
+            nota = nota + (if (da != null || a != null) ", nel periodo scelto" else "") +
                 ". Saldo a fine periodo, entrate e uscite sommate nel periodo.",
             conti = listOf(conto),
-            valuta = cv.valuta,
+            valuta = valuta,
             onChiudi = { mostraGrafico = false }
         )
     }
