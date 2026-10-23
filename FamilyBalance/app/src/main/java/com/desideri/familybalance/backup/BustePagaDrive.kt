@@ -59,6 +59,11 @@ class BustePagaDrive(context: Context, email: String) {
         destinazione.outputStream().use { out -> drive.files().get(id).executeMediaAndDownloadTo(out) }
     }
 
+    /** Elimina definitivamente il file [id] da Drive (solo i file creati dall'app). */
+    suspend fun elimina(id: String) = withContext(Dispatchers.IO) {
+        drive.files().delete(id).execute()
+    }
+
     companion object {
         /** Id del file Drive dal suo link ("…/file/d/<id>/view…" o "…?id=<id>"); null se non riconosciuto. */
         fun idDaLink(link: String): String? =

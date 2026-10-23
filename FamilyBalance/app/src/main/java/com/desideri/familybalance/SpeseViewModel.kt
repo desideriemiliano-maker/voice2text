@@ -614,8 +614,30 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    /** Toglie l'allegato dall'app (il file resta su Drive). */
-    fun eliminaAllegatoRicorrente(allegato: com.desideri.familybalance.data.AllegatoRicorrente) = viewModelScope.launch { allegatiDao.elimina(allegato) }
+    /** Toglie l'allegato dall'app e, con [ancheDaDrive], elimina il file da Drive. */
+    fun eliminaAllegatoRicorrente(allegato: com.desideri.familybalance.data.AllegatoRicorrente, ancheDaDrive: Boolean) {
+        val id = com.desideri.familybalance.backup.BustePagaDrive.idDaLink(allegato.link)
+        id?.let { File(File(getApplication<Application>().cacheDir, "allegati"), "$it.${allegato.nome.substringAfterLast('.', "pdf").lowercase()}").delete() }
+        if (!ancheDaDrive) return run { viewModelScope.launch { allegatiDao.elimina(allegato) } }
+        val email = _impostazioni.value.emailBackup
+        if (email == null || id == null) return messaggio("Impossibile eliminare da Drive: account o link mancante")
+        viewModelScope.launch {
+            try {
+                com.desideri.familybalance.backup.BustePagaDrive(getApplication(), email).elimina(id)
+                allegatiDao.elimina(allegato)
+                messaggio("Allegato eliminato anche da Drive")
+            } catch (e: UserRecoverableAuthIOException) {
+                azioneInSospeso = { eliminaAllegatoRicorrente(allegato, true) }
+                _richiestaAutorizzazione.value = e.intent
+            } catch (e: com.google.api.client.googleapis.json.GoogleJsonResponseException) {
+                // Già eliminato su Drive: si toglie comunque dall'app.
+                if (e.statusCode == 404) { allegatiDao.elimina(allegato); messaggio("File già assente su Drive: allegato tolto") }
+                else messaggio("Eliminazione da Drive non riuscita: ${e.details?.message ?: e.message}")
+            } catch (e: Exception) {
+                messaggio("Eliminazione da Drive non riuscita: ${e.message ?: e.javaClass.simpleName}")
+            }
+        }
+    }
 
     /** Saldi della sezione Conti visibili: nascosti a ogni avvio dell'app, non salvato. */
     private val _mostraSaldi = MutableStateFlow(false)

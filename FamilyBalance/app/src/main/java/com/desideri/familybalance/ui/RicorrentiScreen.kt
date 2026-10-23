@@ -437,9 +437,21 @@ internal fun DettaglioRicorrenteDialog(vm: SpeseViewModel, dati: DatiApp, riga: 
         AlertDialog(
             onDismissRequest = { allegatoDaTogliere = null },
             title = { Text("Togli l'allegato") },
-            text = { Text("${a.nome} non sarà più collegato alla spesa; il file resta su Google Drive.") },
-            confirmButton = { TextButton(onClick = { vm.eliminaAllegatoRicorrente(a); allegatoDaTogliere = null }) { Text("Togli", color = MaterialTheme.colorScheme.error) } },
-            dismissButton = { TextButton(onClick = { allegatoDaTogliere = null }) { Text("Annulla") } }
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("${a.nome} non sarà più collegato alla spesa.")
+                    Text("Vuoi eliminare il file anche da Google Drive? L'eliminazione da Drive è definitiva.", style = MaterialTheme.typography.bodySmall)
+                }
+            },
+            confirmButton = {
+                Column(horizontalAlignment = Alignment.End) {
+                    TextButton(onClick = { vm.eliminaAllegatoRicorrente(a, ancheDaDrive = true); allegatoDaTogliere = null }) {
+                        Text("Elimina anche da Drive", color = MaterialTheme.colorScheme.error)
+                    }
+                    TextButton(onClick = { vm.eliminaAllegatoRicorrente(a, ancheDaDrive = false); allegatoDaTogliere = null }) { Text("Togli solo dall'app") }
+                    TextButton(onClick = { allegatoDaTogliere = null }) { Text("Annulla") }
+                }
+            }
         )
     }
     var dataNuova by remember(riga) { mutableStateOf<Long?>(null) }
