@@ -400,16 +400,7 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
             if (letta.voci.isEmpty()) messaggio("Nessuna voce trovata nella busta paga")
             else {
                 // Copia del file, da salvare su Drive alla conferma (il permesso sull'uri può scadere).
-                val app = getApplication<Application>()
-                val mime = app.contentResolver.getType(uri) ?: "application/pdf"
-                val estensione = android.webkit.MimeTypeMap.getSingleton().getExtensionFromMimeType(mime) ?: "pdf"
-                val copia = runCatching {
-                    withContext(Dispatchers.IO) {
-                        File(File(app.filesDir, "buste_paga").apply { mkdirs() }, "busta_${System.currentTimeMillis()}.$estensione").also { f ->
-                            app.contentResolver.openInputStream(uri)!!.use { input -> f.outputStream().use { input.copyTo(it) } }
-                        }
-                    }
-                }.getOrNull()
+                val (copia, estensione, mime) = copiaBustaPaga(uri)
                 _importStipendio.value = ImportStipendio(tipoId, letta, copia, estensione, mime)
             }
         } catch (e: Exception) {
@@ -488,6 +479,30 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
             val nome = (stipendi.value.tipi.firstOrNull { it.id == tipoId }?.nome ?: "Stipendio") + " $mese.${imp.estensione}"
             salvaBustaPagaSuDrive(registrato, f, nome, imp.mime)
         }
+    }
+
+    /** Copia locale del file [uri] della busta paga, con estensione e tipo (file null se non leggibile). */
+    private suspend fun copiaBustaPaga(uri: Uri): Triple<File?, String, String> {
+        val app = getApplication<Application>()
+        val mime = app.contentResolver.getType(uri) ?: "application/pdf"
+        val estensione = android.webkit.MimeTypeMap.getSingleton().getExtensionFromMimeType(mime) ?: "pdf"
+        val copia = runCatching {
+            withContext(Dispatchers.IO) {
+                File(File(app.filesDir, "buste_paga").apply { mkdirs() }, "busta_${System.currentTimeMillis()}.$estensione").also { f ->
+                    app.contentResolver.openInputStream(uri)!!.use { input -> f.outputStream().use { input.copyTo(it) } }
+                }
+            }
+        }.getOrNull()
+        return Triple(copia, estensione, mime)
+    }
+
+    /** Allega allo [stipendio] già registrato il file [uri] della busta paga, salvandolo su Drive (sostituisce il link precedente). */
+    fun allegaBustaPaga(stipendio: com.desideri.familybalance.data.Stipendio, uri: Uri) = viewModelScope.launch {
+        if (_impostazioni.value.cartellaBustePaga.isBlank()) return@launch messaggio("Indica la cartella di Drive delle buste paga nelle Impostazioni")
+        val (copia, estensione, mime) = copiaBustaPaga(uri)
+        if (copia == null) return@launch messaggio("Impossibile leggere il file")
+        val nome = (stipendi.value.tipi.firstOrNull { it.id == stipendio.tipoId }?.nome ?: "Stipendio") + " ${stipendio.mese}.$estensione"
+        salvaBustaPagaSuDrive(stipendio.id, copia, nome, mime)
     }
 
     /**

@@ -482,6 +482,13 @@ fun StipendiScreen(vm: SpeseViewModel) {
         richiestaAutorizzazione?.let { autorizzazione.launch(it) }
     }
     val contesto = androidx.compose.ui.platform.LocalContext.current
+    // Busta paga da allegare a uno stipendio già registrato.
+    var daAllegare by remember { mutableStateOf<Stipendio?>(null) }
+    val sceltaAllegato = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        val s = daAllegare
+        daAllegare = null
+        if (uri != null && s != null) vm.allegaBustaPaga(s, uri)
+    }
 
     // Anno mostrato nella tabella (predefinito quello corrente).
     var anno by rememberSaveable { mutableStateOf(YearMonth.now().year) }
@@ -862,6 +869,14 @@ fun StipendiScreen(vm: SpeseViewModel) {
                             Icon(Icons.Filled.UploadFile, contentDescription = null)
                             Text("Apri la busta paga", modifier = Modifier.padding(start = 6.dp))
                         }
+                    }
+                    OutlinedButton(onClick = {
+                        daAllegare = s
+                        meseAperto = null
+                        sceltaAllegato.launch(arrayOf("application/pdf", "image/*"))
+                    }) {
+                        Icon(Icons.Filled.Add, contentDescription = null)
+                        Text(if (s.bustaPagaLink == null) "Allega la busta paga" else "Sostituisci la busta paga", modifier = Modifier.padding(start = 6.dp))
                     }
                     if (conferma) Text("Tocca di nuovo «Elimina» per eliminare lo stipendio con tutti i suoi importi.", color = MaterialTheme.colorScheme.error)
                 }
