@@ -868,6 +868,20 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
         messaggio("Scadenza prevista aggiunta a ${formattaMese(mese)}")
     }
 
+    /**
+     * Importo previsto [importoCent] della spesa [voce] nel [mese] (es. da una bolletta non ancora
+     * pagata): sulla scadenza della ricorrenza se il mese è dovuto, altrimenti come scadenza aggiunta;
+     * con [data] (nel mese) è pianificata.
+     */
+    fun impostaPrevistoRicorrente(voce: Voce, mese: YearMonth, importoCent: Long, data: Long?) {
+        val giorno = data?.takeIf { Calcoli.mese(it) == mese }
+        if (Calcoli.dovuta(voce, mese) && personalizzazioni.value.none { it.voceId == voce.id && it.mese == mese.toString() && it.annullata }) {
+            salvaScadenza(voce, mese, importoCent, giorno)
+        } else {
+            aggiungiScadenza(voce, mese, importoCent, giorno)
+        }
+    }
+
     /** Esclude (o reinclude) l'operazione [op] dalla media usata per stimare la sua spesa ricorrente. */
     fun impostaEsclusaDaMedia(op: Operazione, esclusa: Boolean) = viewModelScope.launch {
         dao.operazione(op.id)?.let { dao.aggiornaOperazione(it.copy(esclusaDaMedia = esclusa)) }

@@ -87,6 +87,10 @@ fun CondivisioneDialog(vm: SpeseViewModel) {
     var parola by remember(letta) { mutableStateOf(letta?.causale.orEmpty()) }
     var aggiungiParola by remember(letta) { mutableStateOf(letta?.causale?.isNotBlank() == true) }
     var errore by remember(f.file) { mutableStateOf<String?>(null) }
+    // Documento futuro (bolletta non ancora pagata): si può impostare l'importo previsto nel mese scelto.
+    val futuro = letta?.data?.let { it.isAfter(java.time.LocalDate.now()) } ?: false
+    var impostaPrevisto by remember(letta) { mutableStateOf(futuro && letta?.importoCent != null) }
+    var importoPrevisto by remember(letta) { mutableStateOf(letta?.importoCent?.let { com.desideri.familybalance.logica.centInTesto(it) } ?: "") }
 
     // Un solo stipendio: si importa subito per quello.
     LaunchedEffect(azione) {
@@ -194,6 +198,28 @@ fun CondivisioneDialog(vm: SpeseViewModel) {
                                 }
                             }
                             SceltaMese("Anno e mese della spesa", mese, { mese = it }, Modifier.fillMaxWidth())
+                            if (futuro || !mese.isBefore(YearMonth.now())) {
+                                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.clickable { impostaPrevisto = !impostaPrevisto }) {
+                                    Checkbox(checked = impostaPrevisto, onCheckedChange = { impostaPrevisto = it })
+                                    Column {
+                                        Text("Imposta l'importo previsto in ${formattaMese(mese)}")
+                                        Text(
+                                            "La spesa del mese diventa prevista con questo importo" +
+                                                (letta.data?.takeIf { YearMonth.from(it) == mese }?.let { " e pianificata per il ${formattaData(it.toEpochDay())}" } ?: "") + ".",
+                                            style = MaterialTheme.typography.bodySmall
+                                        )
+                                    }
+                                }
+                                if (impostaPrevisto) {
+                                    OutlinedTextField(
+                                        value = importoPrevisto, onValueChange = { importoPrevisto = it; errore = null },
+                                        label = { Text("Importo previsto (EUR)") }, singleLine = true,
+                                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal),
+                                        visualTransformation = SeparatoreMigliaia,
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
+                                }
+                            }
                         }
                     }
                 }
@@ -204,8 +230,16 @@ fun CondivisioneDialog(vm: SpeseViewModel) {
             if (azione == AzioneCondivisione.RICORRENTE && letta != null && !f.inLettura) {
                 TextButton(onClick = {
                     val v = voce
-                    if (v == null) errore = "Scegli la spesa ricorrente"
-                    else vm.allegaCondivisoARicorrente(v, mese, parola.takeIf { manuale && aggiungiParola })
+                    val previsto = if (impostaPrevisto && (futuro || !mese.isBefore(YearMonth.now())))
+                        com.desideri.familybalance.logica.testoInCent(importoPrevisto)?.let { abs(it) }?.takeIf { it > 0 } else null
+                    when {
+                        v == null -> errore = "Scegli la spesa ricorrente"
+                        impostaPrevisto && (futuro || !mese.isBefore(YearMonth.now())) && previsto == null -> errore = "Importo previsto non valido"
+                        else -> {
+                            previsto?.let { vm.impostaPrevistoRicorrente(v, mese, it, letta.data?.toEpochDay()) }
+                            vm.allegaCondivisoARicorrente(v, mese, parola.takeIf { manuale && aggiungiParola })
+                        }
+                    }
                 }) { Text("Allega") }
             }
         },
