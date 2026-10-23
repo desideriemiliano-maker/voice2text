@@ -17,12 +17,20 @@
         <activity
                 android:name=".MainActivity"
                 android:exported="true"
+                android:launchMode="singleTask"
                 android:windowSoftInputMode="adjustResize"
                 android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|uiMode|density"
                 android:theme="@style/Theme.FamilyBalance">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <!-- PDF o immagine condivisi con l'app: busta paga o ricevuta di una spesa ricorrente. -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="application/pdf" />
+                <data android:mimeType="image/*" />
             </intent-filter>
         </activity>
 

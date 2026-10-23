@@ -204,6 +204,7 @@ private fun VoceDialog(
     var tipo by remember { mutableStateOf(voce.tipo) }
     var entrata by remember { mutableStateOf(voce.entrata) }
     var riscontroStipendi by remember { mutableStateOf(voce.riscontroStipendi) }
+    var paroleChiave by remember { mutableStateOf(voce.listaParoleChiave.joinToString("\n")) }
     var ricorrente by remember { mutableStateOf(voce.ricorrente) }
     var mesi by remember { mutableStateOf(voce.mesiRicorrenza.toString()) }
     var meseInizio by remember {
@@ -225,6 +226,8 @@ private fun VoceDialog(
                 tipo = tipo,
                 entrata = entrata,
                 riscontroStipendi = entrata && riscontroStipendi,
+                paroleChiave = paroleChiave.lines().map { it.trim() }.filter { it.isNotEmpty() }.distinctBy { it.lowercase() }
+                    .joinToString("|").ifEmpty { null },
                 ricorrente = ricorrente,
                 mesiRicorrenza = if (ricorrente) numeroMesi ?: 1 else voce.mesiRicorrenza,
                 meseInizio = if (ricorrente) inizio?.toString() else voce.meseInizio,
@@ -270,6 +273,13 @@ private fun VoceDialog(
                     }
                 }
                 if (ricorrente) {
+                    OutlinedTextField(
+                        value = paroleChiave, onValueChange = { paroleChiave = it },
+                        label = { Text("Parole chiave (una per riga)") },
+                        supportingText = { Text("Riconoscono la spesa dalla causale delle bollette e ricevute condivise con l'app.") },
+                        minLines = 2,
+                        modifier = Modifier.fillMaxWidth()
+                    )
                     OutlinedTextField(
                         value = mesi,
                         onValueChange = { mesi = it },

@@ -600,17 +600,97 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
      * delle Impostazioni, sottocartella con il nome della spesa, come "anno-mese-uuid.pdf".
      */
     fun allegaRicorrente(voce: Voce, mese: YearMonth, uris: List<Uri>) = viewModelScope.launch {
-        val base = _impostazioni.value.cartellaRicevute.trim()
-        if (base.isEmpty()) return@launch messaggio("Indica la cartella di Drive delle ricevute nelle Impostazioni")
-        val cartella = base.trimEnd('/') + "/" + voce.descrizione.replace('/', '-').trim()
+        if (_impostazioni.value.cartellaRicevute.isBlank()) return@launch messaggio("Indica la cartella di Drive delle ricevute nelle Impostazioni")
         uris.forEach { uri ->
             val (copia, estensione, mime) = copiaBustaPaga(uri)
             if (copia == null) return@forEach messaggio("Impossibile leggere un file")
-            val nome = "$mese-${java.util.UUID.randomUUID()}.$estensione"
-            caricaSuDrive(copia, nome, mime, cartella, "Ricevuta") { link ->
-                allegatiDao.inserisci(com.desideri.familybalance.data.AllegatoRicorrente(voceId = voce.id, mese = mese.toString(), nome = nome, link = link))
-                messaggio("Allegato salvato su Drive in «$cartella»")
+            allegaFileRicorrente(voce, mese, copia, estensione, mime)
+        }
+    }
+
+    /** Carica la copia locale [file] su Drive come allegato della spesa [voce] nel [mese]. */
+    private fun allegaFileRicorrente(voce: Voce, mese: YearMonth, file: File, estensione: String, mime: String) {
+        val base = _impostazioni.value.cartellaRicevute.trim()
+        if (base.isEmpty()) return run { file.delete(); messaggio("Indica la cartella di Drive delle ricevute nelle Impostazioni") }
+        val cartella = base.trimEnd('/') + "/" + voce.descrizione.replace('/', '-').trim()
+        val nome = "$mese-${java.util.UUID.randomUUID()}.$estensione"
+        caricaSuDrive(file, nome, mime, cartella, "Ricevuta") { link ->
+            allegatiDao.inserisci(com.desideri.familybalance.data.AllegatoRicorrente(voceId = voce.id, mese = mese.toString(), nome = nome, link = link))
+            messaggio("Allegato salvato su Drive in «$cartella»")
+        }
+    }
+
+    // --- File condiviso con l'app (busta paga o ricevuta di una spesa ricorrente) ---
+
+    /** File ricevuto con «Condividi»: copia locale, nome e tipo; [letta] la ricevuta letta da Gemini. */
+    data class FileCondiviso(
+        val file: File,
+        val nome: String,
+        val estensione: String,
+        val mime: String,
+        val inLettura: Boolean = false,
+        val letta: com.desideri.familybalance.estratto.RicevutaLetta? = null
+    )
+
+    private val _fileCondiviso = MutableStateFlow<FileCondiviso?>(null)
+    val fileCondiviso: StateFlow<FileCondiviso?> = _fileCondiviso.asStateFlow()
+
+    /** File condiviso da un'altra app: se ne fa subito una copia (il permesso sull'uri è temporaneo). */
+    fun riceviFileCondiviso(uri: Uri) = viewModelScope.launch {
+        _fileCondiviso.value?.file?.delete()
+        val app = getApplication<Application>()
+        val nome = runCatching {
+            app.contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c -> if (c.moveToFirst()) c.getString(0) else null }
+        }.getOrNull() ?: uri.lastPathSegment.orEmpty()
+        val (copia, estensione, mime) = copiaBustaPaga(uri)
+        if (copia == null) return@launch messaggio("Impossibile leggere il file condiviso")
+        _fileCondiviso.value = FileCondiviso(copia, nome.ifBlank { copia.name }, estensione, mime)
+    }
+
+    fun annullaFileCondiviso() {
+        _fileCondiviso.value?.file?.delete()
+        _fileCondiviso.value = null
+    }
+
+    /** Il file condiviso è la busta paga dello stipendio [tipoId]: si importa come dal pulsante della sezione. */
+    fun importaCondivisoComeBustaPaga(tipoId: Long) {
+        val f = _fileCondiviso.value ?: return
+        _fileCondiviso.value = null
+        viewModelScope.launch {
+            importaBustaPaga(Uri.fromFile(f.file), tipoId).join()
+            f.file.delete()
+        }
+    }
+
+    /** Il file condiviso è una ricevuta: Gemini ne legge causale e data di esecuzione. */
+    fun leggiRicevutaCondivisa() {
+        val f = _fileCondiviso.value ?: return
+        _fileCondiviso.value = f.copy(inLettura = true)
+        viewModelScope.launch {
+            try {
+                val letta = com.desideri.familybalance.estratto.RicevutaGemini(BuildConfig.GEMINI_API_KEY, RegistroPromptStore(getApplication()))
+                    .leggi(getApplication(), Uri.fromFile(f.file), f.nome, f.mime)
+                _fileCondiviso.value = _fileCondiviso.value?.copy(inLettura = false, letta = letta)
+            } catch (e: Exception) {
+                // Senza lettura si sceglie comunque la spesa a mano.
+                _fileCondiviso.value = _fileCondiviso.value?.copy(inLettura = false, letta = com.desideri.familybalance.estratto.RicevutaLetta("", null))
+                messaggio("Lettura con Gemini non riuscita: ${e.message ?: e.javaClass.simpleName}")
             }
+        }
+    }
+
+    /**
+     * Allega il file condiviso alla spesa ricorrente [voce] nel [mese]; con [nuovaParola] la si
+     * aggiunge alle parole chiave della spesa, per riconoscerla alle prossime ricevute.
+     */
+    fun allegaCondivisoARicorrente(voce: Voce, mese: YearMonth, nuovaParola: String?) {
+        val f = _fileCondiviso.value ?: return
+        _fileCondiviso.value = null
+        viewModelScope.launch {
+            nuovaParola?.trim()?.takeIf { it.isNotEmpty() && voce.listaParoleChiave.none { p -> p.equals(it, true) } }?.let { parola ->
+                dao.aggiornaVoce(voce.copy(paroleChiave = (voce.listaParoleChiave + parola).joinToString("|")))
+            }
+            allegaFileRicorrente(voce, mese, f.file, f.estensione, f.mime)
         }
     }
 

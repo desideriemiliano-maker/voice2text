@@ -75,9 +75,15 @@ data class Voce(
     val obsoleta: Boolean = false,
     /** Entrata usata nel riscontro stipendi: gli accrediti mostrati sono solo le operazioni di queste voci. */
     @ColumnInfo(defaultValue = "0")
-    val riscontroStipendi: Boolean = false
+    val riscontroStipendi: Boolean = false,
+    /** Spesa ricorrente: parole chiave (separate da "|") per riconoscerla dalla causale di bollette e ricevute. */
+    val paroleChiave: String? = null
 ) {
     val descrizione: String get() = tipo
+    val listaParoleChiave: List<String> get() = paroleChiave.orEmpty().split('|').map { it.trim() }.filter { it.isNotEmpty() }
+
+    /** true se il [testo] (es. la causale di una ricevuta) contiene una delle parole chiave. */
+    fun riconosce(testo: String): Boolean = listaParoleChiave.any { testo.contains(it, ignoreCase = true) }
 }
 
 /**

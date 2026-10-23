@@ -114,6 +114,7 @@ fun SpeseApp(vm: SpeseViewModel = viewModel()) {
         SnackbarHost(snackbar, modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 80.dp))
     }
     PromemoriaRicorrenti(vm)
+    CondivisioneDialog(vm)
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
