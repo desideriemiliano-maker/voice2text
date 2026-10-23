@@ -20,6 +20,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.ExpandLess
@@ -71,6 +72,7 @@ import com.desideri.familybalance.logica.centInTesto
 import com.desideri.familybalance.logica.formattaCent
 import com.desideri.familybalance.logica.formattaData
 import com.desideri.familybalance.logica.formattaImporto
+import com.desideri.familybalance.logica.formattaMeseBreve
 import com.desideri.familybalance.logica.formattaMese
 import com.desideri.familybalance.logica.testoInCent
 import com.desideri.familybalance.logica.testoInMese
@@ -98,6 +100,7 @@ fun RicorrentiScreen(vm: SpeseViewModel) {
     var aperta by remember { mutableStateOf<RigaAperta?>(null) }
     var mostraGrafico by remember { mutableStateOf(false) }
     var mostraRadar by remember { mutableStateOf(false) }
+    var riscontroAllegati by remember { mutableStateOf(false) }
     val allegati by vm.allegatiRicorrenti.collectAsStateWithLifecycle()
     val impostazioni by vm.impostazioni.collectAsStateWithLifecycle()
     var mostraCalendario by remember { mutableStateOf(false) }
@@ -139,6 +142,7 @@ fun RicorrentiScreen(vm: SpeseViewModel) {
                     listOf(
                         VoceMenuSezione("Grafico", Icons.AutoMirrored.Filled.ShowChart) { mostraGrafico = true },
                         VoceMenuSezione("Radar", Icons.Filled.Radar) { mostraRadar = true },
+                        VoceMenuSezione("Riscontro allegati", Icons.Filled.AttachFile) { riscontroAllegati = true },
                         VoceMenuSezione("Calendario ricorrenti", Icons.Filled.CalendarMonth) { mostraCalendario = true }
                     )
                 )
@@ -168,6 +172,15 @@ fun RicorrentiScreen(vm: SpeseViewModel) {
                 sceltaVoci = false
             },
             onAnnulla = { sceltaVoci = false }
+        )
+    }
+    if (riscontroAllegati) {
+        RiscontroAllegatiDialog(
+            mesi = mesi,
+            voci = vociRicorrenti.filter { v -> allegati.any { it.voceId == v.id } },
+            allegati = allegati,
+            onCella = { riga, m -> aperta = RigaAperta(riga, m) },
+            onChiudi = { riscontroAllegati = false }
         )
     }
     if (mostraRadar) {
@@ -759,5 +772,82 @@ internal fun DettaglioRicorrenteDialog(vm: SpeseViewModel, dati: DatiApp, riga: 
             vm, dati, cv, null, onChiudi = { nuovaSuConto = null },
             tipoIniziale = voce.tipo, dataIniziale = giorno.toEpochDay()
         )
+    }
+}
+
+/**
+ * Riscontro allegati (menu ⋮): una riga per mese del periodo e una colonna per ogni spesa
+ * ricorrente con almeno un allegato; nelle celle l'importo della spesa nel mese (pagato e, dove
+ * manca, previsto) e il numero di allegati. Toccando una cella si apre il dettaglio della spesa.
+ */
+@Composable
+private fun RiscontroAllegatiDialog(
+    mesi: List<MeseRicorrenti>,
+    voci: List<Voce>,
+    allegati: List<com.desideri.familybalance.data.AllegatoRicorrente>,
+    onCella: (RigaRicorrente, YearMonth) -> Unit,
+    onChiudi: () -> Unit
+) {
+    val larghezzaMese = 64.dp
+    val larghezzaVoce = 104.dp
+    val orizzontale = rememberScrollState()
+    val verticale = rememberScrollState()
+    val zebra = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
+    val coloreMancanti = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f)
+    val conteggi = allegati.groupingBy { it.voceId to it.mese }.eachCount()
+    androidx.compose.ui.window.Dialog(
+        onDismissRequest = onChiudi,
+        properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
+    ) {
+        androidx.compose.material3.Surface(modifier = Modifier.fillMaxSize(), tonalElevation = 4.dp) {
+            Column(modifier = Modifier.fillMaxSize().paddingBarreDialog().padding(12.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Riscontro allegati", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                    IconButton(onClick = onChiudi) { Icon(Icons.Filled.Close, contentDescription = "Chiudi") }
+                }
+                Text(
+                    "Importo della spesa nel mese (pagato e, dove manca, previsto) e 📎 numero di allegati; in rosso le spese senza allegati. Tocca una cella per il dettaglio.",
+                    style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(bottom = 6.dp)
+                )
+                if (voci.isEmpty()) {
+                    Text("Nessuna spesa ricorrente con allegati.", modifier = Modifier.padding(16.dp))
+                } else {
+                    Row {
+                        CellaReport("Mese", null, larghezzaMese, grassetto = true, alta = true)
+                        Row(modifier = Modifier.horizontalScroll(orizzontale)) {
+                            voci.forEach { CellaReport(it.descrizione, null, larghezzaVoce, grassetto = true, alta = true) }
+                        }
+                    }
+                    Row(modifier = Modifier.weight(1f)) {
+                        Column(modifier = Modifier.verticalScroll(verticale)) {
+                            mesi.forEachIndexed { i, m ->
+                                CellaReport(formattaMeseBreve(m.mese), null, larghezzaMese, grassetto = true, alta = true, sfondo = if (i % 2 == 1) zebra else Color.Transparent)
+                            }
+                        }
+                        Column(modifier = Modifier.verticalScroll(verticale).horizontalScroll(orizzontale)) {
+                            mesi.forEachIndexed { i, m ->
+                                Row {
+                                    voci.forEach { v ->
+                                        val riga = m.righe.firstOrNull { it.voce.id == v.id }
+                                        val n = conteggi[v.id to m.mese.toString()] ?: 0
+                                        val importo = riga?.takeIf { !it.annullata }?.let { it.pagato + (it.previsto ?: 0.0) }?.takeIf { it != 0.0 }
+                                        CellaReport(
+                                            (importo?.let { formattaImporto(kotlin.math.abs(it)) } ?: "—") + if (n > 0) "\n📎 $n" else "",
+                                            null, larghezzaVoce, alta = true,
+                                            sfondo = when {
+                                                importo != null && n == 0 -> coloreMancanti
+                                                i % 2 == 1 -> zebra
+                                                else -> Color.Transparent
+                                            },
+                                            modifier = if (riga != null) Modifier.clickable { onCella(riga, m.mese) } else Modifier
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 }
