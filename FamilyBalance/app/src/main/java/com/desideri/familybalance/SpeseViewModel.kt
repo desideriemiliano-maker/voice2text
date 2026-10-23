@@ -541,6 +541,54 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /** Intent per aprire un file scaricato da Drive (la UI lo avvia). */
+    private val _fileDaAprire = kotlinx.coroutines.flow.MutableSharedFlow<Intent>(extraBufferCapacity = 1)
+    val fileDaAprire: kotlinx.coroutines.flow.SharedFlow<Intent> = _fileDaAprire
+
+    /**
+     * Apre il file di Drive [link] (allegato o busta paga): lo scarica con l'account del backup e lo
+     * apre con l'app del telefono, così non serve scegliere l'account Google nel browser. Senza
+     * account o con un link non riconosciuto si apre il link.
+     */
+    fun apriFileDrive(link: String, nome: String) {
+        val app = getApplication<Application>()
+        val email = _impostazioni.value.emailBackup
+        val id = com.desideri.familybalance.backup.BustePagaDrive.idDaLink(link)
+        if (email == null || id == null) {
+            _fileDaAprire.tryEmit(Intent(Intent.ACTION_VIEW, Uri.parse(link)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            return
+        }
+        viewModelScope.launch {
+            try {
+                val cartella = File(app.cacheDir, "allegati").apply { mkdirs() }
+                val estensione = nome.substringAfterLast('.', "pdf").lowercase()
+                val file = File(cartella, "$id.$estensione")
+                if (!file.exists() || file.length() == 0L) {
+                    messaggio("Apertura di $nome…")
+                    // Scaricato prima in un file provvisorio: un download interrotto non resta in cache.
+                    val provvisorio = File(cartella, "$id.parziale")
+                    try {
+                        com.desideri.familybalance.backup.BustePagaDrive(app, email).scarica(id, provvisorio)
+                        provvisorio.renameTo(file)
+                    } finally {
+                        provvisorio.delete()
+                    }
+                }
+                val uri = androidx.core.content.FileProvider.getUriForFile(app, app.packageName + ".file", file)
+                val mime = android.webkit.MimeTypeMap.getSingleton().getMimeTypeFromExtension(estensione) ?: "application/pdf"
+                _fileDaAprire.tryEmit(
+                    Intent(Intent.ACTION_VIEW).setDataAndType(uri, mime)
+                        .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+                )
+            } catch (e: UserRecoverableAuthIOException) {
+                azioneInSospeso = { apriFileDrive(link, nome) }
+                _richiestaAutorizzazione.value = e.intent
+            } catch (e: Exception) {
+                messaggio("Apertura non riuscita: ${e.message ?: e.javaClass.simpleName}")
+            }
+        }
+    }
+
     // --- Allegati delle spese ricorrenti ---
 
     private val allegatiDao = db.allegatiDao()
@@ -772,6 +820,9 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
         }
         messaggio(if (mantieniRicorrenza) "Scadenza spostata a ${formattaMese(nuovoMese)}" else "Ricorrenza ripartita da ${formattaMese(nuovoMese)}")
     }
+
+    /** Messaggio in basso (dalla UI). */
+    fun avvisa(testo: String) = messaggio(testo)
 
     private fun messaggio(testo: String) {
         _messaggi.tryEmit(testo)

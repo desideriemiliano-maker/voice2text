@@ -856,7 +856,7 @@ fun StipendiScreen(vm: SpeseViewModel) {
                     // Busta paga importata salvata su Drive: si apre con il link.
                     s.bustaPagaLink?.let { link ->
                         OutlinedButton(onClick = {
-                            runCatching { contesto.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(link))) }
+                            vm.apriFileDrive(link, "busta.pdf")
                         }) {
                             Icon(Icons.Filled.UploadFile, contentDescription = null)
                             Text("Apri la busta paga", modifier = Modifier.padding(start = 6.dp))

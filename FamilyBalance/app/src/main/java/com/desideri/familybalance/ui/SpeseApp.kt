@@ -135,6 +135,13 @@ private fun SchermataPrincipale(vm: SpeseViewModel, sezione: Sezione, onSezione:
         androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult()
     ) { risultato -> vm.esitoAutorizzazione(risultato.resultCode == android.app.Activity.RESULT_OK) }
     LaunchedEffect(richiestaAutorizzazione) { richiestaAutorizzazione?.let { autorizzazione.launch(it) } }
+    // File scaricati da Drive: si aprono con l'app del telefono (es. il visualizzatore PDF).
+    val contesto = androidx.compose.ui.platform.LocalContext.current
+    LaunchedEffect(Unit) {
+        vm.fileDaAprire.collect { intent ->
+            runCatching { contesto.startActivity(intent) }.onFailure { vm.avvisa("Nessuna app per aprire il file") }
+        }
+    }
 
     Scaffold(
         topBar = {

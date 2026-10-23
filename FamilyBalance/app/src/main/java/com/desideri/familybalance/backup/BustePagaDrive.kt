@@ -54,7 +54,16 @@ class BustePagaDrive(context: Context, email: String) {
             .let { it.webViewLink ?: "https://drive.google.com/file/d/${it.id}/view" }
     }
 
-    private companion object {
-        const val MIME_CARTELLA = "application/vnd.google-apps.folder"
+    /** Scarica il file [id] in [destinazione]. */
+    suspend fun scarica(id: String, destinazione: File) = withContext(Dispatchers.IO) {
+        destinazione.outputStream().use { out -> drive.files().get(id).executeMediaAndDownloadTo(out) }
+    }
+
+    companion object {
+        /** Id del file Drive dal suo link ("…/file/d/<id>/view…" o "…?id=<id>"); null se non riconosciuto. */
+        fun idDaLink(link: String): String? =
+            Regex("/d/([A-Za-z0-9_-]+)").find(link)?.groupValues?.get(1) ?: Regex("[?&]id=([A-Za-z0-9_-]+)").find(link)?.groupValues?.get(1)
+
+        private const val MIME_CARTELLA = "application/vnd.google-apps.folder"
     }
 }

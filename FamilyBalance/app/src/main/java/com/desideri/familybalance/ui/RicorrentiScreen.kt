@@ -25,6 +25,7 @@ import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.Radar
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
@@ -97,6 +98,7 @@ fun RicorrentiScreen(vm: SpeseViewModel) {
     var aperta by remember { mutableStateOf<RigaAperta?>(null) }
     var mostraGrafico by remember { mutableStateOf(false) }
     var mostraRadar by remember { mutableStateOf(false) }
+    val allegati by vm.allegatiRicorrenti.collectAsStateWithLifecycle()
     val impostazioni by vm.impostazioni.collectAsStateWithLifecycle()
     var mostraCalendario by remember { mutableStateOf(false) }
     var graficoMese by remember { mutableStateOf<MeseRicorrenti?>(null) }
@@ -149,7 +151,10 @@ fun RicorrentiScreen(vm: SpeseViewModel) {
         LazyColumn(state = stato, contentPadding = PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.weight(1f)) {
             items(filtrati, key = { it.mese.toString() }) { mese ->
                 val precedente = filtrati.firstOrNull { it.mese == mese.mese.minusMonths(1) }?.totale
-                CardMese(mese, oggi, precedente, onGrafico = { graficoMese = it }, onRiga = { aperta = RigaAperta(it, mese.mese) })
+                CardMese(
+                    mese, oggi, precedente, onGrafico = { graficoMese = it }, onRiga = { aperta = RigaAperta(it, mese.mese) },
+                    conAllegati = allegati.filter { it.mese == mese.mese.toString() }.map { it.voceId }.toSet()
+                )
             }
         }
     }
@@ -230,7 +235,15 @@ internal fun SceltaMese(etichetta: String, mese: YearMonth, onMese: (YearMonth) 
 }
 
 @Composable
-private fun CardMese(mese: MeseRicorrenti, oggi: YearMonth, totalePrecedente: Double?, onGrafico: (MeseRicorrenti) -> Unit, onRiga: (RigaRicorrente) -> Unit) {
+private fun CardMese(
+    mese: MeseRicorrenti,
+    oggi: YearMonth,
+    totalePrecedente: Double?,
+    onGrafico: (MeseRicorrenti) -> Unit,
+    onRiga: (RigaRicorrente) -> Unit,
+    /** Spese (id voce) con PDF allegati in questo mese. */
+    conAllegati: Set<Long> = emptySet()
+) {
     val corrente = mese.mese == oggi
     // Le scadenze annullate non si mostrano (si ripristinano dal Calendario ricorrenti).
     val righe = mese.righe.filter { !it.annullata }
@@ -276,16 +289,26 @@ private fun CardMese(mese: MeseRicorrenti, oggi: YearMonth, totalePrecedente: Do
                     PallinoColore(riga.voce.colore, modifier = Modifier.padding(end = 6.dp), dimensione = 10.dp)
                     Column(modifier = Modifier.weight(1f)) {
                         val nonPagata = riga.previsto != null && mese.mese < oggi
-                        Text(
-                            when {
-                                riga.annullata -> "✕ "
-                                nonPagata -> "⚠ "
-                                riga.previsto != null -> "⏳ "
-                                else -> "✓ "
-                            } + riga.voce.tipo,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = if (riga.annullata) MaterialTheme.colorScheme.onSurfaceVariant else Color.Unspecified
-                        )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                when {
+                                    riga.annullata -> "✕ "
+                                    nonPagata -> "⚠ "
+                                    riga.previsto != null -> "⏳ "
+                                    else -> "✓ "
+                                } + riga.voce.tipo,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = if (riga.annullata) MaterialTheme.colorScheme.onSurfaceVariant else Color.Unspecified
+                            )
+                            // PDF allegati (bolletta, ricevuta) per questa spesa nel mese.
+                            if (riga.voce.id in conAllegati) {
+                                Icon(
+                                    Icons.Filled.AttachFile, contentDescription = "Con allegati",
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.padding(start = 4.dp).size(16.dp)
+                                )
+                            }
+                        }
                         // Data del pagamento (se tutta pagata) o prevista: indicata o dal giorno dell'ultimo pagamento.
                         val testoData = when {
                             riga.annullata -> null
@@ -406,7 +429,6 @@ internal fun DettaglioRicorrenteDialog(vm: SpeseViewModel, dati: DatiApp, riga: 
     var importoNuova by remember(riga, proposto) { mutableStateOf(proposto?.let { centInTesto(it) } ?: "") }
     val tuttiAllegati by vm.allegatiRicorrenti.collectAsStateWithLifecycle()
     val allegati = tuttiAllegati.filter { it.voceId == voce.id && it.mese == mese.toString() }
-    val contesto = androidx.compose.ui.platform.LocalContext.current
     val sceltaAllegati = androidx.activity.compose.rememberLauncherForActivityResult(
         androidx.activity.result.contract.ActivityResultContracts.OpenMultipleDocuments()
     ) { uris -> if (uris.isNotEmpty()) vm.allegaRicorrente(voce, mese, uris) }
@@ -439,7 +461,7 @@ internal fun DettaglioRicorrenteDialog(vm: SpeseViewModel, dati: DatiApp, riga: 
                 if (allegati.isEmpty()) Text("Nessun allegato.", style = MaterialTheme.typography.bodySmall)
                 allegati.forEach { a ->
                     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().clickable {
-                        runCatching { contesto.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(a.link))) }
+                        vm.apriFileDrive(a.link, a.nome)
                     }) {
                         Text(a.nome, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.weight(1f))
                         IconButton(onClick = { allegatoDaTogliere = a }) { Icon(Icons.Filled.Close, contentDescription = "Togli l'allegato") }
