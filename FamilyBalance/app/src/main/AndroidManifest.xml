@@ -25,7 +25,17 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-            <!-- PDF o immagine condivisi con l'app: busta paga o ricevuta di una spesa ricorrente. -->
+        </activity>
+
+        <!-- PDF o immagine condivisi con l'app (busta paga o ricevuta di una spesa ricorrente):
+             passati alla MainActivity già aperta, senza aprirne un'altra nell'app che condivide. -->
+        <activity
+                android:name=".CondivisioneActivity"
+                android:exported="true"
+                android:excludeFromRecents="true"
+                android:noHistory="true"
+                android:taskAffinity=""
+                android:theme="@android:style/Theme.NoDisplay">
             <intent-filter>
                 <action android:name="android.intent.action.SEND" />
                 <category android:name="android.intent.category.DEFAULT" />
