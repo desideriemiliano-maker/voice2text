@@ -473,14 +473,6 @@ fun StipendiScreen(vm: SpeseViewModel) {
     val sceltaFile = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null && tipo != null) vm.importaBustaPaga(uri, tipo.id)
     }
-    // Consenso Google per salvare la busta paga importata nella cartella di Drive.
-    val richiestaAutorizzazione by vm.richiestaAutorizzazione.collectAsStateWithLifecycle()
-    val autorizzazione = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { risultato ->
-        vm.esitoAutorizzazione(risultato.resultCode == android.app.Activity.RESULT_OK)
-    }
-    androidx.compose.runtime.LaunchedEffect(richiestaAutorizzazione) {
-        richiestaAutorizzazione?.let { autorizzazione.launch(it) }
-    }
     val contesto = androidx.compose.ui.platform.LocalContext.current
     // Busta paga da allegare a uno stipendio già registrato.
     var daAllegare by remember { mutableStateOf<Stipendio?>(null) }

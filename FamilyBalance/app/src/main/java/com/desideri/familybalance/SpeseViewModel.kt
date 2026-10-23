@@ -512,24 +512,62 @@ class SpeseViewModel(application: Application) : AndroidViewModel(application) {
     private fun salvaBustaPagaSuDrive(stipendioId: Long, file: File, nome: String, mime: String) {
         val cartella = _impostazioni.value.cartellaBustePaga.trim()
         if (cartella.isEmpty()) return run { file.delete() }
+        caricaSuDrive(file, nome, mime, cartella, "Busta paga") { link ->
+            stipendiDao.stipendio(stipendioId)?.let { stipendiDao.aggiornaStipendio(it.copy(bustaPagaLink = link)) }
+            messaggio("Busta paga salvata su Drive in «$cartella»")
+        }
+    }
+
+    /**
+     * Carica [file] con [nome] nella cartella [cartella] di Drive (account del backup), poi [onFatto]
+     * con il link; chiede il consenso Google se serve e riprova. Il file locale viene eliminato.
+     */
+    private fun caricaSuDrive(file: File, nome: String, mime: String, cartella: String, cosa: String, onFatto: suspend (String) -> Unit) {
         val email = _impostazioni.value.emailBackup
-            ?: return run { file.delete(); messaggio("Busta paga non salvata su Drive: scegli l'account in Backup Google Drive") }
+            ?: return run { file.delete(); messaggio("$cosa non salvata su Drive: scegli l'account in Backup Google Drive") }
         viewModelScope.launch {
             try {
                 val link = com.desideri.familybalance.backup.BustePagaDrive(getApplication(), email).carica(file, nome, mime, cartella)
-                stipendiDao.stipendio(stipendioId)?.let { stipendiDao.aggiornaStipendio(it.copy(bustaPagaLink = link)) }
                 file.delete()
-                messaggio("Busta paga salvata su Drive in «$cartella»")
+                onFatto(link)
             } catch (e: UserRecoverableAuthIOException) {
                 // Consenso Google per la cartella su Drive: si riprova dopo la risposta.
-                azioneInSospeso = { salvaBustaPagaSuDrive(stipendioId, file, nome, mime) }
+                azioneInSospeso = { caricaSuDrive(file, nome, mime, cartella, cosa, onFatto) }
                 _richiestaAutorizzazione.value = e.intent
             } catch (e: Exception) {
                 file.delete()
-                messaggio("Busta paga non salvata su Drive: ${e.message ?: e.javaClass.simpleName}")
+                messaggio("$cosa non salvata su Drive: ${e.message ?: e.javaClass.simpleName}")
             }
         }
     }
+
+    // --- Allegati delle spese ricorrenti ---
+
+    private val allegatiDao = db.allegatiDao()
+    val allegatiRicorrenti: StateFlow<List<com.desideri.familybalance.data.AllegatoRicorrente>> =
+        allegatiDao.allegatiFlow().stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    /**
+     * Allega i PDF [uris] alla spesa ricorrente [voce] nel [mese]: ognuno va su Drive nella cartella
+     * delle Impostazioni, sottocartella con il nome della spesa, come "anno-mese-uuid.pdf".
+     */
+    fun allegaRicorrente(voce: Voce, mese: YearMonth, uris: List<Uri>) = viewModelScope.launch {
+        val base = _impostazioni.value.cartellaRicevute.trim()
+        if (base.isEmpty()) return@launch messaggio("Indica la cartella di Drive delle ricevute nelle Impostazioni")
+        val cartella = base.trimEnd('/') + "/" + voce.descrizione.replace('/', '-').trim()
+        uris.forEach { uri ->
+            val (copia, estensione, mime) = copiaBustaPaga(uri)
+            if (copia == null) return@forEach messaggio("Impossibile leggere un file")
+            val nome = "$mese-${java.util.UUID.randomUUID()}.$estensione"
+            caricaSuDrive(copia, nome, mime, cartella, "Ricevuta") { link ->
+                allegatiDao.inserisci(com.desideri.familybalance.data.AllegatoRicorrente(voceId = voce.id, mese = mese.toString(), nome = nome, link = link))
+                messaggio("Allegato salvato su Drive in «$cartella»")
+            }
+        }
+    }
+
+    /** Toglie l'allegato dall'app (il file resta su Drive). */
+    fun eliminaAllegatoRicorrente(allegato: com.desideri.familybalance.data.AllegatoRicorrente) = viewModelScope.launch { allegatiDao.elimina(allegato) }
 
     /** Saldi della sezione Conti visibili: nascosti a ogni avvio dell'app, non salvato. */
     private val _mostraSaldi = MutableStateFlow(false)

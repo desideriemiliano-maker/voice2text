@@ -34,7 +34,9 @@ data class Impostazioni(
     /** Sosta del radar animato degli stipendi su ogni mese raggiunto, in millisecondi. */
     val pausaRadarMs: Int = 1000,
     /** Cartella di Google Drive in cui salvare le buste paga importate ("" = non salvarle). */
-    val cartellaBustePaga: String = "FamilyBalance/Buste paga"
+    val cartellaBustePaga: String = "FamilyBalance/Buste paga",
+    /** Cartella di Google Drive per i PDF delle spese ricorrenti (una sottocartella per spesa). */
+    val cartellaRicevute: String = "FamilyBalance/Spese ricorrenti"
 )
 
 class Preferenze(context: Context) {
@@ -56,7 +58,8 @@ class Preferenze(context: Context) {
         giorniPromemoriaRicorrenti = prefs.getInt(CHIAVE_GIORNI_PROMEMORIA, 7),
         mostraContiVirtuali = prefs.getBoolean(CHIAVE_MOSTRA_VIRTUALI, true),
         pausaRadarMs = prefs.getInt(CHIAVE_PAUSA_RADAR, 1000),
-        cartellaBustePaga = prefs.getString(CHIAVE_CARTELLA_BUSTE, null) ?: "FamilyBalance/Buste paga"
+        cartellaBustePaga = prefs.getString(CHIAVE_CARTELLA_BUSTE, null) ?: "FamilyBalance/Buste paga",
+        cartellaRicevute = prefs.getString(CHIAVE_CARTELLA_RICEVUTE, null) ?: "FamilyBalance/Spese ricorrenti"
     )
 
     /** Con [subito] la scrittura è sincrona (es. prima di riavviare l'app dopo un ripristino). */
@@ -78,6 +81,7 @@ class Preferenze(context: Context) {
             .putBoolean(CHIAVE_MOSTRA_VIRTUALI, impostazioni.mostraContiVirtuali)
             .putInt(CHIAVE_PAUSA_RADAR, impostazioni.pausaRadarMs)
             .putString(CHIAVE_CARTELLA_BUSTE, impostazioni.cartellaBustePaga)
+            .putString(CHIAVE_CARTELLA_RICEVUTE, impostazioni.cartellaRicevute)
         if (subito) editor.commit() else editor.apply()
     }
 
@@ -198,6 +202,7 @@ class Preferenze(context: Context) {
         const val CHIAVE_GIORNI_PROMEMORIA = "giorni_promemoria_ricorrenti"
         const val CHIAVE_PAUSA_RADAR = "pausa_radar_ms"
         const val CHIAVE_CARTELLA_BUSTE = "cartella_buste_paga"
+        const val CHIAVE_CARTELLA_RICEVUTE = "cartella_ricevute"
         const val CHIAVE_MOSTRA_VIRTUALI = "mostra_conti_virtuali"
         const val CHIAVE_PROMEMORIA_CONFERMATO = "promemoria_ricorrenti_confermato"
         const val PREFISSO_DUPLICATI = "duplicati_fino_"

@@ -48,6 +48,7 @@ fun ImpostazioniScreen(vm: SpeseViewModel, onIndietro: () -> Unit) {
     var giornoLavorativo by remember { mutableStateOf(impostazioni.stipendioGiornoLavorativo) }
     var giorniPromemoria by remember { mutableStateOf(impostazioni.giorniPromemoriaRicorrenti.toString()) }
     var cartellaBuste by remember { mutableStateOf(impostazioni.cartellaBustePaga) }
+    var cartellaRicevute by remember { mutableStateOf(impostazioni.cartellaRicevute) }
     var pausaRadar by remember { mutableStateOf((impostazioni.pausaRadarMs / 1000.0).toString().removeSuffix(".0").replace('.', ',')) }
     val bloccoPossibile = bloccoDisponibile(LocalContext.current)
     var errore by remember { mutableStateOf<String?>(null) }
@@ -152,6 +153,14 @@ fun ImpostazioniScreen(vm: SpeseViewModel, onIndietro: () -> Unit) {
                 modifier = Modifier.fillMaxWidth()
             )
             OutlinedTextField(
+                value = cartellaRicevute,
+                onValueChange = { cartellaRicevute = it },
+                label = { Text("Cartella Google Drive delle spese ricorrenti") },
+                supportingText = { Text("I PDF allegati alle spese ricorrenti vanno qui, in una sottocartella per spesa, come «anno-mese-uuid.pdf» (creata dall'app).") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+            )
+            OutlinedTextField(
                 value = pausaRadar,
                 onValueChange = { pausaRadar = it },
                 label = { Text("Sosta del radar degli stipendi (secondi)") },
@@ -232,7 +241,8 @@ fun ImpostazioniScreen(vm: SpeseViewModel, onIndietro: () -> Unit) {
                                     stipendioGiornoLavorativo = giornoLavorativo,
                                     giorniPromemoriaRicorrenti = promemoria,
                                     pausaRadarMs = Math.round(sosta * 1000).toInt(),
-                                    cartellaBustePaga = cartellaBuste.trim()
+                                    cartellaBustePaga = cartellaBuste.trim(),
+                                    cartellaRicevute = cartellaRicevute.trim()
                                 )
                             )
                             onIndietro()

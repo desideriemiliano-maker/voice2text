@@ -24,6 +24,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.CalendarMonth
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Radar
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
@@ -403,6 +404,22 @@ internal fun DettaglioRicorrenteDialog(vm: SpeseViewModel, dati: DatiApp, riga: 
             ?.let { it.importoScadenza ?: it.previsto }?.let { Math.round(abs(it) * 100) }?.takeIf { it > 0 }
     }
     var importoNuova by remember(riga, proposto) { mutableStateOf(proposto?.let { centInTesto(it) } ?: "") }
+    val tuttiAllegati by vm.allegatiRicorrenti.collectAsStateWithLifecycle()
+    val allegati = tuttiAllegati.filter { it.voceId == voce.id && it.mese == mese.toString() }
+    val contesto = androidx.compose.ui.platform.LocalContext.current
+    val sceltaAllegati = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.OpenMultipleDocuments()
+    ) { uris -> if (uris.isNotEmpty()) vm.allegaRicorrente(voce, mese, uris) }
+    var allegatoDaTogliere by remember { mutableStateOf<com.desideri.familybalance.data.AllegatoRicorrente?>(null) }
+    allegatoDaTogliere?.let { a ->
+        AlertDialog(
+            onDismissRequest = { allegatoDaTogliere = null },
+            title = { Text("Togli l'allegato") },
+            text = { Text("${a.nome} non sarà più collegato alla spesa; il file resta su Google Drive.") },
+            confirmButton = { TextButton(onClick = { vm.eliminaAllegatoRicorrente(a); allegatoDaTogliere = null }) { Text("Togli", color = MaterialTheme.colorScheme.error) } },
+            dismissButton = { TextButton(onClick = { allegatoDaTogliere = null }) { Text("Annulla") } }
+        )
+    }
     var dataNuova by remember(riga) { mutableStateOf<Long?>(null) }
 
     AlertDialog(
@@ -413,6 +430,22 @@ internal fun DettaglioRicorrenteDialog(vm: SpeseViewModel, dati: DatiApp, riga: 
                 val ricorrenza = (if (voce.mesiRicorrenza == 1) "ogni mese" else "ogni ${voce.mesiRicorrenza} mesi") +
                     (voce.meseInizio?.let { testoInMese(it) }?.let { " da ${formattaMese(it)}" } ?: " (senza mese di partenza)")
                 Text("Ricorrenza: $ricorrenza" + if (voce.obsoleta) " · obsoleta" else "", style = MaterialTheme.typography.bodySmall)
+
+                // PDF allegati (bolletta, ricevuta di pagamento) salvati su Drive.
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Allegati", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                    TextButton(onClick = { sceltaAllegati.launch(arrayOf("application/pdf", "image/*")) }) { Text("Allega PDF") }
+                }
+                if (allegati.isEmpty()) Text("Nessun allegato.", style = MaterialTheme.typography.bodySmall)
+                allegati.forEach { a ->
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().clickable {
+                        runCatching { contesto.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(a.link))) }
+                    }) {
+                        Text(a.nome, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.weight(1f))
+                        IconButton(onClick = { allegatoDaTogliere = a }) { Icon(Icons.Filled.Close, contentDescription = "Togli l'allegato") }
+                    }
+                }
+                HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
 
                 // Stato: effettiva (operazioni sul conto), pianificata (con data prevista) o stimata.
                 Text(

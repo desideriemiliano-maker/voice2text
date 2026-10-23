@@ -32,7 +32,8 @@ object ImpostazioniBackup {
                 "giorniPromemoriaRicorrenti" to imp.giorniPromemoriaRicorrenti.toString(),
                 "mostraContiVirtuali" to imp.mostraContiVirtuali.toString(),
                 "pausaRadarMs" to imp.pausaRadarMs.toString(),
-                "cartellaBustePaga" to imp.cartellaBustePaga
+                "cartellaBustePaga" to imp.cartellaBustePaga,
+                "cartellaRicevute" to imp.cartellaRicevute
             ).plus(altre).forEach { (k, v) -> db.execSQL("INSERT INTO $TABELLA (chiave, valore) VALUES (?, ?)", arrayOf(k, v)) }
         }
     }
@@ -70,7 +71,8 @@ object ImpostazioniBackup {
             giorniPromemoriaRicorrenti = valori["giorniPromemoriaRicorrenti"]?.toIntOrNull() ?: attuali.giorniPromemoriaRicorrenti,
             mostraContiVirtuali = valori["mostraContiVirtuali"]?.toBooleanStrictOrNull() ?: attuali.mostraContiVirtuali,
             pausaRadarMs = valori["pausaRadarMs"]?.toIntOrNull() ?: attuali.pausaRadarMs,
-            cartellaBustePaga = valori["cartellaBustePaga"] ?: attuali.cartellaBustePaga
+            cartellaBustePaga = valori["cartellaBustePaga"] ?: attuali.cartellaBustePaga,
+            cartellaRicevute = valori["cartellaRicevute"] ?: attuali.cartellaRicevute
         )
     }
 }

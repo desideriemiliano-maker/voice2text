@@ -129,6 +129,12 @@ private fun SchermataPrincipale(vm: SpeseViewModel, sezione: Sezione, onSezione:
     val dati by vm.dati.collectAsStateWithLifecycle()
     val riscontroEstratto by vm.riscontroEstratto.collectAsStateWithLifecycle()
     val colonneExcel by vm.colonneExcel.collectAsStateWithLifecycle()
+    // Consenso Google per salvare su Drive buste paga e ricevute (dalle sezioni).
+    val richiestaAutorizzazione by vm.richiestaAutorizzazione.collectAsStateWithLifecycle()
+    val autorizzazione = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult()
+    ) { risultato -> vm.esitoAutorizzazione(risultato.resultCode == android.app.Activity.RESULT_OK) }
+    LaunchedEffect(richiestaAutorizzazione) { richiestaAutorizzazione?.let { autorizzazione.launch(it) } }
 
     Scaffold(
         topBar = {
