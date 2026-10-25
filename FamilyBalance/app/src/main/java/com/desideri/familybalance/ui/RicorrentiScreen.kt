@@ -175,8 +175,9 @@ fun RicorrentiScreen(vm: SpeseViewModel) {
         )
     }
     if (riscontroAllegati) {
+        val personalizzazioni by vm.personalizzazioni.collectAsStateWithLifecycle()
         RiscontroAllegatiDialog(
-            mesi = mesi,
+            calcola = { elenco -> Calcoli.ricorrenti(elenco, dati.voci, dati.contiValuta, dati.operazioni, cambi, YearMonth.now(), personalizzazioni) },
             voci = vociRicorrenti.filter { v -> allegati.any { it.voceId == v.id } },
             allegati = allegati,
             onCella = { riga, m -> aperta = RigaAperta(riga, m) },
@@ -782,7 +783,8 @@ internal fun DettaglioRicorrenteDialog(vm: SpeseViewModel, dati: DatiApp, riga: 
  */
 @Composable
 private fun RiscontroAllegatiDialog(
-    mesi: List<MeseRicorrenti>,
+    /** Spese ricorrenti dei mesi indicati (come nella sezione). */
+    calcola: (List<YearMonth>) -> List<MeseRicorrenti>,
     voci: List<Voce>,
     allegati: List<com.desideri.familybalance.data.AllegatoRicorrente>,
     onCella: (RigaRicorrente, YearMonth) -> Unit,
@@ -795,6 +797,10 @@ private fun RiscontroAllegatiDialog(
     val zebra = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
     val coloreMancanti = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f)
     val conteggi = allegati.groupingBy { it.voceId to it.mese }.eachCount()
+    // Periodo proprio del riscontro: di default da un anno fa a due mesi avanti.
+    var da by remember { mutableStateOf(YearMonth.now().minusYears(1)) }
+    var a by remember { mutableStateOf(YearMonth.now().plusMonths(2)) }
+    val mesi = remember(calcola, da, a) { calcola(generateSequence(da) { it.plusMonths(1) }.takeWhile { it <= a }.toList()) }
     androidx.compose.ui.window.Dialog(
         onDismissRequest = onChiudi,
         properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
@@ -809,6 +815,10 @@ private fun RiscontroAllegatiDialog(
                     "Importo della spesa nel mese (pagato e, dove manca, previsto) e 📎 numero di allegati; in rosso le spese senza allegati. Tocca una cella per il dettaglio.",
                     style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(bottom = 6.dp)
                 )
+                Row {
+                    SceltaMese("Dal", da, { da = it; if (a < it) a = it }, Modifier.weight(1f))
+                    SceltaMese("Al", a, { a = it; if (da > it) da = it }, Modifier.weight(1f))
+                }
                 if (voci.isEmpty()) {
                     Text("Nessuna spesa ricorrente con allegati.", modifier = Modifier.padding(16.dp))
                 } else {
