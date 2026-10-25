@@ -26,6 +26,7 @@ import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.Radar
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
@@ -800,6 +801,7 @@ private fun RiscontroAllegatiDialog(
     // Periodo proprio del riscontro: di default da un anno fa a due mesi avanti.
     var da by remember { mutableStateOf(YearMonth.now().minusYears(1)) }
     var a by remember { mutableStateOf(YearMonth.now().plusMonths(2)) }
+    var mostraFiltro by remember { mutableStateOf(false) }
     val mesi = remember(calcola, da, a) { calcola(generateSequence(da) { it.plusMonths(1) }.takeWhile { it <= a }.toList()) }
     androidx.compose.ui.window.Dialog(
         onDismissRequest = onChiudi,
@@ -809,13 +811,19 @@ private fun RiscontroAllegatiDialog(
             Column(modifier = Modifier.fillMaxSize().paddingBarreDialog().padding(12.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("Riscontro allegati", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                    IconButton(onClick = { mostraFiltro = !mostraFiltro }) {
+                        Icon(
+                            Icons.Filled.FilterList, contentDescription = "Periodo",
+                            tint = if (mostraFiltro) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                     IconButton(onClick = onChiudi) { Icon(Icons.Filled.Close, contentDescription = "Chiudi") }
                 }
                 Text(
                     "Importo della spesa nel mese (pagato e, dove manca, previsto) e 📎 numero di allegati; in rosso le spese senza allegati. Tocca una cella per il dettaglio.",
                     style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(bottom = 6.dp)
                 )
-                Row {
+                if (mostraFiltro) Row {
                     SceltaMese("Dal", da, { da = it; if (a < it) a = it }, Modifier.weight(1f))
                     SceltaMese("Al", a, { a = it; if (da > it) da = it }, Modifier.weight(1f))
                 }
